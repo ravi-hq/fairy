@@ -24,4 +24,9 @@ RUNTIMES: dict[str, RuntimeConfig] = {
         cmd='gemini --output-format stream-json -p "$PROMPT"',
         env_var="GEMINI_API_KEY",
     ),
+    "claude-oauth": RuntimeConfig(
+        name="claude-oauth",
+        cmd='claude --print --verbose --output-format stream-json -p "$PROMPT"',
+        env_var="CLAUDE_CODE_AUTH_TOKEN",
+    ),
 }

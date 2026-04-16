@@ -4,5 +4,7 @@ from fairy import views
 
 urlpatterns = [
     path("health", views.health),
-    path("run", views.run_agent),
+    path("sessions", views.create_session),
+    path("sessions/<uuid:session_id>", views.get_session),
+    path("sessions/<uuid:session_id>/stream", views.stream_session),
 ]

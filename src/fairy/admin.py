@@ -3,7 +3,7 @@ from django.contrib import admin, messages
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth.models import User
 
-from fairy.models import APIKey, UserRuntimeKey
+from fairy.models import APIKey, AgentSession, AgentSessionLog, UserRuntimeKey
 
 
 class APIKeyInline(admin.TabularInline):
@@ -71,7 +71,6 @@ class UserRuntimeKeyForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         if self.instance.pk:
-            # Show a masked placeholder for existing keys
             self.fields["api_key"].initial = self.instance.get_api_key()
 
     def save(self, commit=True):
@@ -94,3 +93,26 @@ class UserRuntimeKeyAdmin(admin.ModelAdmin):
         if obj is None:
             return ("user", "runtime", "api_key")
         return ("user", "runtime", "api_key", "created_at", "updated_at")
+
+
+class AgentSessionLogInline(admin.TabularInline):
+    model = AgentSessionLog
+    extra = 0
+    fields = ("stream", "data", "created_at")
+    readonly_fields = ("stream", "data", "created_at")
+
+
+@admin.register(AgentSession)
+class AgentSessionAdmin(admin.ModelAdmin):
+    list_display = ("id", "runtime", "status", "exit_code", "created_at")
+    list_filter = ("runtime", "status")
+    search_fields = ("id", "sprite_name")
+    readonly_fields = ("id", "created_at", "updated_at")
+    inlines = [AgentSessionLogInline]
+
+
+@admin.register(AgentSessionLog)
+class AgentSessionLogAdmin(admin.ModelAdmin):
+    list_display = ("id", "session", "stream", "created_at")
+    list_filter = ("stream",)
+    readonly_fields = ("session", "stream", "data", "created_at")

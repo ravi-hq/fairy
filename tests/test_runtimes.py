@@ -3,7 +3,7 @@ from fairy.sprites_exec import build_wrapper_script
 
 
 def test_all_runtimes_defined():
-    assert set(RUNTIMES) == {"claude", "codex", "gemini"}
+    assert set(RUNTIMES) == {"claude", "codex", "gemini", "claude-oauth"}
 
 
 def test_wrapper_script_escapes_prompt():

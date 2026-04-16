@@ -1,5 +1,6 @@
 import hashlib
 import secrets
+import uuid
 
 from django.conf import settings
 from django.db import models
@@ -72,3 +73,50 @@ class UserRuntimeKey(models.Model):
 
     def get_api_key(self) -> str:
         return decrypt(bytes(self.encrypted_key))
+
+
+class AgentSession(models.Model):
+    STATUS_CHOICES = [
+        ("pending", "Pending"),
+        ("running", "Running"),
+        ("completed", "Completed"),
+        ("failed", "Failed"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    runtime = models.CharField(max_length=32)
+    prompt = models.TextField()
+    sprite_name = models.CharField(max_length=100, blank=True)
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default="pending")
+    exit_code = models.IntegerField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "agent_sessions"
+
+    def __str__(self):
+        return f"{self.runtime} — {self.status} ({self.id})"
+
+
+class AgentSessionLog(models.Model):
+    STREAM_CHOICES = [
+        ("stdout", "stdout"),
+        ("stderr", "stderr"),
+    ]
+
+    session = models.ForeignKey(
+        AgentSession, on_delete=models.CASCADE, related_name="logs"
+    )
+    stream = models.CharField(max_length=6, choices=STREAM_CHOICES)
+    data = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "agent_session_logs"
+        indexes = [
+            models.Index(fields=["session", "id"]),
+        ]
+
+    def __str__(self):
+        return f"[{self.stream}] {self.data[:80]}"

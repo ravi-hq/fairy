@@ -1,52 +1,77 @@
 import io
 import json
+import logging
 import queue
 import threading
+import time
 from collections.abc import Generator
 
 from sprites import ExecError, Sprite
 
+from fairy.models import AgentSession, AgentSessionLog
+
+logger = logging.getLogger(__name__)
 
 _SENTINEL = object()
 
+FLUSH_SIZE = 20
 
-class QueueWriter(io.RawIOBase):
-    """A writable BinaryIO that puts chunks into a queue.
 
-    Assigned to cmd.stdout/cmd.stderr so sprites-py writes here in real-time.
+class TaggedChunk:
+    """A chunk of output tagged with its stream name."""
+
+    __slots__ = ("stream", "data")
+
+    def __init__(self, stream: str, data: bytes):
+        self.stream = stream
+        self.data = data
+
+
+class TaggingQueueWriter(io.RawIOBase):
+    """A writable BinaryIO that puts tagged chunks into a queue.
+
+    Each chunk is tagged with the stream name (stdout/stderr) so downstream
+    consumers can distinguish them.
     """
 
-    def __init__(self, q: queue.Queue):
+    def __init__(self, q: queue.Queue, stream: str):
         self._queue = q
+        self._stream = stream
 
     def writable(self) -> bool:
         return True
 
     def write(self, b: bytes | bytearray) -> int:
         data = bytes(b)
-        self._queue.put(data)
+        self._queue.put(TaggedChunk(self._stream, data))
         return len(data)
 
 
-def stream_agent_output(
+def run_session_background(
+    session: AgentSession,
     sprite: Sprite,
     timeout: float,
-) -> Generator[str, None, None]:
-    """Run agent in a background thread, yield SSE event strings as output arrives.
+    cleanup_fn,
+):
+    """Run agent in a background thread, writing output to the database.
 
-    Each yielded string is a JSON object:
-    - {"type": "output", "data": "..."}
-    - {"type": "exit", "code": 0}
-    - {"type": "error", "message": "..."}
+    POST /run starts this and returns immediately. Output is persisted to
+    AgentSessionLog rows. The Sprite is cleaned up when execution finishes.
     """
     output_q: queue.Queue = queue.Queue(maxsize=4096)
+    db_buffer: list[AgentSessionLog] = []
     result_holder: list = []
 
-    def _run_in_thread():
+    def _flush_buffer():
+        if db_buffer:
+            AgentSessionLog.objects.bulk_create(db_buffer)
+            db_buffer.clear()
+
+    def _run_command():
         try:
             cmd = sprite.command("bash", "/run-agent.sh", timeout=timeout)
-            cmd.stdout = QueueWriter(output_q)
-            cmd.stderr = QueueWriter(output_q)
+            cmd.stdout = TaggingQueueWriter(output_q, "stdout")
+            cmd.stderr = TaggingQueueWriter(output_q, "stderr")
             cmd.run()
             result_holder.append(("exit", 0))
         except ExecError as e:
@@ -56,25 +81,99 @@ def stream_agent_output(
         finally:
             output_q.put(_SENTINEL)
 
-    thread = threading.Thread(target=_run_in_thread, daemon=True)
-    thread.start()
+    # Update session status
+    session.status = "running"
+    session.save(update_fields=["status", "updated_at"])
 
+    # Run the command in a sub-thread so we can drain the queue in this thread
+    cmd_thread = threading.Thread(target=_run_command, daemon=True)
+    cmd_thread.start()
+
+    # Drain queue → DB
     while True:
-        chunk = output_q.get()
+        try:
+            chunk = output_q.get(timeout=1.0)
+        except queue.Empty:
+            _flush_buffer()
+            continue
+
         if chunk is _SENTINEL:
             break
-        yield json.dumps({
-            "type": "output",
-            "data": chunk.decode("utf-8", errors="replace"),
-        })
 
-    thread.join(timeout=5.0)
+        db_buffer.append(
+            AgentSessionLog(
+                session=session,
+                stream=chunk.stream,
+                data=chunk.data.decode("utf-8", errors="replace"),
+            )
+        )
+        if len(db_buffer) >= FLUSH_SIZE:
+            _flush_buffer()
 
+    # Flush remaining
+    _flush_buffer()
+
+    cmd_thread.join(timeout=5.0)
+
+    # Update session with result
     if result_holder:
         kind, value = result_holder[0]
         if kind == "exit":
-            yield json.dumps({"type": "exit", "code": value})
+            session.status = "completed" if value == 0 else "failed"
+            session.exit_code = value
         else:
-            yield json.dumps({"type": "error", "message": value})
+            session.status = "failed"
     else:
-        yield json.dumps({"type": "error", "message": "Agent thread did not complete"})
+        session.status = "failed"
+
+    session.save(update_fields=["status", "exit_code", "updated_at"])
+
+    # Cleanup sprite
+    try:
+        cleanup_fn()
+    except Exception:
+        logger.warning("Failed to cleanup Sprite %s", session.sprite_name, exc_info=True)
+
+
+def stream_session_from_db(session_id: str) -> Generator[str, None, None]:
+    """Yield SSE event strings by tailing the AgentSessionLog table.
+
+    1. Replay all existing rows
+    2. Poll for new rows every 500ms
+    3. Send heartbeat every 15s
+    4. Stop when session is complete/failed AND no new rows remain
+    """
+    last_id = 0
+    last_heartbeat = time.time()
+
+    while True:
+        chunks = list(
+            AgentSessionLog.objects.filter(session_id=session_id, id__gt=last_id)
+            .order_by("id")
+            .values("id", "stream", "data")[:100]
+        )
+
+        for chunk in chunks:
+            last_id = chunk["id"]
+            yield json.dumps({
+                "type": "output",
+                "stream": chunk["stream"],
+                "data": chunk["data"],
+            })
+
+        # Check if session is done
+        session = AgentSession.objects.get(pk=session_id)
+        if session.status in ("completed", "failed") and not chunks:
+            if session.status == "failed" and session.exit_code is None:
+                yield json.dumps({"type": "error", "message": "Session failed"})
+            else:
+                yield json.dumps({"type": "exit", "code": session.exit_code})
+            break
+
+        # Heartbeat to keep connection alive
+        now = time.time()
+        if now - last_heartbeat >= 15:
+            last_heartbeat = now
+            yield ""
+
+        time.sleep(0.5)
