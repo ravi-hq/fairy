@@ -5,7 +5,10 @@ from django.contrib.auth.models import User
 
 from sprites import SpritesClient, SpriteError
 
-from fairy.models import Agent, AgentVersion, APIKey, AgentSession, AgentSessionLog, UserRuntimeKey
+from fairy.models import (
+    Agent, AgentVersion, APIKey, AgentSession, AgentSessionLog,
+    Environment, EnvironmentVersion, UserRuntimeKey,
+)
 
 
 class APIKeyInline(admin.TabularInline):
@@ -95,6 +98,22 @@ class UserRuntimeKeyAdmin(admin.ModelAdmin):
         if obj is None:
             return ("user", "runtime", "api_key")
         return ("user", "runtime", "api_key", "created_at", "updated_at")
+
+
+class EnvironmentVersionInline(admin.TabularInline):
+    model = EnvironmentVersion
+    extra = 0
+    fields = ("version", "name", "networking_type", "created_at")
+    readonly_fields = ("version", "name", "networking_type", "created_at")
+
+
+@admin.register(Environment)
+class EnvironmentAdmin(admin.ModelAdmin):
+    list_display = ("name", "user", "networking_type", "version", "archived_at", "created_at")
+    list_filter = ("networking_type",)
+    search_fields = ("name", "user__email")
+    readonly_fields = ("id", "version", "created_at", "updated_at", "archived_at")
+    inlines = [EnvironmentVersionInline]
 
 
 class AgentVersionInline(admin.TabularInline):

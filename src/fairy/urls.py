@@ -4,6 +4,12 @@ from fairy import views
 
 urlpatterns = [
     path("health", views.health),
+    # Environments
+    path("environments", views.environments_list_create),
+    path("environments/<uuid:environment_id>", views.environment_detail),
+    path("environments/<uuid:environment_id>/archive", views.environment_archive),
+    path("environments/<uuid:environment_id>/delete", views.environment_delete),
+    path("environments/<uuid:environment_id>/versions", views.environment_versions),
     # Agents
     path("agents", views.agents_list_create),
     path("agents/<uuid:agent_id>", views.agent_detail),

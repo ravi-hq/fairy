@@ -14,9 +14,12 @@ from pydantic import BaseModel, Field, ValidationError, field_validator
 from sprites import SpritesClient, SpriteError
 
 from fairy.auth import require_api_key
-from fairy.models import Agent, AgentSession, AgentVersion, SessionResource, UserRuntimeKey
+from fairy.models import (
+    Agent, AgentSession, AgentVersion, Environment, EnvironmentVersion,
+    SessionResource, UserRuntimeKey,
+)
 from fairy.runtimes import RUNTIMES, AgentModel
-from fairy.sprites_exec import RepoSpec, build_wrapper_script
+from fairy.sprites_exec import EnvironmentSetup, RepoSpec, build_wrapper_script
 from fairy.stream import run_session_background, stream_session_from_db
 
 logger = logging.getLogger(__name__)
@@ -104,6 +107,7 @@ class RunRequest(BaseModel):
     prompt: str = Field(description="The prompt to send to the agent")
     timeout: int = Field(default=600, ge=10, le=3600, description="Max seconds")
     agent_id: str | None = Field(default=None, description="Agent ID to use for this session")
+    environment_id: str | None = Field(default=None, description="Environment ID for container setup")
     resources: list[GitHubRepoResource] = Field(
         default_factory=list,
         description="GitHub repositories to clone into the session",
@@ -150,6 +154,19 @@ def create_session(request):
         if agent_obj.is_archived:
             return JsonResponse({"detail": "Cannot create session with archived agent"}, status=409)
 
+    # Resolve environment: explicit > agent > none
+    environment_obj = None
+    env_id = req.environment_id or (agent_obj.environment_id if agent_obj else None)
+    if env_id:
+        try:
+            environment_obj = Environment.objects.get(pk=env_id, user=request.user)
+        except (Environment.DoesNotExist, ValueError):
+            return JsonResponse({"detail": "Environment not found"}, status=404)
+        if environment_obj.is_archived:
+            return JsonResponse(
+                {"detail": "Cannot create session with archived environment"}, status=409
+            )
+
     # Runtime: explicit > agent > error
     runtime = req.runtime or (agent_obj.runtime if agent_obj else None)
     if not runtime:
@@ -189,7 +206,17 @@ def create_session(request):
         if agent_obj and agent_obj.system:
             effective_prompt = f"{agent_obj.system}\n\n{req.prompt}"
 
-        script = build_wrapper_script(config, api_key, effective_prompt, repos=repo_specs)
+        env_setup = None
+        if environment_obj:
+            env_setup = EnvironmentSetup(
+                packages=environment_obj.packages,
+                env_vars=environment_obj.env_vars,
+                setup_script=environment_obj.setup_script,
+            )
+
+        script = build_wrapper_script(
+            config, api_key, effective_prompt, repos=repo_specs, environment=env_setup
+        )
         (fs / "run-agent.sh").write_text(script)
         sprite.command("chmod", "+x", "/run-agent.sh").run()
     except SpriteError as e:
@@ -203,6 +230,7 @@ def create_session(request):
     session = AgentSession.objects.create(
         user=request.user,
         agent=agent_obj,
+        environment=environment_obj,
         runtime=runtime,
         prompt=req.prompt,
         sprite_name=name,
@@ -234,6 +262,7 @@ def create_session(request):
             "id": str(session.id),
             "status": "pending",
             "stream_url": f"/sessions/{session.id}/stream",
+            "environment_id": str(session.environment_id) if session.environment_id else None,
             "resources": _serialize_resources(session),
         },
         status=202,
@@ -252,6 +281,7 @@ def get_session(request, session_id):
     return JsonResponse({
         "id": str(session.id),
         "agent_id": str(session.agent_id) if session.agent_id else None,
+        "environment_id": str(session.environment_id) if session.environment_id else None,
         "runtime": session.runtime,
         "status": session.status,
         "exit_code": session.exit_code,
@@ -419,7 +449,7 @@ def delete_session(request, session_id):
 # Agents
 # ---------------------------------------------------------------------------
 
-AGENT_VERSIONED_FIELDS = ("name", "description", "system", "model", "runtime", "skills", "metadata")
+AGENT_VERSIONED_FIELDS = ("name", "description", "system", "model", "runtime", "environment", "skills", "metadata")
 
 
 class CreateAgentRequest(BaseModel):
@@ -428,6 +458,7 @@ class CreateAgentRequest(BaseModel):
     runtime: str = Field(max_length=32)
     system: str = Field(default="")
     description: str = Field(default="")
+    environment_id: str | None = Field(default=None)
     skills: list = Field(default_factory=list)
     metadata: dict = Field(default_factory=dict)
 
@@ -448,6 +479,7 @@ class UpdateAgentRequest(BaseModel):
     runtime: str | None = None
     system: str | None = None
     description: str | None = None
+    environment_id: str | None = None
     skills: list | None = None
     metadata: dict | None = None
 
@@ -470,6 +502,7 @@ def _serialize_agent(agent: Agent) -> dict:
         "system": agent.system or None,
         "model": agent.model,
         "runtime": agent.runtime,
+        "environment_id": str(agent.environment_id) if agent.environment_id else None,
         "skills": agent.skills,
         "metadata": agent.metadata,
         "version": agent.version,
@@ -488,6 +521,7 @@ def _serialize_agent_version(av: AgentVersion) -> dict:
         "system": av.system or None,
         "model": av.model,
         "runtime": av.runtime,
+        "environment_id": str(av.environment_id) if av.environment_id else None,
         "skills": av.skills,
         "metadata": av.metadata,
         "version": av.version,
@@ -505,6 +539,7 @@ def _snapshot_version(agent: Agent):
         system=agent.system,
         model=agent.model,
         runtime=agent.runtime,
+        environment=agent.environment,
         skills=agent.skills,
         metadata=agent.metadata,
     )
@@ -531,6 +566,13 @@ def agents_list_create(request):
                 status=400,
             )
 
+        env_obj = None
+        if req.environment_id:
+            try:
+                env_obj = Environment.objects.get(pk=req.environment_id, user=request.user)
+            except (Environment.DoesNotExist, ValueError):
+                return JsonResponse({"detail": "Environment not found"}, status=404)
+
         agent = Agent.objects.create(
             user=request.user,
             name=req.name,
@@ -538,6 +580,7 @@ def agents_list_create(request):
             system=req.system,
             model=req.model,
             runtime=req.runtime,
+            environment=env_obj,
             skills=req.skills,
             metadata=req.metadata,
             version=1,
@@ -593,6 +636,17 @@ def agent_detail(request, agent_id):
 
         # Detect changes
         changed = False
+
+        # Resolve environment_id if provided
+        if req.environment_id is not None:
+            try:
+                env_obj = Environment.objects.get(pk=req.environment_id, user=request.user)
+            except (Environment.DoesNotExist, ValueError):
+                return JsonResponse({"detail": "Environment not found"}, status=404)
+            if env_obj.id != agent.environment_id:
+                agent.environment = env_obj
+                changed = True
+
         for field in ("name", "model", "runtime", "system", "description", "skills"):
             value = getattr(req, field)
             if value is not None and value != getattr(agent, field):
@@ -652,3 +706,286 @@ def agent_versions(request, agent_id):
 
     versions = AgentVersion.objects.filter(agent=agent).order_by("-version")
     return JsonResponse({"data": [_serialize_agent_version(av) for av in versions]})
+
+
+# ---------------------------------------------------------------------------
+# Environments
+# ---------------------------------------------------------------------------
+
+VALID_PACKAGE_MANAGERS = {"apt", "cargo", "gem", "go", "npm", "pip"}
+
+
+class CreateEnvironmentRequest(BaseModel):
+    name: str = Field(max_length=200)
+    packages: dict[str, list[str]] = Field(default_factory=dict)
+    env_vars: dict[str, str] = Field(default_factory=dict)
+    setup_script: str = Field(default="")
+    networking: dict = Field(default_factory=lambda: {"type": "unrestricted"})
+
+    @field_validator("packages")
+    @classmethod
+    def validate_packages(cls, v: dict) -> dict:
+        for manager, pkgs in v.items():
+            if manager not in VALID_PACKAGE_MANAGERS:
+                raise ValueError(
+                    f"Unknown package manager: {manager}. "
+                    f"Must be one of: {sorted(VALID_PACKAGE_MANAGERS)}"
+                )
+            if not isinstance(pkgs, list) or not all(isinstance(p, str) for p in pkgs):
+                raise ValueError(f"packages.{manager} must be a list of strings")
+        return v
+
+    @field_validator("networking")
+    @classmethod
+    def validate_networking(cls, v: dict) -> dict:
+        net_type = v.get("type", "unrestricted")
+        if net_type not in ("unrestricted", "limited"):
+            raise ValueError("networking.type must be 'unrestricted' or 'limited'")
+        if net_type == "limited":
+            hosts = v.get("allowed_hosts", [])
+            if not isinstance(hosts, list):
+                raise ValueError("networking.allowed_hosts must be a list")
+        return v
+
+
+class UpdateEnvironmentRequest(BaseModel):
+    version: int = Field(description="Current version — optimistic concurrency check")
+    name: str | None = None
+    packages: dict[str, list[str]] | None = None
+    env_vars: dict[str, str] | None = None
+    setup_script: str | None = None
+    networking: dict | None = None
+
+    @field_validator("packages")
+    @classmethod
+    def validate_packages(cls, v: dict | None) -> dict | None:
+        if v is not None:
+            for manager, pkgs in v.items():
+                if manager not in VALID_PACKAGE_MANAGERS:
+                    raise ValueError(
+                        f"Unknown package manager: {manager}. "
+                        f"Must be one of: {sorted(VALID_PACKAGE_MANAGERS)}"
+                    )
+                if not isinstance(pkgs, list) or not all(isinstance(p, str) for p in pkgs):
+                    raise ValueError(f"packages.{manager} must be a list of strings")
+        return v
+
+    @field_validator("networking")
+    @classmethod
+    def validate_networking(cls, v: dict | None) -> dict | None:
+        if v is not None:
+            net_type = v.get("type", "unrestricted")
+            if net_type not in ("unrestricted", "limited"):
+                raise ValueError("networking.type must be 'unrestricted' or 'limited'")
+        return v
+
+
+def _serialize_environment(env: Environment) -> dict:
+    networking = {"type": env.networking_type}
+    if env.networking_type == "limited" and env.networking_config:
+        networking.update(env.networking_config)
+    return {
+        "id": str(env.id),
+        "type": "environment",
+        "name": env.name,
+        "packages": env.packages,
+        "setup_script": env.setup_script or None,
+        "networking": networking,
+        "version": env.version,
+        "created_at": env.created_at.isoformat(),
+        "updated_at": env.updated_at.isoformat(),
+        "archived_at": env.archived_at.isoformat() if env.archived_at else None,
+    }
+
+
+def _serialize_environment_version(ev: EnvironmentVersion) -> dict:
+    networking = {"type": ev.networking_type}
+    if ev.networking_type == "limited" and ev.networking_config:
+        networking.update(ev.networking_config)
+    return {
+        "id": str(ev.environment_id),
+        "type": "environment",
+        "name": ev.name,
+        "packages": ev.packages,
+        "setup_script": ev.setup_script or None,
+        "networking": networking,
+        "version": ev.version,
+        "created_at": ev.created_at.isoformat(),
+    }
+
+
+def _snapshot_environment_version(env: Environment):
+    """Save the current environment state as a version record."""
+    EnvironmentVersion.objects.create(
+        environment=env,
+        version=env.version,
+        name=env.name,
+        packages=env.packages,
+        env_vars=env.env_vars,
+        setup_script=env.setup_script,
+        networking_type=env.networking_type,
+        networking_config=env.networking_config,
+    )
+
+
+@csrf_exempt
+@require_api_key
+def environments_list_create(request):
+    """POST: create environment. GET: list environments."""
+    if request.method == "POST":
+        try:
+            body = json.loads(request.body)
+        except (json.JSONDecodeError, ValueError):
+            return JsonResponse({"detail": "Invalid JSON"}, status=400)
+
+        try:
+            req = CreateEnvironmentRequest(**body)
+        except ValidationError as e:
+            return JsonResponse({"detail": e.errors(include_context=False)}, status=422)
+
+        networking_type = req.networking.get("type", "unrestricted")
+        networking_config = {k: v for k, v in req.networking.items() if k != "type"}
+
+        env = Environment.objects.create(
+            user=request.user,
+            name=req.name,
+            packages=req.packages,
+            env_vars=req.env_vars,
+            setup_script=req.setup_script,
+            networking_type=networking_type,
+            networking_config=networking_config,
+            version=1,
+        )
+        _snapshot_environment_version(env)
+
+        return JsonResponse(_serialize_environment(env), status=201)
+
+    elif request.method == "GET":
+        qs = Environment.objects.filter(
+            user=request.user, archived_at__isnull=True
+        ).order_by("-created_at")
+        return JsonResponse({"data": [_serialize_environment(e) for e in qs]})
+
+    return JsonResponse({"detail": "Method not allowed"}, status=405)
+
+
+@csrf_exempt
+@require_api_key
+def environment_detail(request, environment_id):
+    """GET: retrieve environment. PUT: update environment."""
+    try:
+        env = Environment.objects.get(pk=environment_id, user=request.user)
+    except (Environment.DoesNotExist, ValueError):
+        return JsonResponse({"detail": "Environment not found"}, status=404)
+
+    if request.method == "GET":
+        return JsonResponse(_serialize_environment(env))
+
+    if request.method == "PUT":
+        if env.is_archived:
+            return JsonResponse({"detail": "Cannot update an archived environment"}, status=409)
+
+        try:
+            body = json.loads(request.body)
+        except (json.JSONDecodeError, ValueError):
+            return JsonResponse({"detail": "Invalid JSON"}, status=400)
+
+        try:
+            req = UpdateEnvironmentRequest(**body)
+        except ValidationError as e:
+            return JsonResponse({"detail": e.errors(include_context=False)}, status=422)
+
+        if req.version != env.version:
+            return JsonResponse(
+                {"detail": f"Version mismatch: expected {env.version}, got {req.version}"},
+                status=409,
+            )
+
+        changed = False
+        if req.name is not None and req.name != env.name:
+            env.name = req.name
+            changed = True
+
+        if req.packages is not None and req.packages != env.packages:
+            env.packages = req.packages
+            changed = True
+
+        if req.env_vars is not None and req.env_vars != env.env_vars:
+            env.env_vars = req.env_vars
+            changed = True
+
+        if req.setup_script is not None and req.setup_script != env.setup_script:
+            env.setup_script = req.setup_script
+            changed = True
+
+        if req.networking is not None:
+            new_type = req.networking.get("type", "unrestricted")
+            new_config = {k: v for k, v in req.networking.items() if k != "type"}
+            if new_type != env.networking_type or new_config != env.networking_config:
+                env.networking_type = new_type
+                env.networking_config = new_config
+                changed = True
+
+        if changed:
+            env.version += 1
+            env.save()
+            _snapshot_environment_version(env)
+
+        return JsonResponse(_serialize_environment(env))
+
+    return JsonResponse({"detail": "Method not allowed"}, status=405)
+
+
+@csrf_exempt
+@require_POST
+@require_api_key
+def environment_archive(request, environment_id):
+    """Archive an environment (read-only, no new sessions)."""
+    try:
+        env = Environment.objects.get(pk=environment_id, user=request.user)
+    except (Environment.DoesNotExist, ValueError):
+        return JsonResponse({"detail": "Environment not found"}, status=404)
+
+    if env.is_archived:
+        return JsonResponse({"detail": "Environment is already archived"}, status=409)
+
+    from django.utils import timezone
+    env.archived_at = timezone.now()
+    env.save(update_fields=["archived_at", "updated_at"])
+
+    return JsonResponse(_serialize_environment(env))
+
+
+@csrf_exempt
+@require_api_key
+def environment_delete(request, environment_id):
+    """Delete an environment (only if no sessions reference it)."""
+    if request.method != "DELETE":
+        return JsonResponse({"detail": "Method not allowed"}, status=405)
+
+    try:
+        env = Environment.objects.get(pk=environment_id, user=request.user)
+    except (Environment.DoesNotExist, ValueError):
+        return JsonResponse({"detail": "Environment not found"}, status=404)
+
+    if env.sessions.exists():
+        return JsonResponse(
+            {"detail": "Cannot delete environment with existing sessions"},
+            status=409,
+        )
+
+    env.delete()
+    return JsonResponse({"detail": "Environment deleted"}, status=200)
+
+
+@require_GET
+@require_api_key
+def environment_versions(request, environment_id):
+    """List all versions of an environment."""
+    try:
+        env = Environment.objects.get(pk=environment_id, user=request.user)
+    except (Environment.DoesNotExist, ValueError):
+        return JsonResponse({"detail": "Environment not found"}, status=404)
+
+    versions = EnvironmentVersion.objects.filter(environment=env).order_by("-version")
+    return JsonResponse({"data": [_serialize_environment_version(ev) for ev in versions]})
