@@ -74,8 +74,10 @@ Required env vars:
 
 Optional:
 
-- `FAIRY_API_URL` — default `http://localhost:8000` (use `http://localhost:8777`
-  if you're running `make dev`)
+- `FAIRY_API_URL` — defaults to `http://localhost:8777` (what `make dev`
+  serves). Export a different value to point at another deployment. Note that
+  running `pytest` directly (without `make`) defaults to `http://localhost:8000`
+  via `tests/e2e/conftest.py`.
 - `E2E_RUNTIMES` — comma-separated subset of `claude,codex,gemini,claude-oauth`
   (default `claude`)
 - `E2E_TIMEOUT` — max seconds to wait for a session (default `180`)
@@ -84,18 +86,17 @@ Run them:
 
 ```bash
 # fast subset — skips @slow tests that spawn real agent sessions
-FAIRY_API_URL=http://localhost:8777 \
-FAIRY_API_TOKEN=<token> \
-make test-e2e-fast
+FAIRY_API_TOKEN=<token> make test-e2e-fast
 
 # full suite
-FAIRY_API_URL=http://localhost:8777 \
-FAIRY_API_TOKEN=<token> \
-make test-e2e
+FAIRY_API_TOKEN=<token> make test-e2e
 
 # single class
-FAIRY_API_URL=http://localhost:8777 FAIRY_API_TOKEN=<token> \
+FAIRY_API_TOKEN=<token> \
   uv run pytest tests/e2e/test_sessions.py::TestStreaming -v
+
+# point at a remote deployment instead of local
+FAIRY_API_URL=https://fairy.example.com FAIRY_API_TOKEN=<token> make test-e2e
 ```
 
 Without `FAIRY_API_TOKEN`, every e2e test is auto-skipped by a hook in

@@ -35,9 +35,11 @@ make lint          # ruff check
 make fmt           # ruff format + ruff check --fix
 ```
 
-Dev server runs on `:8777`, **not** the Django default `:8000`. When running
-the e2e suite against your local dev server, set
-`FAIRY_API_URL=http://localhost:8777`.
+Dev server runs on `:8777`, **not** the Django default `:8000`. The `make
+test-e2e*` targets default `FAIRY_API_URL` to `http://localhost:8777` to match;
+export a different value to point at another deployment. If you invoke pytest
+directly (without `make`), `tests/e2e/conftest.py` defaults to
+`http://localhost:8000`.
 
 ## Conventions
 
