@@ -107,8 +107,13 @@ class AgentSessionAdmin(admin.ModelAdmin):
     list_display = ("id", "runtime", "status", "exit_code", "created_at")
     list_filter = ("runtime", "status")
     search_fields = ("id", "sprite_name")
-    readonly_fields = ("id", "created_at", "updated_at")
+    readonly_fields = (
+        "id", "runtime", "prompt", "sprite_name", "status", "exit_code", "created_at", "updated_at"
+    )
     inlines = [AgentSessionLogInline]
+
+    def has_add_permission(self, request):
+        return False
 
 
 @admin.register(AgentSessionLog)

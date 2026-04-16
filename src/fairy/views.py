@@ -72,7 +72,10 @@ def create_session(request):
         (fs / "run-agent.sh").write_text(script)
         sprite.command("chmod", "+x", "/run-agent.sh").run()
     except SpriteError as e:
-        _cleanup(client, name)
+        try:
+            client.delete_sprite(name)
+        except SpriteError:
+            logger.warning("Failed to cleanup Sprite %s", name, exc_info=True)
         return JsonResponse({"detail": f"Failed to prepare Sprite: {e}"}, status=502)
 
     # Create session record
@@ -84,12 +87,9 @@ def create_session(request):
     )
 
     # Start background execution
-    def cleanup():
-        _cleanup(client, name)
-
     thread = threading.Thread(
         target=run_session_background,
-        args=(session, sprite, float(req.timeout), cleanup),
+        args=(session, sprite, float(req.timeout)),
         daemon=True,
     )
     thread.start()
@@ -148,8 +148,92 @@ def stream_session(request, session_id):
     return response
 
 
-def _cleanup(client: SpritesClient, sprite_name: str):
+class PromptRequest(BaseModel):
+    prompt: str = Field(description="The prompt to send to the agent")
+    api_key: str = Field(description="API key for the runtime")
+    timeout: int = Field(default=600, ge=10, le=3600, description="Max seconds")
+
+
+@csrf_exempt
+@require_POST
+def send_prompt(request, session_id):
+    """Send a subsequent prompt to an existing session's Sprite."""
     try:
-        client.delete_sprite(sprite_name)
+        session = AgentSession.objects.get(pk=session_id)
+    except (AgentSession.DoesNotExist, ValueError):
+        return JsonResponse({"detail": "Session not found"}, status=404)
+
+    if session.status == "running":
+        return JsonResponse({"detail": "Session is already running"}, status=409)
+
+    try:
+        body = json.loads(request.body)
+    except (json.JSONDecodeError, ValueError):
+        return JsonResponse({"detail": "Invalid JSON"}, status=400)
+
+    try:
+        req = PromptRequest(**body)
+    except ValidationError as e:
+        return JsonResponse({"detail": e.errors()}, status=422)
+
+    config = RUNTIMES[session.runtime]
+    client = _get_client()
+
+    try:
+        sprite = client.get_sprite(session.sprite_name)
+    except SpriteError as e:
+        return JsonResponse({"detail": f"Sprite not found: {e}"}, status=404)
+
+    try:
+        fs = sprite.filesystem()
+        script = build_wrapper_script(config, req.api_key, req.prompt, continue_session=True)
+        (fs / "run-agent.sh").write_text(script)
+    except SpriteError as e:
+        return JsonResponse({"detail": f"Failed to prepare Sprite: {e}"}, status=502)
+
+    # Update session for the new prompt
+    session.prompt = req.prompt
+    session.status = "pending"
+    session.exit_code = None
+    session.save(update_fields=["prompt", "status", "exit_code", "updated_at"])
+
+    # Start background execution
+    thread = threading.Thread(
+        target=run_session_background,
+        args=(session, sprite, float(req.timeout)),
+        daemon=True,
+    )
+    thread.start()
+
+    return JsonResponse(
+        {
+            "id": str(session.id),
+            "status": "pending",
+            "stream_url": f"/sessions/{session.id}/stream",
+        },
+        status=202,
+    )
+
+
+@csrf_exempt
+def delete_session(request, session_id):
+    """Delete a session's Sprite."""
+    if request.method != "DELETE":
+        return JsonResponse({"detail": "Method not allowed"}, status=405)
+
+    try:
+        session = AgentSession.objects.get(pk=session_id)
+    except (AgentSession.DoesNotExist, ValueError):
+        return JsonResponse({"detail": "Session not found"}, status=404)
+
+    if session.status == "running":
+        return JsonResponse({"detail": "Cannot delete a running session"}, status=409)
+
+    client = _get_client()
+    try:
+        client.delete_sprite(session.sprite_name)
     except SpriteError:
-        logger.warning("Failed to cleanup Sprite %s", sprite_name, exc_info=True)
+        logger.warning("Failed to delete Sprite %s", session.sprite_name, exc_info=True)
+
+    session.delete()
+    return JsonResponse({"detail": "Session deleted"}, status=200)

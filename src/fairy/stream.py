@@ -51,12 +51,11 @@ def run_session_background(
     session: AgentSession,
     sprite: Sprite,
     timeout: float,
-    cleanup_fn,
 ):
     """Run agent in a background thread, writing output to the database.
 
     POST /run starts this and returns immediately. Output is persisted to
-    AgentSessionLog rows. The Sprite is cleaned up when execution finishes.
+    AgentSessionLog rows.
     """
     output_q: queue.Queue = queue.Queue(maxsize=4096)
     db_buffer: list[AgentSessionLog] = []
@@ -127,12 +126,6 @@ def run_session_background(
         session.status = "failed"
 
     session.save(update_fields=["status", "exit_code", "updated_at"])
-
-    # Cleanup sprite
-    try:
-        cleanup_fn()
-    except Exception:
-        logger.warning("Failed to cleanup Sprite %s", session.sprite_name, exc_info=True)
 
 
 def stream_session_from_db(session_id: str) -> Generator[str, None, None]:
