@@ -140,10 +140,50 @@ def _build_mcp_claude(servers: list[McpServerSpec]) -> str:
     )
 
 
-def _build_mcp_codex(servers: list[McpServerSpec]) -> str:
-    """Generate Codex MCP config TOML and write command."""
-    lines = ["# MCP server configuration", "mkdir -p ~/.codex"]
+def _codex_top_level_keys(tools: list[dict]) -> list[str]:
+    """Derive top-level codex config.toml keys from Managed-Agents tools.
+
+    Only two canonical tools have per-tool codex enforcement:
+    - `web_search`: top-level `web_search = "disabled"`
+    - `write` + `edit` together: `sandbox_mode = "read-only"`
+
+    bash/read/glob/grep/web_fetch have no per-tool codex equivalent and are
+    accepted silently.
+    """
+    toolset = _find_agent_toolset(tools)
+    if toolset is None:
+        return []
+    default_enabled = toolset.get("default_config", {}).get("enabled", True)
+    configs = {c["name"]: c.get("enabled", True) for c in toolset.get("configs", [])}
+
+    def tool_enabled(name: str) -> bool:
+        return configs.get(name, default_enabled)
+
+    lines: list[str] = []
+    if not tool_enabled("web_search"):
+        lines.append('web_search = "disabled"')
+    if not tool_enabled("write") and not tool_enabled("edit"):
+        lines.append('sandbox_mode = "read-only"')
+    return lines
+
+
+def _build_mcp_codex(
+    servers: list[McpServerSpec],
+    tools: list[dict] | None = None,
+) -> str:
+    """Generate Codex config TOML (MCP servers + tool enforcement keys)."""
+    tools = tools or []
+    top_level = _codex_top_level_keys(tools)
+
+    if not servers and not top_level:
+        return ""
+
+    lines = ["# Codex configuration (MCP + tool enforcement)", "mkdir -p ~/.codex"]
     lines.append("cat > ~/.codex/config.toml << 'MCP_EOF'")
+    if top_level:
+        lines.extend(top_level)
+        if servers:
+            lines.append("")
     for s in servers:
         lines.append(f"[mcp_servers.{s.name}]")
         if s.type == "url":
@@ -193,15 +233,24 @@ def _build_mcp_gemini(servers: list[McpServerSpec]) -> str:
     )
 
 
-def _build_mcp_section(runtime_name: str, servers: list[McpServerSpec]) -> str:
-    """Build MCP config section for the wrapper script."""
+def _build_mcp_section(
+    runtime_name: str,
+    servers: list[McpServerSpec],
+    tools: list[dict] | None = None,
+) -> str:
+    """Build MCP config section for the wrapper script.
+
+    Codex folds tool-enforcement keys into the same config.toml it uses for MCP,
+    so `tools` is threaded through here. Other runtimes emit tool enforcement via
+    the separate `_tool_files_*` path.
+    """
+    if runtime_name == "codex":
+        return _build_mcp_codex(servers, tools=tools)
     if not servers:
         return ""
     if runtime_name in ("claude", "claude-oauth"):
         return _build_mcp_claude(servers)
-    elif runtime_name == "codex":
-        return _build_mcp_codex(servers)
-    elif runtime_name == "gemini":
+    if runtime_name == "gemini":
         return _build_mcp_gemini(servers)
     return ""
 
@@ -215,6 +264,171 @@ def _mcp_cmd_flags(runtime_name: str, servers: list[McpServerSpec]) -> str:
     return ""
 
 
+_CLAUDE_TOOL_NAMES: dict[str, str] = {
+    "bash": "Bash",
+    "read": "Read",
+    "write": "Write",
+    "edit": "Edit",
+    "glob": "Glob",
+    "grep": "Grep",
+    "web_fetch": "WebFetch",
+    "web_search": "WebSearch",
+}
+
+
+def _find_agent_toolset(tools: list[dict]) -> dict | None:
+    for t in tools:
+        if t.get("type") == "agent_toolset_20260401":
+            return t
+    return None
+
+
+def _tool_flags_claude(tools: list[dict], mcp_server_names: list[str]) -> str:
+    """Translate Managed-Agents tools spec → claude CLI flags.
+
+    default_config.enabled=False → `--tools "<enabled>"` allowlist (empty string disables all)
+    default_config.enabled=True (or missing) with per-tool disabled → `--disallowedTools "..."`
+    mcp_toolset entries extend the allowlist with `mcp__<server>`.
+    """
+    toolset = _find_agent_toolset(tools)
+    mcp_refs = [
+        t["mcp_server_name"] for t in tools
+        if t.get("type") == "mcp_toolset" and "mcp_server_name" in t
+    ]
+
+    if toolset is None:
+        return ""
+
+    default_enabled = toolset.get("default_config", {}).get("enabled", True)
+    configs = {c["name"]: c.get("enabled", True) for c in toolset.get("configs", [])}
+
+    if not default_enabled:
+        enabled_tools = [
+            _CLAUDE_TOOL_NAMES[name]
+            for name in _CLAUDE_TOOL_NAMES
+            if configs.get(name, False)
+        ]
+        enabled_tools += [f"mcp__{name}" for name in mcp_refs]
+        return f' --tools "{",".join(enabled_tools)}"'
+
+    disabled_tools = [
+        _CLAUDE_TOOL_NAMES[name]
+        for name, enabled in configs.items()
+        if name in _CLAUDE_TOOL_NAMES and not enabled
+    ]
+    if not disabled_tools:
+        return ""
+    return f' --disallowedTools "{",".join(disabled_tools)}"'
+
+
+_GEMINI_TOOL_NAMES: dict[str, list[str]] = {
+    "bash": ["run_shell_command"],
+    "read": ["read_file"],
+    "write": ["write_file", "replace"],
+    "edit": ["replace"],
+    "glob": ["glob"],
+    "grep": ["grep_search"],
+    "web_fetch": ["web_fetch"],
+    "web_search": ["google_web_search"],
+}
+
+GEMINI_POLICY_PATH = "/home/sprite/.gemini/policies/fairy.toml"
+
+
+def _gemini_names_toml(names: list[str]) -> str:
+    return "[" + ", ".join(f'"{n}"' for n in names) + "]"
+
+
+def _tool_files_gemini(tools: list[dict]) -> dict[str, str]:
+    """Translate Managed-Agents tools spec → Gemini Policy Engine TOML.
+
+    Written to ~/.gemini/policies/fairy.toml; loaded on every gemini invocation
+    (including --resume), so restrictions persist across multi-turn sessions.
+
+    default_config.enabled=False → deny-all catch-all + allow-rules for enabled tools
+    default_config.enabled=True  → per-tool deny rules for each disabled tool
+    """
+    toolset = _find_agent_toolset(tools)
+    if toolset is None:
+        return {}
+    default_enabled = toolset.get("default_config", {}).get("enabled", True)
+    configs = {c["name"]: c.get("enabled", True) for c in toolset.get("configs", [])}
+
+    rules: list[str] = []
+
+    if not default_enabled:
+        rules.append(
+            "[[rule]]\n"
+            'toolName = "*"\n'
+            'decision = "deny"\n'
+            "priority = 1\n"
+            "interactive = false"
+        )
+        allowed: list[str] = []
+        for canonical, enabled in configs.items():
+            if enabled and canonical in _GEMINI_TOOL_NAMES:
+                allowed.extend(_GEMINI_TOOL_NAMES[canonical])
+        if allowed:
+            rules.append(
+                "[[rule]]\n"
+                f"toolName = {_gemini_names_toml(allowed)}\n"
+                'decision = "allow"\n'
+                "priority = 100\n"
+                "interactive = false"
+            )
+    else:
+        for canonical, enabled in configs.items():
+            if enabled or canonical not in _GEMINI_TOOL_NAMES:
+                continue
+            rules.append(
+                "[[rule]]\n"
+                f"toolName = {_gemini_names_toml(_GEMINI_TOOL_NAMES[canonical])}\n"
+                'decision = "deny"\n'
+                "interactive = false"
+            )
+
+    if not rules:
+        return {}
+    return {GEMINI_POLICY_PATH: "\n\n".join(rules) + "\n"}
+
+
+def _build_tool_flags(
+    runtime_name: str,
+    tools: list[dict],
+    mcp_server_names: list[str],
+) -> tuple[str, dict[str, str]]:
+    """Translate Agent.tools into runtime-specific enforcement.
+
+    Returns (cli_flags, files):
+      cli_flags — extra flags appended to the exec line (leading space if non-empty)
+      files     — {absolute_path: content} to write as heredoc blocks before exec
+
+    Codex folds its tool enforcement into the MCP config.toml instead of using
+    this path — it returns ("", {}) here. See `_build_mcp_codex`.
+    """
+    if not tools:
+        return "", {}
+    if runtime_name in ("claude", "claude-oauth"):
+        return _tool_flags_claude(tools, mcp_server_names), {}
+    if runtime_name == "gemini":
+        return "", _tool_files_gemini(tools)
+    return "", {}
+
+
+def _format_tool_files_heredoc(files: dict[str, str]) -> str:
+    """Render file writes as mkdir + heredoc blocks for the wrapper script."""
+    if not files:
+        return ""
+    blocks: list[str] = ["# Tool enforcement files"]
+    for path, content in files.items():
+        parent = path.rsplit("/", 1)[0] if "/" in path else "."
+        blocks.append(f"mkdir -p {shlex.quote(parent)}")
+        blocks.append(f"cat > {shlex.quote(path)} << 'TOOLFILE_EOF'")
+        blocks.append(content.rstrip("\n"))
+        blocks.append("TOOLFILE_EOF")
+    return "\n".join(blocks)
+
+
 def build_wrapper_script(
     config: RuntimeConfig,
     api_key: str,
@@ -224,6 +438,7 @@ def build_wrapper_script(
     repos: list[RepoSpec] | None = None,
     environment: EnvironmentSetup | None = None,
     mcp_servers: list[McpServerSpec] | None = None,
+    tools: list[dict] | None = None,
 ) -> str:
     """Build a shell script that exports the API key and runs the agent.
 
@@ -242,8 +457,12 @@ def build_wrapper_script(
         packages_section = _build_packages_section(environment.packages)
         setup_section = _build_setup_script_section(environment.setup_script)
 
-    mcp_section = _build_mcp_section(config.name, mcp_servers or [])
+    mcp_section = _build_mcp_section(config.name, mcp_servers or [], tools=tools)
     mcp_flags = _mcp_cmd_flags(config.name, mcp_servers or [])
+
+    mcp_names = [s.name for s in (mcp_servers or [])]
+    tool_flags, tool_files = _build_tool_flags(config.name, tools or [], mcp_names)
+    tool_files_section = _format_tool_files_heredoc(tool_files)
 
     return f"""#!/bin/bash
 set -euo pipefail
@@ -268,5 +487,7 @@ fi
 
 {mcp_section}
 
-exec {cmd}{mcp_flags}
+{tool_files_section}
+
+exec {cmd}{mcp_flags}{tool_flags}
 """

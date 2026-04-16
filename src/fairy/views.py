@@ -222,9 +222,11 @@ def create_session(request):
             )
 
         mcp_specs = _mcp_servers_to_specs(agent_obj.mcp_servers) if agent_obj else []
+        agent_tools = agent_obj.tools if agent_obj else []
         script = build_wrapper_script(
             config, api_key, effective_prompt,
             repos=repo_specs, environment=env_setup, mcp_servers=mcp_specs,
+            tools=agent_tools,
         )
         (fs / "run-agent.sh").write_text(script)
         sprite.command("chmod", "+x", "/run-agent.sh").run()
@@ -373,9 +375,24 @@ def send_prompt(request, session_id):
     except SpriteError as e:
         return JsonResponse({"detail": f"Sprite not found: {e}"}, status=404)
 
+    agent_tools: list = []
+    mcp_specs: list = []
+    if session.agent_id:
+        try:
+            agent_obj = Agent.objects.get(pk=session.agent_id)
+            agent_tools = agent_obj.tools
+            mcp_specs = _mcp_servers_to_specs(agent_obj.mcp_servers)
+        except Agent.DoesNotExist:
+            pass
+
     try:
         fs = sprite.filesystem()
-        script = build_wrapper_script(config, api_key, req.prompt, continue_session=True)
+        script = build_wrapper_script(
+            config, api_key, req.prompt,
+            continue_session=True,
+            mcp_servers=mcp_specs,
+            tools=agent_tools,
+        )
         (fs / "run-agent.sh").write_text(script)
     except SpriteError as e:
         return JsonResponse({"detail": f"Failed to prepare Sprite: {e}"}, status=502)
@@ -461,7 +478,7 @@ def delete_session(request, session_id):
 AGENT_VERSIONED_FIELDS = ("name", "description", "system", "model", "runtime", "environment", "skills", "tools", "mcp_servers", "metadata")
 
 
-VALID_TOOL_TYPES = {"agent_toolset_20260401", "mcp_toolset", "custom"}
+VALID_TOOL_TYPES = {"agent_toolset_20260401", "mcp_toolset"}
 VALID_MCP_SERVER_TYPES = {"url", "stdio"}
 
 
@@ -476,10 +493,6 @@ def _validate_tools(tools: list) -> list:
                 f"tools[{i}]: unknown type {tool['type']!r}. "
                 f"Must be one of: {sorted(VALID_TOOL_TYPES)}"
             )
-        if tool["type"] == "custom":
-            for field_name in ("name", "description", "input_schema"):
-                if field_name not in tool:
-                    raise ValueError(f"tools[{i}] (custom): missing required field: {field_name}")
         if tool["type"] == "mcp_toolset" and "mcp_server_name" not in tool:
             raise ValueError(f"tools[{i}] (mcp_toolset): missing required field: mcp_server_name")
     return tools

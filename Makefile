@@ -31,6 +31,11 @@ test-e2e:
 test-e2e-fast:
 	uv run pytest tests/e2e -v -n $(E2E_WORKERS) --dist loadfile -m "not slow"
 
+# Tool-enforcement matrix — ~11 real sessions across runtimes.
+# Requires FAIRY_API_TOKEN. Respects E2E_RUNTIMES to subset runtimes.
+test-e2e-tools:
+	uv run pytest tests/e2e/test_agent_tools.py -v -m "tool_matrix"
+
 # Run everything — unit + e2e. E2E auto-skips if FAIRY_API_TOKEN is unset.
 test-all:
 	uv run pytest tests/ -v

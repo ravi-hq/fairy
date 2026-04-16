@@ -30,4 +30,5 @@ DJANGO_SETTINGS_MODULE = "config.settings"
 pythonpath = ["src"]
 markers = [
     "slow: tests that create real agent sessions (may take minutes)",
+    "tool_matrix: verifies agent tool enforcement across runtimes",
 ]
