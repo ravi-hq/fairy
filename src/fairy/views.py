@@ -294,7 +294,6 @@ def get_session(request, session_id):
         "runtime": session.runtime,
         "status": session.status,
         "exit_code": session.exit_code,
-        "sprite_name": session.sprite_name or None,
         "created_at": session.created_at.isoformat(),
         "updated_at": session.updated_at.isoformat(),
         "resources": _serialize_resources(session),

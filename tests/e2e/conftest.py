@@ -229,20 +229,6 @@ def api(fairy_url, fairy_token):
     return FairyClient(fairy_url, fairy_token)
 
 
-@pytest.fixture(scope="session")
-def sprites_client():
-    """Direct sprites-py client for tests that need to probe the same Sprite a
-    Fairy session is using. Skips when SPRITES_TOKEN isn't set in the test
-    runner's env (it's separate from FAIRY_API_TOKEN — Fairy has its own copy
-    server-side; tests need their own to reach the Sprite directly)."""
-    token = os.environ.get("SPRITES_TOKEN")
-    if not token:
-        pytest.skip("SPRITES_TOKEN not set")
-    from sprites import SpritesClient
-    base_url = os.environ.get("SPRITES_BASE_URL", "https://api.sprites.dev")
-    return SpritesClient(token=token, base_url=base_url)
-
-
 
 
 # ---------------------------------------------------------------------------
