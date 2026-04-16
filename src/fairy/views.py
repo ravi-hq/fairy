@@ -10,7 +10,8 @@ from django.views.decorators.http import require_GET, require_POST
 from pydantic import BaseModel, Field, ValidationError
 from sprites import SpritesClient, SpriteError
 
-from fairy.models import AgentSession
+from fairy.auth import require_api_key
+from fairy.models import AgentSession, UserRuntimeKey
 from fairy.runtimes import RUNTIMES
 from fairy.sprites_exec import build_wrapper_script
 from fairy.stream import run_session_background, stream_session_from_db
@@ -25,10 +26,18 @@ def _get_client() -> SpritesClient:
     )
 
 
+def _get_runtime_key(user, runtime: str) -> str | None:
+    """Look up the user's stored API key for a runtime."""
+    try:
+        urk = UserRuntimeKey.objects.get(user=user, runtime=runtime)
+        return urk.get_api_key()
+    except UserRuntimeKey.DoesNotExist:
+        return None
+
+
 class RunRequest(BaseModel):
     runtime: str = Field(description="AI runtime: claude, codex, or gemini")
     prompt: str = Field(description="The prompt to send to the agent")
-    api_key: str = Field(description="API key for the chosen runtime")
     timeout: int = Field(default=600, ge=10, le=3600, description="Max seconds")
 
 
@@ -39,6 +48,7 @@ def health(request):
 
 @csrf_exempt
 @require_POST
+@require_api_key
 def create_session(request):
     """Create a session, start execution in background, return session info."""
     try:
@@ -57,6 +67,13 @@ def create_session(request):
             status=400,
         )
 
+    api_key = _get_runtime_key(request.user, req.runtime)
+    if api_key is None:
+        return JsonResponse(
+            {"detail": f"No API key configured for runtime: {req.runtime}"},
+            status=400,
+        )
+
     config = RUNTIMES[req.runtime]
     name = f"{settings.SPRITE_NAME_PREFIX}-{uuid.uuid4().hex[:12]}"
     client = _get_client()
@@ -68,7 +85,7 @@ def create_session(request):
 
     try:
         fs = sprite.filesystem()
-        script = build_wrapper_script(config, req.api_key, req.prompt)
+        script = build_wrapper_script(config, api_key, req.prompt)
         (fs / "run-agent.sh").write_text(script)
         sprite.command("chmod", "+x", "/run-agent.sh").run()
     except SpriteError as e:
@@ -80,6 +97,7 @@ def create_session(request):
 
     # Create session record
     session = AgentSession.objects.create(
+        user=request.user,
         runtime=req.runtime,
         prompt=req.prompt,
         sprite_name=name,
@@ -105,10 +123,11 @@ def create_session(request):
 
 
 @require_GET
+@require_api_key
 def get_session(request, session_id):
     """Return session metadata."""
     try:
-        session = AgentSession.objects.get(pk=session_id)
+        session = AgentSession.objects.get(pk=session_id, user=request.user)
     except (AgentSession.DoesNotExist, ValueError):
         return JsonResponse({"detail": "Session not found"}, status=404)
 
@@ -123,13 +142,14 @@ def get_session(request, session_id):
 
 
 @require_GET
+@require_api_key
 def stream_session(request, session_id):
     """Stream session logs via SSE.
 
     Works during execution (live tail) and after completion (full replay).
     """
     try:
-        session = AgentSession.objects.get(pk=session_id)
+        session = AgentSession.objects.get(pk=session_id, user=request.user)
     except (AgentSession.DoesNotExist, ValueError):
         return JsonResponse({"detail": "Session not found"}, status=404)
 
@@ -150,16 +170,16 @@ def stream_session(request, session_id):
 
 class PromptRequest(BaseModel):
     prompt: str = Field(description="The prompt to send to the agent")
-    api_key: str = Field(description="API key for the runtime")
     timeout: int = Field(default=600, ge=10, le=3600, description="Max seconds")
 
 
 @csrf_exempt
 @require_POST
+@require_api_key
 def send_prompt(request, session_id):
     """Send a subsequent prompt to an existing session's Sprite."""
     try:
-        session = AgentSession.objects.get(pk=session_id)
+        session = AgentSession.objects.get(pk=session_id, user=request.user)
     except (AgentSession.DoesNotExist, ValueError):
         return JsonResponse({"detail": "Session not found"}, status=404)
 
@@ -176,6 +196,13 @@ def send_prompt(request, session_id):
     except ValidationError as e:
         return JsonResponse({"detail": e.errors()}, status=422)
 
+    api_key = _get_runtime_key(request.user, session.runtime)
+    if api_key is None:
+        return JsonResponse(
+            {"detail": f"No API key configured for runtime: {session.runtime}"},
+            status=400,
+        )
+
     config = RUNTIMES[session.runtime]
     client = _get_client()
 
@@ -186,7 +213,7 @@ def send_prompt(request, session_id):
 
     try:
         fs = sprite.filesystem()
-        script = build_wrapper_script(config, req.api_key, req.prompt, continue_session=True)
+        script = build_wrapper_script(config, api_key, req.prompt, continue_session=True)
         (fs / "run-agent.sh").write_text(script)
     except SpriteError as e:
         return JsonResponse({"detail": f"Failed to prepare Sprite: {e}"}, status=502)
@@ -216,13 +243,14 @@ def send_prompt(request, session_id):
 
 
 @csrf_exempt
+@require_api_key
 def delete_session(request, session_id):
     """Delete a session's Sprite."""
     if request.method != "DELETE":
         return JsonResponse({"detail": "Method not allowed"}, status=405)
 
     try:
-        session = AgentSession.objects.get(pk=session_id)
+        session = AgentSession.objects.get(pk=session_id, user=request.user)
     except (AgentSession.DoesNotExist, ValueError):
         return JsonResponse({"detail": "Session not found"}, status=404)
 

@@ -7,3 +7,5 @@ __pycache__/
 dist/
 .env
 *.db
+fairy.db-shm
+fairy.db-wal
