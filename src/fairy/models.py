@@ -6,7 +6,7 @@ from django.conf import settings
 from django.db import models
 
 from fairy.crypto import decrypt, encrypt
-from fairy.runtimes import RUNTIMES
+from fairy.runtimes import RUNTIMES, AgentModel
 
 
 class APIKey(models.Model):
@@ -81,11 +81,15 @@ class AgentSession(models.Model):
         ("running", "Running"),
         ("completed", "Completed"),
         ("failed", "Failed"),
+        ("terminated", "Terminated"),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="agent_sessions"
+    )
+    agent = models.ForeignKey(
+        "Agent", on_delete=models.SET_NULL, null=True, blank=True, related_name="sessions"
     )
     runtime = models.CharField(max_length=32)
     prompt = models.TextField()
@@ -100,6 +104,88 @@ class AgentSession(models.Model):
 
     def __str__(self):
         return f"{self.runtime} — {self.status} ({self.id})"
+
+
+class SessionResource(models.Model):
+    RESOURCE_TYPE_CHOICES = [
+        ("github_repository", "GitHub Repository"),
+    ]
+
+    session = models.ForeignKey(
+        AgentSession, on_delete=models.CASCADE, related_name="resources"
+    )
+    resource_type = models.CharField(max_length=32, choices=RESOURCE_TYPE_CHOICES)
+    url = models.URLField(max_length=500)
+    mount_path = models.CharField(max_length=500)
+    encrypted_token = models.BinaryField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "session_resources"
+
+    def __str__(self):
+        return f"{self.resource_type}: {self.url} → {self.mount_path}"
+
+    def set_token(self, raw_token: str):
+        self.encrypted_token = encrypt(raw_token)
+
+    def get_token(self) -> str | None:
+        if not self.encrypted_token:
+            return None
+        return decrypt(bytes(self.encrypted_token))
+
+
+class Agent(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="agents"
+    )
+    name = models.CharField(max_length=200)
+    description = models.TextField(blank=True, default="")
+    system = models.TextField(blank=True, default="")
+    model = models.CharField(max_length=100, choices=AgentModel.choices())
+    runtime = models.CharField(max_length=32, choices=[(name, name) for name in RUNTIMES])
+    skills = models.JSONField(default=list, blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
+    version = models.PositiveIntegerField(default=1)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    archived_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "agents"
+
+    def __str__(self):
+        return f"{self.name} v{self.version} ({self.id})"
+
+    @property
+    def is_archived(self) -> bool:
+        return self.archived_at is not None
+
+
+class AgentVersion(models.Model):
+    agent = models.ForeignKey(Agent, on_delete=models.CASCADE, related_name="versions")
+    version = models.PositiveIntegerField()
+    name = models.CharField(max_length=200)
+    description = models.TextField(blank=True, default="")
+    system = models.TextField(blank=True, default="")
+    model = models.CharField(max_length=100)
+    runtime = models.CharField(max_length=32)
+    skills = models.JSONField(default=list, blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "agent_versions"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["agent", "version"], name="unique_agent_version"
+            ),
+        ]
+        ordering = ["-version"]
+
+    def __str__(self):
+        return f"{self.agent.name} v{self.version}"
 
 
 class AgentSessionLog(models.Model):

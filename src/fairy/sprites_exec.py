@@ -1,10 +1,59 @@
+from __future__ import annotations
+
 import shlex
+from dataclasses import dataclass
 
 from fairy.runtimes import RuntimeConfig
 
 
+@dataclass(frozen=True)
+class RepoSpec:
+    url: str
+    mount_path: str
+    token: str | None = None
+
+
+def _build_clone_section(repos: list[RepoSpec]) -> str:
+    if not repos:
+        return ""
+
+    lines = ["# Clone GitHub repositories"]
+
+    # Set up git credential helper so tokens don't appear in process args
+    cred_lines: list[str] = []
+    for repo in repos:
+        if repo.token:
+            cred_lines.append(
+                f"https://{repo.token}:x-oauth-basic@github.com"
+            )
+    if cred_lines:
+        # Write credentials file and configure git to use it
+        lines.append("cat > /tmp/.git-credentials << 'CREDENTIALS_EOF'")
+        for line in cred_lines:
+            lines.append(line)
+        lines.append("CREDENTIALS_EOF")
+        lines.append("git config --global credential.helper 'store --file=/tmp/.git-credentials'")
+
+    for repo in repos:
+        mount = shlex.quote(repo.mount_path)
+        url = shlex.quote(repo.url)
+        lines.append(f"git clone --depth=1 --quiet {url} {mount}")
+
+    # Clean up credentials after all clones complete
+    if cred_lines:
+        lines.append("rm -f /tmp/.git-credentials")
+        lines.append("git config --global --unset credential.helper")
+
+    return "\n".join(lines)
+
+
 def build_wrapper_script(
-    config: RuntimeConfig, api_key: str, prompt: str, *, continue_session: bool = False
+    config: RuntimeConfig,
+    api_key: str,
+    prompt: str,
+    *,
+    continue_session: bool = False,
+    repos: list[RepoSpec] | None = None,
 ) -> str:
     """Build a shell script that exports the API key and runs the agent.
 
@@ -13,6 +62,7 @@ def build_wrapper_script(
     2. env= appears in WebSocket URL query params (API key in server logs)
     """
     cmd = config.continue_cmd if continue_session else config.cmd
+    clone_section = _build_clone_section(repos or [])
     return f"""#!/bin/bash
 set -euo pipefail
 export {config.env_var}={shlex.quote(api_key)}
@@ -26,6 +76,8 @@ if [ ! -d .git ]; then
     git add -A 2>/dev/null || true
     git commit -q -m "init" --allow-empty 2>/dev/null || true
 fi
+
+{clone_section}
 
 exec {cmd}
 """

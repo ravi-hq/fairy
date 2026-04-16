@@ -156,8 +156,10 @@ def stream_session_from_db(session_id: str) -> Generator[str, None, None]:
 
         # Check if session is done
         session = AgentSession.objects.get(pk=session_id)
-        if session.status in ("completed", "failed") and not chunks:
-            if session.status == "failed" and session.exit_code is None:
+        if session.status in ("completed", "failed", "terminated") and not chunks:
+            if session.status == "terminated":
+                yield json.dumps({"type": "terminated", "message": "Session terminated"})
+            elif session.status == "failed" and session.exit_code is None:
                 yield json.dumps({"type": "error", "message": "Session failed"})
             else:
                 yield json.dumps({"type": "exit", "code": session.exit_code})

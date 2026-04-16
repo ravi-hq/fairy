@@ -3,7 +3,9 @@ from django.contrib import admin, messages
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth.models import User
 
-from fairy.models import APIKey, AgentSession, AgentSessionLog, UserRuntimeKey
+from sprites import SpritesClient, SpriteError
+
+from fairy.models import Agent, AgentVersion, APIKey, AgentSession, AgentSessionLog, UserRuntimeKey
 
 
 class APIKeyInline(admin.TabularInline):
@@ -95,6 +97,22 @@ class UserRuntimeKeyAdmin(admin.ModelAdmin):
         return ("user", "runtime", "api_key", "created_at", "updated_at")
 
 
+class AgentVersionInline(admin.TabularInline):
+    model = AgentVersion
+    extra = 0
+    fields = ("version", "name", "model", "runtime", "created_at")
+    readonly_fields = ("version", "name", "model", "runtime", "created_at")
+
+
+@admin.register(Agent)
+class AgentAdmin(admin.ModelAdmin):
+    list_display = ("name", "user", "model", "runtime", "version", "archived_at", "created_at")
+    list_filter = ("runtime",)
+    search_fields = ("name", "user__email", "description")
+    readonly_fields = ("id", "version", "created_at", "updated_at", "archived_at")
+    inlines = [AgentVersionInline]
+
+
 class AgentSessionLogInline(admin.TabularInline):
     model = AgentSessionLog
     extra = 0
@@ -111,9 +129,36 @@ class AgentSessionAdmin(admin.ModelAdmin):
         "id", "user", "runtime", "prompt", "sprite_name", "status", "exit_code", "created_at", "updated_at"
     )
     inlines = [AgentSessionLogInline]
+    actions = ["terminate_sessions"]
 
     def has_add_permission(self, request):
         return False
+
+    @admin.action(description="Terminate selected sessions (destroy Sprites, keep records)")
+    def terminate_sessions(self, request, queryset):
+        from django.conf import settings
+
+        client = SpritesClient(
+            token=settings.SPRITES_TOKEN,
+            base_url=settings.SPRITES_BASE_URL,
+        )
+        terminated = 0
+        skipped = 0
+        for session in queryset.exclude(status="terminated"):
+            if session.sprite_name:
+                try:
+                    client.delete_sprite(session.sprite_name)
+                except SpriteError:
+                    pass
+            session.status = "terminated"
+            session.sprite_name = ""
+            session.save(update_fields=["status", "sprite_name", "updated_at"])
+            terminated += 1
+        skipped = queryset.filter(status="terminated").count()
+        msg = f"Terminated {terminated} session(s)."
+        if skipped:
+            msg += f" Skipped {skipped} already terminated."
+        messages.success(request, msg)
 
 
 @admin.register(AgentSessionLog)

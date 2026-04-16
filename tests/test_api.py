@@ -256,3 +256,60 @@ def test_stream_session_failed_with_no_exit_code(client: Client, auth_headers, u
     content = b"".join(resp.streaming_content).decode()
     assert '"type": "error"' in content
     assert "Session failed" in content
+
+
+@pytest.mark.django_db
+def test_terminate_session(client: Client, auth_headers, user, mocker):
+    """Terminate destroys the Sprite but keeps the session record."""
+    mock_client = mocker.MagicMock()
+    mocker.patch("fairy.views._get_client", return_value=mock_client)
+
+    session = AgentSession.objects.create(
+        user=user, runtime="claude", prompt="test", sprite_name="fairy-abc123", status="completed"
+    )
+    resp = client.post(f"/sessions/{session.id}/terminate", **auth_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "terminated"
+
+    session.refresh_from_db()
+    assert session.status == "terminated"
+    assert session.sprite_name == ""
+
+    mock_client.delete_sprite.assert_called_once_with("fairy-abc123")
+
+
+@pytest.mark.django_db
+def test_terminate_already_terminated(client: Client, auth_headers, user):
+    session = AgentSession.objects.create(
+        user=user, runtime="claude", prompt="test", sprite_name="", status="terminated"
+    )
+    resp = client.post(f"/sessions/{session.id}/terminate", **auth_headers)
+    assert resp.status_code == 409
+    assert "already terminated" in resp.json()["detail"]
+
+
+@pytest.mark.django_db
+def test_send_prompt_to_terminated_session(client: Client, auth_headers, user):
+    session = AgentSession.objects.create(
+        user=user, runtime="claude", prompt="test", sprite_name="", status="terminated"
+    )
+    resp = client.post(
+        f"/sessions/{session.id}/prompt",
+        data=json.dumps({"prompt": "hello"}),
+        content_type="application/json",
+        **auth_headers,
+    )
+    assert resp.status_code == 409
+    assert "terminated" in resp.json()["detail"]
+
+
+@pytest.mark.django_db
+def test_stream_terminated_session(client: Client, auth_headers, user):
+    """Stream endpoint yields terminated event for terminated sessions."""
+    session = AgentSession.objects.create(
+        user=user, runtime="claude", prompt="test", status="terminated"
+    )
+    resp = client.get(f"/sessions/{session.id}/stream", **auth_headers)
+    content = b"".join(resp.streaming_content).decode()
+    assert '"type": "terminated"' in content

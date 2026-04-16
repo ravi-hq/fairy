@@ -6,6 +6,8 @@ class FairyConfig(AppConfig):
     name = "fairy"
 
     def ready(self):
+        import fairy.signals  # noqa: F401 — register signal handlers
+
         from django.db.backends.signals import connection_created
 
         def _set_sqlite_pragmas(sender, connection, **kwargs):
