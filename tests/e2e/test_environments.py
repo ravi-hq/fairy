@@ -159,12 +159,11 @@ class TestEnvironmentInSession:
             ),
             timeout=300,
         )
-        result = api.wait_for_session(session["id"], timeout=300)
+        result, events = api.run_session(session["id"], timeout=300)
         assert result["status"] == "completed", (
             f"Session failed: status={result['status']}, exit={result.get('exit_code')}"
         )
 
-        events = api.collect_stream(session["id"])
         output = stream_all_output(events)
         assert "COWSAY_IMPORT_OK" in output, (
             f"Package import marker not found in output: {output[:500]}"
@@ -193,10 +192,9 @@ class TestEnvironmentInSession:
             ),
             timeout=180,
         )
-        result = api.wait_for_session(session["id"])
+        result, events = api.run_session(session["id"])
         assert result["status"] == "completed"
 
-        events = api.collect_stream(session["id"])
         output = stream_all_output(events)
         assert "magic_value_42" in output, (
             f"Env var value not found in output: {output[:500]}"
@@ -224,10 +222,9 @@ class TestEnvironmentInSession:
             ),
             timeout=180,
         )
-        result = api.wait_for_session(session["id"])
+        result, events = api.run_session(session["id"])
         assert result["status"] == "completed"
 
-        events = api.collect_stream(session["id"])
         output = stream_all_output(events)
         assert "FAIRY_SETUP_COMPLETE" in output, (
             f"Setup marker not found in output: {output[:500]}"
@@ -260,10 +257,9 @@ class TestEnvironmentInSession:
             ),
             timeout=300,
         )
-        result = api.wait_for_session(session["id"], timeout=300)
+        result, events = api.run_session(session["id"], timeout=300)
         assert result["status"] == "completed"
 
-        events = api.collect_stream(session["id"])
         output = stream_all_output(events)
         assert "PKG_OK" in output, f"Package check failed: {output[:500]}"
         assert "combo_value" in output, f"Env var check failed: {output[:500]}"

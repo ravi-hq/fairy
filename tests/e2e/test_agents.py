@@ -386,10 +386,9 @@ class TestAgentSystemPrompt:
         )
         from tests.e2e.conftest import stream_all_output
 
-        result = api.wait_for_session(session["id"])
+        result, events = api.run_session(session["id"])
         assert result["status"] == "completed"
 
-        events = api.collect_stream(session["id"])
         output = stream_all_output(events)
         assert "FAIRY_SYSTEM_MARKER" in output, (
             f"System prompt marker not found in output: {output[:500]}"

@@ -165,6 +165,19 @@ class FairyClient:
             resp.close()
         return events
 
+    def run_session(self, sid, timeout=DEFAULT_TIMEOUT):
+        """Wait for a session to reach a terminal state via the SSE stream.
+
+        Returns (final_status_dict, events). Single network roundtrip — no
+        polling — so it eliminates the 0–2s jitter of `wait_for_session`. Use
+        this instead of `wait_for_session` + `collect_stream` when the test
+        needs both.
+        """
+        events = self.collect_stream(sid, timeout=timeout)
+        resp = self.get_session(sid)
+        resp.raise_for_status()
+        return resp.json(), events
+
 
 def stream_stdout(events: list[dict]) -> str:
     """Concatenate all stdout data from stream events."""
@@ -279,8 +292,9 @@ def create_session(api):
 
     for sid in created:
         try:
-            # Wait for any running session to finish before terminating
-            api.wait_for_session(sid, timeout=30, poll=2)
+            # Stream-based wait beats polling and naturally returns instantly
+            # for sessions that already completed.
+            api.collect_stream(sid, timeout=30)
         except Exception:
             pass
         try:

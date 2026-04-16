@@ -16,12 +16,20 @@ test:
 FAIRY_API_URL ?= http://localhost:8777
 export FAIRY_API_URL
 
+# E2E_RUNTIMES ?= "claude,codex,gemini,claude-oauth"
+# export E2E_RUNTIMES
+
+# Parallelism for e2e — `loadfile` keeps tests in the same file on the same
+# worker so per-runtime fixtures aren't recreated across workers. Override with
+# E2E_WORKERS=1 for serial debugging.
+E2E_WORKERS ?= auto
+
 test-e2e:
-	uv run pytest tests/e2e -v
+	uv run pytest tests/e2e -v -n $(E2E_WORKERS) --dist loadfile
 
 # Same as test-e2e but skips @slow tests (no real sessions spawned).
 test-e2e-fast:
-	uv run pytest tests/e2e -v -m "not slow"
+	uv run pytest tests/e2e -v -n $(E2E_WORKERS) --dist loadfile -m "not slow"
 
 # Run everything — unit + e2e. E2E auto-skips if FAIRY_API_TOKEN is unset.
 test-all:
