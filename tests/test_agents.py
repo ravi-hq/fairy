@@ -366,15 +366,15 @@ def test_create_session_with_agent_inherits_runtime(client: Client, auth_headers
 
 
 @pytest.mark.django_db
-def test_create_session_no_runtime_no_agent(client: Client, auth_headers):
+def test_create_session_missing_agent_id(client: Client, auth_headers):
+    """agent_id is required for session creation."""
     resp = client.post(
         "/sessions",
         data=json.dumps({"prompt": "hello"}),
         content_type="application/json",
         **auth_headers,
     )
-    assert resp.status_code == 400
-    assert "runtime is required" in resp.json()["detail"]
+    assert resp.status_code == 422
 
 
 @pytest.mark.django_db

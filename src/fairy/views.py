@@ -103,11 +103,10 @@ class GitHubRepoResource(BaseModel):
 
 
 class RunRequest(BaseModel):
-    runtime: str | None = Field(default=None, description="AI runtime: claude, codex, or gemini")
+    agent_id: str = Field(description="Agent ID to use for this session")
     prompt: str = Field(description="The prompt to send to the agent")
     timeout: int = Field(default=600, ge=10, le=3600, description="Max seconds")
-    agent_id: str | None = Field(default=None, description="Agent ID to use for this session")
-    environment_id: str | None = Field(default=None, description="Environment ID for container setup")
+    environment_id: str | None = Field(default=None, description="Environment ID (overrides agent default)")
     resources: list[GitHubRepoResource] = Field(
         default_factory=list,
         description="GitHub repositories to clone into the session",
@@ -144,19 +143,17 @@ def create_session(request):
     except ValidationError as e:
         return JsonResponse({"detail": e.errors(include_context=False)}, status=422)
 
-    # Resolve agent if provided
-    agent_obj = None
-    if req.agent_id:
-        try:
-            agent_obj = Agent.objects.get(pk=req.agent_id, user=request.user)
-        except (Agent.DoesNotExist, ValueError):
-            return JsonResponse({"detail": "Agent not found"}, status=404)
-        if agent_obj.is_archived:
-            return JsonResponse({"detail": "Cannot create session with archived agent"}, status=409)
+    # Resolve agent (required)
+    try:
+        agent_obj = Agent.objects.get(pk=req.agent_id, user=request.user)
+    except (Agent.DoesNotExist, ValueError):
+        return JsonResponse({"detail": "Agent not found"}, status=404)
+    if agent_obj.is_archived:
+        return JsonResponse({"detail": "Cannot create session with archived agent"}, status=409)
 
-    # Resolve environment: explicit > agent > none
+    # Resolve environment: explicit > agent default > none
     environment_obj = None
-    env_id = req.environment_id or (agent_obj.environment_id if agent_obj else None)
+    env_id = req.environment_id or agent_obj.environment_id
     if env_id:
         try:
             environment_obj = Environment.objects.get(pk=env_id, user=request.user)
@@ -167,14 +164,8 @@ def create_session(request):
                 {"detail": "Cannot create session with archived environment"}, status=409
             )
 
-    # Runtime: explicit > agent > error
-    runtime = req.runtime or (agent_obj.runtime if agent_obj else None)
-    if not runtime:
-        return JsonResponse(
-            {"detail": "runtime is required (or provide agent_id with a configured runtime)"},
-            status=400,
-        )
-
+    # Runtime from agent
+    runtime = agent_obj.runtime
     if runtime not in RUNTIMES:
         return JsonResponse(
             {"detail": f"Unknown runtime: {runtime}. Must be one of: {list(RUNTIMES)}"},
@@ -203,7 +194,7 @@ def create_session(request):
 
         # Build the effective prompt: agent system prompt + user prompt
         effective_prompt = req.prompt
-        if agent_obj and agent_obj.system:
+        if agent_obj.system:
             effective_prompt = f"{agent_obj.system}\n\n{req.prompt}"
 
         env_setup = None

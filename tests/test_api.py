@@ -5,7 +5,7 @@ import pytest
 from django.contrib.auth.models import User
 from django.test import Client
 
-from fairy.models import APIKey, AgentSession, AgentSessionLog, UserRuntimeKey
+from fairy.models import Agent, APIKey, AgentSession, AgentSessionLog, UserRuntimeKey
 
 
 @pytest.fixture
@@ -36,6 +36,14 @@ def runtime_key(user):
     return urk
 
 
+@pytest.fixture
+def agent(user):
+    return Agent.objects.create(
+        user=user, name="Test Agent", model="claude-sonnet-4-6",
+        runtime="claude", version=1,
+    )
+
+
 @pytest.mark.django_db
 def test_health(client: Client):
     resp = client.get("/health")
@@ -53,7 +61,7 @@ def test_health_rejects_post(client: Client):
 def test_unauthenticated_request_rejected(client: Client):
     resp = client.post(
         "/sessions",
-        data=json.dumps({"runtime": "claude", "prompt": "hello"}),
+        data=json.dumps({"agent_id": str(uuid.uuid4()), "prompt": "hello"}),
         content_type="application/json",
     )
     assert resp.status_code == 401
@@ -63,7 +71,7 @@ def test_unauthenticated_request_rejected(client: Client):
 def test_invalid_api_key_rejected(client: Client):
     resp = client.post(
         "/sessions",
-        data=json.dumps({"runtime": "claude", "prompt": "hello"}),
+        data=json.dumps({"agent_id": str(uuid.uuid4()), "prompt": "hello"}),
         content_type="application/json",
         HTTP_AUTHORIZATION="Bearer fairy_invalid_key",
     )
@@ -77,7 +85,7 @@ def test_inactive_api_key_rejected(client: Client, api_key):
     instance.save()
     resp = client.post(
         "/sessions",
-        data=json.dumps({"runtime": "claude", "prompt": "hello"}),
+        data=json.dumps({"agent_id": str(uuid.uuid4()), "prompt": "hello"}),
         content_type="application/json",
         HTTP_AUTHORIZATION=f"Bearer {raw_key}",
     )
@@ -96,7 +104,7 @@ def test_run_invalid_json(client: Client, auth_headers):
 def test_run_missing_fields(client: Client, auth_headers):
     resp = client.post(
         "/sessions",
-        data=json.dumps({"runtime": "claude"}),
+        data=json.dumps({"agent_id": str(uuid.uuid4())}),
         content_type="application/json",
         **auth_headers,
     )
@@ -104,23 +112,23 @@ def test_run_missing_fields(client: Client, auth_headers):
 
 
 @pytest.mark.django_db
-def test_run_invalid_runtime(client: Client, auth_headers):
+def test_run_agent_not_found(client: Client, auth_headers):
     resp = client.post(
         "/sessions",
-        data=json.dumps({"runtime": "invalid", "prompt": "hello"}),
+        data=json.dumps({"agent_id": str(uuid.uuid4()), "prompt": "hello"}),
         content_type="application/json",
         **auth_headers,
     )
-    assert resp.status_code == 400
-    assert "Unknown runtime" in resp.json()["detail"]
+    assert resp.status_code == 404
+    assert "Agent not found" in resp.json()["detail"]
 
 
 @pytest.mark.django_db
-def test_run_no_runtime_key(client: Client, auth_headers):
-    """Authenticated but no UserRuntimeKey configured for the runtime."""
+def test_run_no_runtime_key(client: Client, auth_headers, agent):
+    """Authenticated but no UserRuntimeKey configured for the agent's runtime."""
     resp = client.post(
         "/sessions",
-        data=json.dumps({"runtime": "claude", "prompt": "hello"}),
+        data=json.dumps({"agent_id": str(agent.id), "prompt": "hello"}),
         content_type="application/json",
         **auth_headers,
     )
@@ -129,10 +137,10 @@ def test_run_no_runtime_key(client: Client, auth_headers):
 
 
 @pytest.mark.django_db
-def test_run_timeout_too_low(client: Client, auth_headers, runtime_key):
+def test_run_timeout_too_low(client: Client, auth_headers, runtime_key, agent):
     resp = client.post(
         "/sessions",
-        data=json.dumps({"runtime": "claude", "prompt": "hello", "timeout": 5}),
+        data=json.dumps({"agent_id": str(agent.id), "prompt": "hello", "timeout": 5}),
         content_type="application/json",
         **auth_headers,
     )
@@ -140,10 +148,10 @@ def test_run_timeout_too_low(client: Client, auth_headers, runtime_key):
 
 
 @pytest.mark.django_db
-def test_run_timeout_too_high(client: Client, auth_headers, runtime_key):
+def test_run_timeout_too_high(client: Client, auth_headers, runtime_key, agent):
     resp = client.post(
         "/sessions",
-        data=json.dumps({"runtime": "claude", "prompt": "hello", "timeout": 9999}),
+        data=json.dumps({"agent_id": str(agent.id), "prompt": "hello", "timeout": 9999}),
         content_type="application/json",
         **auth_headers,
     )
@@ -151,7 +159,7 @@ def test_run_timeout_too_high(client: Client, auth_headers, runtime_key):
 
 
 @pytest.mark.django_db
-def test_run_returns_202_with_session_id(client: Client, auth_headers, runtime_key, mocker):
+def test_run_returns_202_with_session_id(client: Client, auth_headers, runtime_key, agent, mocker):
     """POST /sessions returns 202 with session info (mock Sprites)."""
     mock_sprite = mocker.MagicMock()
     mock_fs = mocker.MagicMock()
@@ -169,7 +177,7 @@ def test_run_returns_202_with_session_id(client: Client, auth_headers, runtime_k
 
     resp = client.post(
         "/sessions",
-        data=json.dumps({"runtime": "claude", "prompt": "hello"}),
+        data=json.dumps({"agent_id": str(agent.id), "prompt": "hello"}),
         content_type="application/json",
         **auth_headers,
     )
@@ -180,12 +188,13 @@ def test_run_returns_202_with_session_id(client: Client, auth_headers, runtime_k
     assert "stream_url" in data
     assert data["stream_url"].startswith("/sessions/")
 
-    # Verify session was created in DB with correct user
+    # Verify session was created in DB with correct user and agent
     session = AgentSession.objects.get(pk=data["id"])
     assert session.runtime == "claude"
     assert session.status == "pending"
     assert session.prompt == "hello"
     assert session.user == runtime_key.user
+    assert session.agent == agent
 
 
 @pytest.mark.django_db

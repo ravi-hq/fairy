@@ -62,6 +62,14 @@ def environment(user):
 
 
 @pytest.fixture
+def agent(user):
+    return Agent.objects.create(
+        user=user, name="Test Agent", model="claude-sonnet-4-6",
+        runtime="claude", version=1,
+    )
+
+
+@pytest.fixture
 def mock_sprites(mocker):
     """Mock the Sprites client so create_session doesn't hit a real API."""
     mock_sprite = mocker.MagicMock()
@@ -439,13 +447,13 @@ class TestEnvironmentVersions:
 @pytest.mark.django_db
 class TestSessionEnvironmentIntegration:
     def test_create_session_with_environment(
-        self, client: Client, auth_headers, runtime_key, environment, mock_sprites
+        self, client: Client, auth_headers, runtime_key, environment, agent, mock_sprites
     ):
         _, mock_fs = mock_sprites
         resp = client.post(
             "/sessions",
             data=json.dumps({
-                "runtime": "claude",
+                "agent_id": str(agent.id),
                 "prompt": "analyze data",
                 "environment_id": str(environment.id),
             }),
@@ -516,7 +524,7 @@ class TestSessionEnvironmentIntegration:
         assert "pandas" not in written_script
 
     def test_create_session_with_archived_environment_rejected(
-        self, client: Client, auth_headers, runtime_key, environment
+        self, client: Client, auth_headers, runtime_key, environment, agent
     ):
         from django.utils import timezone
         environment.archived_at = timezone.now()
@@ -525,7 +533,7 @@ class TestSessionEnvironmentIntegration:
         resp = client.post(
             "/sessions",
             data=json.dumps({
-                "runtime": "claude",
+                "agent_id": str(agent.id),
                 "prompt": "hello",
                 "environment_id": str(environment.id),
             }),
@@ -536,12 +544,12 @@ class TestSessionEnvironmentIntegration:
         assert "archived environment" in resp.json()["detail"]
 
     def test_create_session_environment_not_found(
-        self, client: Client, auth_headers, runtime_key
+        self, client: Client, auth_headers, runtime_key, agent
     ):
         resp = client.post(
             "/sessions",
             data=json.dumps({
-                "runtime": "claude",
+                "agent_id": str(agent.id),
                 "prompt": "hello",
                 "environment_id": str(uuid.uuid4()),
             }),
@@ -562,12 +570,12 @@ class TestSessionEnvironmentIntegration:
         assert resp.status_code == 200
         assert resp.json()["environment_id"] == str(environment.id)
 
-    def test_session_without_environment_backward_compat(
-        self, client: Client, auth_headers, runtime_key, mock_sprites
+    def test_session_without_environment(
+        self, client: Client, auth_headers, runtime_key, agent, mock_sprites
     ):
         resp = client.post(
             "/sessions",
-            data=json.dumps({"runtime": "claude", "prompt": "hello"}),
+            data=json.dumps({"agent_id": str(agent.id), "prompt": "hello"}),
             content_type="application/json",
             **auth_headers,
         )

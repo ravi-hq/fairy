@@ -4,7 +4,7 @@ import pytest
 from django.contrib.auth.models import User
 from django.test import Client
 
-from fairy.models import AgentSession, APIKey, SessionResource, UserRuntimeKey
+from fairy.models import Agent, AgentSession, APIKey, SessionResource, UserRuntimeKey
 from fairy.runtimes import RUNTIMES
 from fairy.sprites_exec import RepoSpec, build_wrapper_script
 
@@ -35,6 +35,14 @@ def runtime_key(user):
     urk.set_api_key("fake-anthropic-key")
     urk.save()
     return urk
+
+
+@pytest.fixture
+def agent(user):
+    return Agent.objects.create(
+        user=user, name="Test Agent", model="claude-sonnet-4-6",
+        runtime="claude", version=1,
+    )
 
 
 @pytest.fixture
@@ -126,11 +134,11 @@ class TestBuildCloneSection:
 
 @pytest.mark.django_db
 class TestResourceValidation:
-    def test_invalid_github_url_rejected(self, client: Client, auth_headers, runtime_key):
+    def test_invalid_github_url_rejected(self, client: Client, auth_headers, runtime_key, agent):
         resp = client.post(
             "/sessions",
             data=json.dumps({
-                "runtime": "claude",
+                "agent_id": str(agent.id),
                 "prompt": "hello",
                 "resources": [
                     {"type": "github_repository", "url": "https://gitlab.com/org/repo"}
@@ -141,11 +149,11 @@ class TestResourceValidation:
         )
         assert resp.status_code == 422
 
-    def test_non_absolute_mount_path_rejected(self, client: Client, auth_headers, runtime_key):
+    def test_non_absolute_mount_path_rejected(self, client: Client, auth_headers, runtime_key, agent):
         resp = client.post(
             "/sessions",
             data=json.dumps({
-                "runtime": "claude",
+                "agent_id": str(agent.id),
                 "prompt": "hello",
                 "resources": [
                     {
@@ -160,11 +168,11 @@ class TestResourceValidation:
         )
         assert resp.status_code == 422
 
-    def test_sprite_root_mount_path_rejected(self, client: Client, auth_headers, runtime_key):
+    def test_sprite_root_mount_path_rejected(self, client: Client, auth_headers, runtime_key, agent):
         resp = client.post(
             "/sessions",
             data=json.dumps({
-                "runtime": "claude",
+                "agent_id": str(agent.id),
                 "prompt": "hello",
                 "resources": [
                     {
@@ -179,11 +187,11 @@ class TestResourceValidation:
         )
         assert resp.status_code == 422
 
-    def test_duplicate_mount_paths_rejected(self, client: Client, auth_headers, runtime_key):
+    def test_duplicate_mount_paths_rejected(self, client: Client, auth_headers, runtime_key, agent):
         resp = client.post(
             "/sessions",
             data=json.dumps({
-                "runtime": "claude",
+                "agent_id": str(agent.id),
                 "prompt": "hello",
                 "resources": [
                     {
@@ -203,7 +211,7 @@ class TestResourceValidation:
         )
         assert resp.status_code == 422
 
-    def test_too_many_resources_rejected(self, client: Client, auth_headers, runtime_key):
+    def test_too_many_resources_rejected(self, client: Client, auth_headers, runtime_key, agent):
         resources = [
             {
                 "type": "github_repository",
@@ -213,7 +221,11 @@ class TestResourceValidation:
         ]
         resp = client.post(
             "/sessions",
-            data=json.dumps({"runtime": "claude", "prompt": "hello", "resources": resources}),
+            data=json.dumps({
+                "agent_id": str(agent.id),
+                "prompt": "hello",
+                "resources": resources,
+            }),
             content_type="application/json",
             **auth_headers,
         )
@@ -226,12 +238,12 @@ class TestResourceValidation:
 @pytest.mark.django_db
 class TestResourcesIntegration:
     def test_create_session_with_resources(
-        self, client: Client, auth_headers, runtime_key, mock_sprites
+        self, client: Client, auth_headers, runtime_key, agent, mock_sprites
     ):
         resp = client.post(
             "/sessions",
             data=json.dumps({
-                "runtime": "claude",
+                "agent_id": str(agent.id),
                 "prompt": "review the code",
                 "resources": [
                     {
@@ -263,11 +275,11 @@ class TestResourcesIntegration:
         assert sr.get_token() == "ghp_secret123"
 
     def test_create_session_without_resources_backward_compatible(
-        self, client: Client, auth_headers, runtime_key, mock_sprites
+        self, client: Client, auth_headers, runtime_key, agent, mock_sprites
     ):
         resp = client.post(
             "/sessions",
-            data=json.dumps({"runtime": "claude", "prompt": "hello"}),
+            data=json.dumps({"agent_id": str(agent.id), "prompt": "hello"}),
             content_type="application/json",
             **auth_headers,
         )
@@ -276,12 +288,12 @@ class TestResourcesIntegration:
         assert data["resources"] == []
 
     def test_create_session_default_mount_path(
-        self, client: Client, auth_headers, runtime_key, mock_sprites
+        self, client: Client, auth_headers, runtime_key, agent, mock_sprites
     ):
         resp = client.post(
             "/sessions",
             data=json.dumps({
-                "runtime": "claude",
+                "agent_id": str(agent.id),
                 "prompt": "hello",
                 "resources": [
                     {"type": "github_repository", "url": "https://github.com/org/my-repo"}
@@ -295,12 +307,12 @@ class TestResourcesIntegration:
         assert data["resources"][0]["mount_path"] == "/workspace/my-repo"
 
     def test_create_session_public_repo_no_token(
-        self, client: Client, auth_headers, runtime_key, mock_sprites
+        self, client: Client, auth_headers, runtime_key, agent, mock_sprites
     ):
         resp = client.post(
             "/sessions",
             data=json.dumps({
-                "runtime": "claude",
+                "agent_id": str(agent.id),
                 "prompt": "hello",
                 "resources": [
                     {"type": "github_repository", "url": "https://github.com/org/public-repo"}
@@ -331,12 +343,12 @@ class TestResourcesIntegration:
         assert data["resources"][0]["url"] == "https://github.com/org/repo"
 
     def test_url_normalized_strips_dotgit(
-        self, client: Client, auth_headers, runtime_key, mock_sprites
+        self, client: Client, auth_headers, runtime_key, agent, mock_sprites
     ):
         resp = client.post(
             "/sessions",
             data=json.dumps({
-                "runtime": "claude",
+                "agent_id": str(agent.id),
                 "prompt": "hello",
                 "resources": [
                     {"type": "github_repository", "url": "https://github.com/org/repo.git"}
