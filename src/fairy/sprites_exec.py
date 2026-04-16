@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import json
 import shlex
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from fairy.runtimes import RuntimeConfig
 
@@ -19,6 +20,20 @@ class RepoSpec:
     url: str
     mount_path: str
     token: str | None = None
+
+
+@dataclass(frozen=True)
+class McpServerSpec:
+    """Normalized MCP server config, translated to runtime-specific format."""
+    name: str
+    type: str = "url"  # "url" or "stdio"
+    # For type: "url"
+    url: str = ""
+    headers: dict[str, str] = field(default_factory=dict)
+    # For type: "stdio"
+    command: str = ""
+    args: list[str] = field(default_factory=list)
+    env: dict[str, str] = field(default_factory=dict)
 
 
 PACKAGE_MANAGER_ORDER = ["apt", "cargo", "gem", "go", "npm", "pip"]
@@ -102,6 +117,104 @@ def _build_clone_section(repos: list[RepoSpec]) -> str:
     return "\n".join(lines)
 
 
+def _build_mcp_claude(servers: list[McpServerSpec]) -> str:
+    """Generate Claude MCP config JSON and write command."""
+    config: dict[str, dict] = {}
+    for s in servers:
+        if s.type == "url":
+            entry: dict = {"type": "http", "url": s.url}
+            if s.headers:
+                entry["headers"] = s.headers
+            config[s.name] = entry
+        elif s.type == "stdio":
+            entry = {"type": "stdio", "command": s.command, "args": s.args}
+            if s.env:
+                entry["env"] = s.env
+            config[s.name] = entry
+    content = json.dumps({"mcpServers": config}, indent=2)
+    return (
+        "# MCP server configuration\n"
+        "cat > /tmp/mcp.json << 'MCP_EOF'\n"
+        f"{content}\n"
+        "MCP_EOF\n"
+    )
+
+
+def _build_mcp_codex(servers: list[McpServerSpec]) -> str:
+    """Generate Codex MCP config TOML and write command."""
+    lines = ["# MCP server configuration", "mkdir -p ~/.codex"]
+    lines.append("cat > ~/.codex/config.toml << 'MCP_EOF'")
+    for s in servers:
+        lines.append(f"[mcp_servers.{s.name}]")
+        if s.type == "url":
+            lines.append(f'url = "{s.url}"')
+            for key, val in s.headers.items():
+                # Codex uses bearer_token_env_var for auth
+                if key.lower() == "authorization" and val.startswith("Bearer "):
+                    # If it's an env var reference like ${TOKEN}, extract the var name
+                    token = val.removeprefix("Bearer ").strip()
+                    if token.startswith("${") and token.endswith("}"):
+                        lines.append(f'bearer_token_env_var = "{token[2:-1]}"')
+            lines.append("required = true")
+        elif s.type == "stdio":
+            lines.append(f'command = "{s.command}"')
+            if s.args:
+                args_str = ", ".join(f'"{a}"' for a in s.args)
+                lines.append(f"args = [{args_str}]")
+            if s.env:
+                lines.append(f"[mcp_servers.{s.name}.env]")
+                for key, val in s.env.items():
+                    lines.append(f'{key} = "{val}"')
+        lines.append("")
+    lines.append("MCP_EOF")
+    return "\n".join(lines)
+
+
+def _build_mcp_gemini(servers: list[McpServerSpec]) -> str:
+    """Generate Gemini MCP config JSON and write command."""
+    config: dict[str, dict] = {}
+    for s in servers:
+        if s.type == "url":
+            entry: dict = {"httpUrl": s.url, "trust": True}
+            if s.headers:
+                entry["headers"] = s.headers
+            config[s.name] = entry
+        elif s.type == "stdio":
+            entry = {"command": s.command, "args": s.args, "trust": True}
+            if s.env:
+                entry["env"] = s.env
+            config[s.name] = entry
+    content = json.dumps({"mcpServers": config}, indent=2)
+    return (
+        "# MCP server configuration\n"
+        "cat > ~/.gemini/settings.json << 'MCP_EOF'\n"
+        f"{content}\n"
+        "MCP_EOF\n"
+    )
+
+
+def _build_mcp_section(runtime_name: str, servers: list[McpServerSpec]) -> str:
+    """Build MCP config section for the wrapper script."""
+    if not servers:
+        return ""
+    if runtime_name in ("claude", "claude-oauth"):
+        return _build_mcp_claude(servers)
+    elif runtime_name == "codex":
+        return _build_mcp_codex(servers)
+    elif runtime_name == "gemini":
+        return _build_mcp_gemini(servers)
+    return ""
+
+
+def _mcp_cmd_flags(runtime_name: str, servers: list[McpServerSpec]) -> str:
+    """Return extra CLI flags needed for MCP (only Claude needs explicit flags)."""
+    if not servers:
+        return ""
+    if runtime_name in ("claude", "claude-oauth"):
+        return " --mcp-config /tmp/mcp.json --strict-mcp-config"
+    return ""
+
+
 def build_wrapper_script(
     config: RuntimeConfig,
     api_key: str,
@@ -110,6 +223,7 @@ def build_wrapper_script(
     continue_session: bool = False,
     repos: list[RepoSpec] | None = None,
     environment: EnvironmentSetup | None = None,
+    mcp_servers: list[McpServerSpec] | None = None,
 ) -> str:
     """Build a shell script that exports the API key and runs the agent.
 
@@ -127,6 +241,9 @@ def build_wrapper_script(
         env_vars_section = _build_env_vars_section(environment.env_vars)
         packages_section = _build_packages_section(environment.packages)
         setup_section = _build_setup_script_section(environment.setup_script)
+
+    mcp_section = _build_mcp_section(config.name, mcp_servers or [])
+    mcp_flags = _mcp_cmd_flags(config.name, mcp_servers or [])
 
     return f"""#!/bin/bash
 set -euo pipefail
@@ -149,5 +266,7 @@ fi
 
 {setup_section}
 
-exec {cmd}
+{mcp_section}
+
+exec {cmd}{mcp_flags}
 """
