@@ -314,6 +314,32 @@ def test_send_prompt_to_terminated_session(client: Client, auth_headers, user):
 
 
 @pytest.mark.django_db
+def test_run_session_background_persists_int_exit_code_on_exec_error(user, mocker):
+    """Regression: ExecError.exit_code is a method, not a property. The
+    background runner must call it before storing on `session.exit_code`,
+    otherwise Django's IntegerField raises TypeError at save time."""
+    from sprites import ExecError
+
+    from fairy.stream import run_session_background
+
+    session = AgentSession.objects.create(
+        user=user, runtime="claude", prompt="test", status="pending"
+    )
+
+    mock_sprite = mocker.MagicMock()
+    mock_cmd = mocker.MagicMock()
+    mock_cmd.run.side_effect = ExecError("exit status 1", exit_code=1)
+    mock_sprite.command.return_value = mock_cmd
+
+    run_session_background(session, mock_sprite, timeout=10.0)
+
+    session.refresh_from_db()
+    assert session.status == "failed"
+    assert session.exit_code == 1
+    assert isinstance(session.exit_code, int)
+
+
+@pytest.mark.django_db
 def test_stream_terminated_session(client: Client, auth_headers, user):
     """Stream endpoint yields terminated event for terminated sessions."""
     session = AgentSession.objects.create(

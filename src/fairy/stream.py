@@ -74,7 +74,8 @@ def run_session_background(
             cmd.run()
             result_holder.append(("exit", 0))
         except ExecError as e:
-            result_holder.append(("exit", e.exit_code))
+            # ExecError.exit_code is a method (not a @property like Sprite.exit_code)
+            result_holder.append(("exit", e.exit_code()))
         except Exception as e:
             result_holder.append(("error", str(e)))
         finally:

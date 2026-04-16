@@ -76,6 +76,6 @@ RUNTIMES: dict[str, RuntimeConfig] = {
         name="claude-oauth",
         cmd='claude --print --verbose --output-format stream-json -p "$PROMPT"',
         continue_cmd='claude --print --verbose --output-format stream-json --continue -p "$PROMPT"',
-        env_var="CLAUDE_CODE_AUTH_TOKEN",
+        env_var="CLAUDE_CODE_OAUTH_TOKEN",
     ),
 }

@@ -9,3 +9,4 @@ dist/
 *.db
 fairy.db-shm
 fairy.db-wal
+.gstack/
