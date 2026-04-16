@@ -229,8 +229,6 @@ def api(fairy_url, fairy_token):
     return FairyClient(fairy_url, fairy_token)
 
 
-
-
 # ---------------------------------------------------------------------------
 # Per-test factory fixtures with automatic cleanup
 # ---------------------------------------------------------------------------
