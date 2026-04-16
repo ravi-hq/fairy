@@ -2,7 +2,7 @@
 
 import pytest
 
-from tests.e2e.conftest import RUNTIME_MODELS, _unique, stream_all_output
+from tests.e2e.conftest import RUNTIME_MODELS, _unique
 
 
 # ---------------------------------------------------------------------------
@@ -133,14 +133,23 @@ class TestEnvironmentCRUD:
 
 
 class TestEnvironmentInSession:
-    """Verify that environment setup (packages, env vars, setup script) works
-    end-to-end inside a real agent session."""
+    """Verify Environment config (packages, env_vars, setup_script) lands on
+    the Sprite the way Fairy expects.
+
+    Each test goes through Fairy's full provisioning path (create env+agent
+    +session via API) and then attaches to the resulting Sprite via
+    sprites-py to run one-off bash probes. This keeps verification independent
+    of the agent — failure points to environment plumbing, not model behavior.
+
+    The agent runs a trivial "say ok" prompt so the session reaches `completed`
+    quickly; we don't rely on its output for anything.
+    """
 
     @pytest.mark.slow
     def test_packages_installed(
-        self, api, create_agent, create_session, create_environment, runtime
+        self, api, create_agent, create_session, create_environment, runtime,
+        sprites_client,
     ):
-        """Verify pip packages from the environment are available."""
         env = create_environment(
             name=_unique("e2e-pkg"),
             packages={"pip": ["cowsay"]},
@@ -152,31 +161,31 @@ class TestEnvironmentInSession:
             environment_id=env["id"],
         )
         session = create_session(
-            agent_id=agent["id"],
-            prompt=(
-                "Run this exact command and print the output: "
-                "python3 -c \"import cowsay; print('COWSAY_IMPORT_OK')\""
-            ),
-            timeout=300,
+            agent_id=agent["id"], prompt="Say ok.", timeout=300,
         )
-        result, events = api.run_session(session["id"], timeout=300)
+        result = api.wait_for_session(session["id"], timeout=300)
         assert result["status"] == "completed", (
             f"Session failed: status={result['status']}, exit={result.get('exit_code')}"
         )
 
-        output = stream_all_output(events)
-        assert "COWSAY_IMPORT_OK" in output, (
-            f"Package import marker not found in output: {output[:500]}"
-        )
+        sprite = sprites_client.get_sprite(result["sprite_name"])
+        out = sprite.command(
+            "python3", "-c", "import cowsay; print('COWSAY_IMPORT_OK')"
+        ).output()
+        assert b"COWSAY_IMPORT_OK" in out
 
     @pytest.mark.slow
     def test_env_vars_available(
-        self, api, create_agent, create_session, create_environment, runtime
+        self, api, create_agent, create_session, create_environment, runtime,
+        sprites_client,
     ):
-        """Verify environment variables are exported in the session."""
+        # Process env doesn't survive across separate sprite.command() calls,
+        # so we capture the env at setup time (same shell as Fairy's `export`
+        # statements) and read the snapshot file from a follow-up command.
         env = create_environment(
             name=_unique("e2e-envvar"),
             env_vars={"FAIRY_E2E_SECRET": "magic_value_42"},
+            setup_script="env > /tmp/fairy-env-snapshot.txt",
         )
         agent = create_agent(
             name=_unique("e2e-envvar-agent"),
@@ -185,26 +194,20 @@ class TestEnvironmentInSession:
             environment_id=env["id"],
         )
         session = create_session(
-            agent_id=agent["id"],
-            prompt=(
-                "Run this exact command and print the output: "
-                "echo \"ENVVAR=$FAIRY_E2E_SECRET\""
-            ),
-            timeout=180,
+            agent_id=agent["id"], prompt="Say ok.", timeout=180,
         )
-        result, events = api.run_session(session["id"])
+        result = api.wait_for_session(session["id"])
         assert result["status"] == "completed"
 
-        output = stream_all_output(events)
-        assert "magic_value_42" in output, (
-            f"Env var value not found in output: {output[:500]}"
-        )
+        sprite = sprites_client.get_sprite(result["sprite_name"])
+        snapshot = sprite.command("cat", "/tmp/fairy-env-snapshot.txt").output()
+        assert b"FAIRY_E2E_SECRET=magic_value_42" in snapshot
 
     @pytest.mark.slow
     def test_setup_script_runs(
-        self, api, create_agent, create_session, create_environment, runtime
+        self, api, create_agent, create_session, create_environment, runtime,
+        sprites_client,
     ):
-        """Verify the setup_script executes before the agent."""
         env = create_environment(
             name=_unique("e2e-setup"),
             setup_script="echo 'FAIRY_SETUP_COMPLETE' > /tmp/fairy_setup_marker",
@@ -216,30 +219,28 @@ class TestEnvironmentInSession:
             environment_id=env["id"],
         )
         session = create_session(
-            agent_id=agent["id"],
-            prompt=(
-                "Read the file /tmp/fairy_setup_marker and print its contents."
-            ),
-            timeout=180,
+            agent_id=agent["id"], prompt="Say ok.", timeout=180,
         )
-        result, events = api.run_session(session["id"])
+        result = api.wait_for_session(session["id"])
         assert result["status"] == "completed"
 
-        output = stream_all_output(events)
-        assert "FAIRY_SETUP_COMPLETE" in output, (
-            f"Setup marker not found in output: {output[:500]}"
-        )
+        sprite = sprites_client.get_sprite(result["sprite_name"])
+        marker = sprite.command("cat", "/tmp/fairy_setup_marker").output()
+        assert b"FAIRY_SETUP_COMPLETE" in marker
 
     @pytest.mark.slow
     def test_full_environment_integration(
-        self, api, create_agent, create_session, create_environment, runtime
+        self, api, create_agent, create_session, create_environment, runtime,
+        sprites_client,
     ):
-        """Test packages + env vars + setup script all together."""
         env = create_environment(
             name=_unique("e2e-full"),
             packages={"pip": ["cowsay"]},
             env_vars={"FAIRY_E2E_COMBO": "combo_value"},
-            setup_script="echo 'SETUP_RAN' > /tmp/fairy_combo_marker",
+            setup_script=(
+                "echo 'SETUP_RAN' > /tmp/fairy_combo_marker\n"
+                "env > /tmp/fairy-env-snapshot.txt"
+            ),
         )
         agent = create_agent(
             name=_unique("e2e-full-agent"),
@@ -248,22 +249,22 @@ class TestEnvironmentInSession:
             environment_id=env["id"],
         )
         session = create_session(
-            agent_id=agent["id"],
-            prompt=(
-                "Run these three commands and print all their output:\n"
-                "1. python3 -c \"import cowsay; print('PKG_OK')\"\n"
-                "2. echo \"ENV=$FAIRY_E2E_COMBO\"\n"
-                "3. cat /tmp/fairy_combo_marker"
-            ),
-            timeout=300,
+            agent_id=agent["id"], prompt="Say ok.", timeout=300,
         )
-        result, events = api.run_session(session["id"], timeout=300)
+        result = api.wait_for_session(session["id"], timeout=300)
         assert result["status"] == "completed"
 
-        output = stream_all_output(events)
-        assert "PKG_OK" in output, f"Package check failed: {output[:500]}"
-        assert "combo_value" in output, f"Env var check failed: {output[:500]}"
-        assert "SETUP_RAN" in output, f"Setup script check failed: {output[:500]}"
+        sprite = sprites_client.get_sprite(result["sprite_name"])
+        pkg = sprite.command(
+            "python3", "-c", "import cowsay; print('PKG_OK')"
+        ).output()
+        assert b"PKG_OK" in pkg
+
+        snapshot = sprite.command("cat", "/tmp/fairy-env-snapshot.txt").output()
+        assert b"FAIRY_E2E_COMBO=combo_value" in snapshot
+
+        marker = sprite.command("cat", "/tmp/fairy_combo_marker").output()
+        assert b"SETUP_RAN" in marker
 
     def test_session_inherits_agent_environment(
         self, api, create_agent, create_session, create_environment, runtime
