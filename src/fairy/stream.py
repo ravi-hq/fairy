@@ -1,9 +1,8 @@
-import asyncio
 import io
 import json
 import queue
 import threading
-from collections.abc import AsyncGenerator
+from collections.abc import Generator
 
 from sprites import ExecError, Sprite
 
@@ -29,15 +28,14 @@ class QueueWriter(io.RawIOBase):
         return len(data)
 
 
-async def stream_agent_output(
+def stream_agent_output(
     sprite: Sprite,
     timeout: float,
-) -> AsyncGenerator[str, None]:
+) -> Generator[str, None, None]:
     """Run agent in a background thread, yield SSE event strings as output arrives.
 
     Each yielded string is a JSON object:
-    - {"type": "output", "stream": "stdout", "data": "..."}
-    - {"type": "output", "stream": "stderr", "data": "..."}
+    - {"type": "output", "data": "..."}
     - {"type": "exit", "code": 0}
     - {"type": "error", "message": "..."}
     """
@@ -61,11 +59,8 @@ async def stream_agent_output(
     thread = threading.Thread(target=_run_in_thread, daemon=True)
     thread.start()
 
-    loop = asyncio.get_running_loop()
-
     while True:
-        # Read from queue without blocking the event loop
-        chunk = await loop.run_in_executor(None, output_q.get)
+        chunk = output_q.get()
         if chunk is _SENTINEL:
             break
         yield json.dumps({
