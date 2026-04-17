@@ -87,11 +87,11 @@ class TestWrapperScriptSkills:
         script = build_wrapper_script(config, "sk-test", "hello", skills=skills)
         assert "/home/sprite/.claude/skills/web-search/SKILL.md" in script
 
-    def test_codex_skills_written_to_agents_dir(self):
+    def test_codex_skills_written_to_codex_dir(self):
         config = RUNTIMES["codex"]
         skills = [SkillSpec(name="web-search", content=SAMPLE_CONTENT)]
         script = build_wrapper_script(config, "sk-test", "hello", skills=skills)
-        assert "/home/sprite/.agents/skills/web-search/SKILL.md" in script
+        assert "/home/sprite/.codex/skills/web-search/SKILL.md" in script
         assert "/home/sprite/.claude/skills" not in script
 
     def test_gemini_skills_written_to_gemini_dir(self):

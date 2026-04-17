@@ -90,13 +90,13 @@ paralleling `Environment`.
 1. **All three CLIs implement the Agent Skills open standard** — originated by Anthropic, adopted by 30+ agent tools including the three Fairy runtimes. Identical SKILL.md format and discovery semantics across Claude Code, Codex, Gemini. ([agentskills.io](https://agentskills.io), [code.claude.com/skills](https://code.claude.com/docs/en/skills), [developers.openai.com/codex/skills](https://developers.openai.com/codex/skills))
 2. **Per-runtime filesystem paths** —
 
-   | Runtime | Project path (Sprite CWD) | User path | Fallback |
+   | Runtime | User path (what Fairy writes) | Repo path | Fallback |
    |---|---|---|---|
-   | `claude` / `claude-oauth` | `/home/sprite/.claude/skills/<slug>/SKILL.md` | `~/.claude/skills/<slug>/SKILL.md` | `.claude/commands/<name>.md` legacy |
-   | `codex` | `/home/sprite/.agents/skills/<slug>/SKILL.md` | `~/.agents/skills/<slug>/SKILL.md` | `AGENTS.md` for static context |
-   | `gemini` | `/home/sprite/.gemini/skills/<slug>/SKILL.md` or `.agents/skills/` | `~/.gemini/skills/<slug>/SKILL.md` | `GEMINI.md` for static context |
+   | `claude` / `claude-oauth` | `/home/sprite/.claude/skills/<slug>/SKILL.md` | `.claude/skills/<slug>/SKILL.md` | `.claude/commands/<name>.md` legacy |
+   | `codex` | `/home/sprite/.codex/skills/<slug>/SKILL.md` | `.agents/skills/<slug>/SKILL.md` (scanned CWD → repo root) | `AGENTS.md` for static context |
+   | `gemini` | `/home/sprite/.gemini/skills/<slug>/SKILL.md` | `.gemini/skills/` or `.agents/skills/` | `GEMINI.md` for static context |
 
-3. **Cross-runtime shortcut** — Codex and Gemini both support `.agents/skills/` as an alias; writing to both `.claude/skills/` and `.agents/skills/` from a single skills field covers all three runtimes with minimal per-runtime logic.
+3. **User-level, not repo-level** — Fairy writes to each runtime's user-home path (`~/.claude/skills/`, `~/.codex/skills/`, `~/.gemini/skills/`) because Sprites are agent-home environments, not repo roots; the `.agents/skills/` alias that Codex/Gemini support is repo-scoped and wouldn't be picked up by a CLI invoked outside a cloned repo.
 4. **Progressive-disclosure matches Anthropic spec** — each CLI scans skill directories at session start and injects only `name` + `description` metadata into the system prompt. Full body loads on explicit `/skill-name` invocation or model-initiated trigger. Pre-exec filesystem writes are sufficient — no runtime API calls needed.
 5. **`claude-oauth` is the same binary as `claude`** — identical CLI invocation per `src/fairy/runtimes.py:56-80`, differing only by env var (`ANTHROPIC_API_KEY` vs `CLAUDE_CODE_OAUTH_TOKEN`). Skills path is identical.
 6. **Fallback not needed** — since all runtimes have native skills support, concatenating skill bodies into the `system` prompt (the "dumb fallback" option) is not required. Native progressive disclosure is always preferable for token efficiency.
@@ -183,7 +183,7 @@ Ship a small wedge (Option C below) in ~1 week: validate the existing `Agent.ski
 
 **Per-runtime path dispatch:**
 - `claude` / `claude-oauth` → `/home/sprite/.claude/skills/<slug>/SKILL.md`
-- `codex` → `/home/sprite/.agents/skills/<slug>/SKILL.md`
+- `codex` → `/home/sprite/.codex/skills/<slug>/SKILL.md`
 - `gemini` → `/home/sprite/.gemini/skills/<slug>/SKILL.md`
 
 ### Phase 2 — first-class `Skill` model

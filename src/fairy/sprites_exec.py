@@ -229,7 +229,7 @@ def _mcp_cmd_flags(runtime_name: str, servers: list[McpServerSpec]) -> str:
 _SKILLS_ROOTS: dict[str, str] = {
     "claude": "/home/sprite/.claude/skills",
     "claude-oauth": "/home/sprite/.claude/skills",
-    "codex": "/home/sprite/.agents/skills",
+    "codex": "/home/sprite/.codex/skills",
     "gemini": "/home/sprite/.gemini/skills",
 }
 
