@@ -74,6 +74,10 @@ Configurations are accepted silently even when unenforceable on the selected
 runtime. For full behavioral guarantees, use `claude` or `gemini`; `codex` is
 best-effort.
 
+See [`docs/tools-and-mcp-examples.md`](docs/tools-and-mcp-examples.md) for
+copy-pasteable curl examples of agents configured with tools and MCP
+servers.
+
 ## Testing
 
 ### Unit / integration tests
