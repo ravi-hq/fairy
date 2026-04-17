@@ -2,6 +2,10 @@
 
 API for running AI coding agents on Sprites.
 
+## Documentation
+
+Full API and operator documentation: **https://ravi-hq.github.io/fairy**
+
 Fairy is a Django service that exposes a REST API for creating **agents**
 (model + runtime + MCP servers), **environments** (packages, env vars,
 setup scripts, networking), and **sessions** (a single agent execution with
