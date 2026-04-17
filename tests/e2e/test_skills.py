@@ -69,25 +69,6 @@ def _concat_json_strings(stream_output: str) -> str:
 def runtime(request, e2e_runtimes):
     if request.param not in e2e_runtimes:
         pytest.skip(f"{request.param} not in E2E_RUNTIMES")
-    if request.param == "codex":
-        # Codex differs from claude/gemini: it injects only the skill
-        # metadata (name + description), then expects the model to
-        # `cat SKILL.md` on demand. Inside the Sprite sandbox, bwrap
-        # currently rejects that cat with:
-        #   bwrap: Unexpected capabilities but not setuid, old file caps
-        # Materialization + metadata injection verifiably work; only the
-        # body-read step is broken, and the root cause is in the Sprite
-        # image (bwrap file caps / setuid), not in Fairy. Flip to strict
-        # so we get a loud signal when the sandbox is fixed upstream.
-        request.applymarker(
-            pytest.mark.xfail(
-                reason=(
-                    "Sprite bwrap caps config blocks codex from cat'ing "
-                    "SKILL.md; skill body never reaches the model."
-                ),
-                strict=True,
-            )
-        )
     return request.param
 
 
