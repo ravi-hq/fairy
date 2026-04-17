@@ -57,7 +57,7 @@ RUNTIMES: dict[str, RuntimeConfig] = {
     "claude": RuntimeConfig(
         name="claude",
         cmd='claude --print --verbose --output-format stream-json -p "$PROMPT"',
-        continue_cmd='claude --print --verbose --output-format stream-json --continue -p "$PROMPT"',
+        continue_cmd='claude --dangerously-skip-permissions --print --verbose --output-format stream-json --continue -p "$PROMPT"',
         env_var="ANTHROPIC_API_KEY",
     ),
     "codex": RuntimeConfig(
@@ -81,7 +81,7 @@ RUNTIMES: dict[str, RuntimeConfig] = {
     "claude-oauth": RuntimeConfig(
         name="claude-oauth",
         cmd='claude --print --verbose --output-format stream-json -p "$PROMPT"',
-        continue_cmd='claude --print --verbose --output-format stream-json --continue -p "$PROMPT"',
+        continue_cmd='claude --dangerously-skip-permissions --print --verbose --output-format stream-json --continue -p "$PROMPT"',
         env_var="CLAUDE_CODE_OAUTH_TOKEN",
     ),
 }
