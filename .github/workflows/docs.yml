@@ -1,0 +1,40 @@
+name: Deploy docs
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'site/**'
+      - 'docs/openapi.yaml'
+      - 'scripts/validate_openapi.py'
+      - '.github/workflows/docs.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: astral-sh/setup-uv@v4
+      - run: uv sync --all-extras
+      - run: uv run python -m scripts.validate_openapi --export site/docs/api/openapi.json
+      - run: uv run mkdocs build --config-file site/mkdocs.yml --site-dir ${{ github.workspace }}/_site
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: ${{ github.workspace }}/_site
+      - id: deployment
+        uses: actions/deploy-pages@v4
