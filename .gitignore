@@ -13,3 +13,5 @@ fairy.db-wal
 .coverage
 .mypy_cache/
 .agent-mcp-config.json
+site/docs/api/openapi.json
+site/site/
