@@ -1,3 +1,8 @@
+---
+name: sprites
+description: Use when working with Sprites (sprites.dev) — creating, managing, or executing commands on Linux microVMs via the sprites-py SDK or REST API. Covers the wrapper-script pattern, streaming exec, filesystem API, checkpoints, network policies, and the critical `env=` gotcha that breaks PATH. Trigger on edits to `sprites_exec.py`, `stream.py`, `runtimes.py`, adding new runtimes, or debugging Sprite connectivity/streaming/lifecycle issues.
+---
+
 # Sprites SDK Skill
 
 Reference for working with Sprites (sprites.dev) — persistent, hardware-isolated Linux microVMs by Fly.io — in the fairy project.
