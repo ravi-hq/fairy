@@ -684,6 +684,7 @@ class TestClaudeToolFlags:
         assert '--disallowedTools "Bash"' in script
         assert "--continue" in script
 
+
 # --- Phase 3: Gemini Policy Engine TOML ---
 
 
@@ -786,6 +787,7 @@ class TestGeminiToolFiles:
         exec_line = next(line for line in script.splitlines() if line.startswith("exec "))
         assert "--tools" not in exec_line
         assert "--disallowedTools" not in exec_line
+
 
 # --- Phase 4: Codex config.toml tool enforcement ---
 

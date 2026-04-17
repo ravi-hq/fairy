@@ -158,7 +158,7 @@ def runtime(request, e2e_runtimes):
 
 
 class TestToolEnforcement:
-    """Per-runtime matrix. Subsequent PRs widen the `runtime` fixture params."""
+    """Per-runtime matrix — 3 runtimes × 3 tests = 9 sessions per full run."""
 
     def test_allow_tool_is_invocable(
         self, api: FairyClient, create_agent, create_session, runtime,
