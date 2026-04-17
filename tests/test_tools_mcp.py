@@ -684,3 +684,92 @@ class TestClaudeToolFlags:
         assert '--disallowedTools "Bash"' in script
         assert "--continue" in script
 
+# --- Phase 4: Codex config.toml tool enforcement ---
+
+
+class TestCodexToolConfig:
+    def _script(self, tools, servers=None):
+        config = RUNTIMES["codex"]
+        return build_wrapper_script(
+            config, "key", "prompt", mcp_servers=servers, tools=tools,
+        )
+
+    def test_no_tools_no_mcp_no_config_block(self):
+        script = self._script([])
+        assert "~/.codex/config.toml" not in script
+
+    def test_web_search_disabled_writes_top_level_key(self):
+        tools = [{
+            "type": "agent_toolset_20260401",
+            "default_config": {"enabled": True},
+            "configs": [{"name": "web_search", "enabled": False}],
+        }]
+        script = self._script(tools)
+        assert 'web_search = "disabled"' in script
+
+    def test_write_and_edit_disabled_sets_read_only_sandbox(self):
+        tools = [{
+            "type": "agent_toolset_20260401",
+            "default_config": {"enabled": True},
+            "configs": [
+                {"name": "write", "enabled": False},
+                {"name": "edit", "enabled": False},
+            ],
+        }]
+        script = self._script(tools)
+        assert 'sandbox_mode = "read-only"' in script
+
+    def test_only_write_disabled_does_not_set_sandbox(self):
+        """Sandbox is blunt — only flip it if both write AND edit are disabled."""
+        tools = [{
+            "type": "agent_toolset_20260401",
+            "default_config": {"enabled": True},
+            "configs": [{"name": "write", "enabled": False}],
+        }]
+        script = self._script(tools)
+        assert "sandbox_mode" not in script
+
+    def test_default_off_disables_web_search_and_sets_sandbox(self):
+        tools = [{"type": "agent_toolset_20260401", "default_config": {"enabled": False}}]
+        script = self._script(tools)
+        assert 'web_search = "disabled"' in script
+        assert 'sandbox_mode = "read-only"' in script
+
+    def test_unenforceable_tools_are_silent(self):
+        """bash/read/glob/grep/web_fetch disable produces no codex config."""
+        tools = [{
+            "type": "agent_toolset_20260401",
+            "default_config": {"enabled": True},
+            "configs": [
+                {"name": "bash", "enabled": False},
+                {"name": "read", "enabled": False},
+                {"name": "glob", "enabled": False},
+                {"name": "grep", "enabled": False},
+                {"name": "web_fetch", "enabled": False},
+            ],
+        }]
+        script = self._script(tools)
+        # None of these produce a top-level key, and no MCP servers either
+        assert "~/.codex/config.toml" not in script
+
+    def test_mcp_still_works_alongside_tool_config(self):
+        servers = [McpServerSpec(name="github", type="url", url="https://mcp.github.com/mcp")]
+        tools = [{
+            "type": "agent_toolset_20260401",
+            "default_config": {"enabled": True},
+            "configs": [{"name": "web_search", "enabled": False}],
+        }]
+        script = self._script(tools, servers=servers)
+        assert 'web_search = "disabled"' in script
+        assert "[mcp_servers.github]" in script
+
+    def test_codex_no_tool_flags_on_exec_line(self):
+        """Codex enforcement is file-based; no CLI flags appended to exec."""
+        tools = [{
+            "type": "agent_toolset_20260401",
+            "default_config": {"enabled": False},
+        }]
+        script = self._script(tools)
+        exec_line = next(line for line in script.splitlines() if line.startswith("exec "))
+        assert "--tools" not in exec_line
+        assert "--disallowedTools" not in exec_line

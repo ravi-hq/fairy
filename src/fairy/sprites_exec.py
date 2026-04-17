@@ -140,10 +140,50 @@ def _build_mcp_claude(servers: list[McpServerSpec]) -> str:
     )
 
 
-def _build_mcp_codex(servers: list[McpServerSpec]) -> str:
-    """Generate Codex MCP config TOML and write command."""
-    lines = ["# MCP server configuration", "mkdir -p ~/.codex"]
+def _codex_top_level_keys(tools: list[dict]) -> list[str]:
+    """Derive top-level codex config.toml keys from Managed-Agents tools.
+
+    Only two canonical tools have per-tool codex enforcement:
+    - `web_search`: top-level `web_search = "disabled"`
+    - `write` + `edit` together: `sandbox_mode = "read-only"`
+
+    bash/read/glob/grep/web_fetch have no per-tool codex equivalent and are
+    accepted silently.
+    """
+    toolset = _find_agent_toolset(tools)
+    if toolset is None:
+        return []
+    default_enabled = toolset.get("default_config", {}).get("enabled", True)
+    configs = {c["name"]: c.get("enabled", True) for c in toolset.get("configs", [])}
+
+    def tool_enabled(name: str) -> bool:
+        return configs.get(name, default_enabled)
+
+    lines: list[str] = []
+    if not tool_enabled("web_search"):
+        lines.append('web_search = "disabled"')
+    if not tool_enabled("write") and not tool_enabled("edit"):
+        lines.append('sandbox_mode = "read-only"')
+    return lines
+
+
+def _build_mcp_codex(
+    servers: list[McpServerSpec],
+    tools: list[dict] | None = None,
+) -> str:
+    """Generate Codex config TOML (MCP servers + tool enforcement keys)."""
+    tools = tools or []
+    top_level = _codex_top_level_keys(tools)
+
+    if not servers and not top_level:
+        return ""
+
+    lines = ["# Codex configuration (MCP + tool enforcement)", "mkdir -p ~/.codex"]
     lines.append("cat > ~/.codex/config.toml << 'MCP_EOF'")
+    if top_level:
+        lines.extend(top_level)
+        if servers:
+            lines.append("")
     for s in servers:
         lines.append(f"[mcp_servers.{s.name}]")
         if s.type == "url":
@@ -193,15 +233,24 @@ def _build_mcp_gemini(servers: list[McpServerSpec]) -> str:
     )
 
 
-def _build_mcp_section(runtime_name: str, servers: list[McpServerSpec]) -> str:
-    """Build MCP config section for the wrapper script."""
+def _build_mcp_section(
+    runtime_name: str,
+    servers: list[McpServerSpec],
+    tools: list[dict] | None = None,
+) -> str:
+    """Build MCP config section for the wrapper script.
+
+    Codex folds tool-enforcement keys into the same config.toml it uses for MCP,
+    so `tools` is threaded through here. Other runtimes emit tool enforcement via
+    the separate `_tool_files_*` path.
+    """
+    if runtime_name == "codex":
+        return _build_mcp_codex(servers, tools=tools)
     if not servers:
         return ""
     if runtime_name in ("claude", "claude-oauth"):
         return _build_mcp_claude(servers)
-    elif runtime_name == "codex":
-        return _build_mcp_codex(servers)
-    elif runtime_name == "gemini":
+    if runtime_name == "gemini":
         return _build_mcp_gemini(servers)
     return ""
 
@@ -283,8 +332,8 @@ def _build_tool_flags(
       cli_flags — extra flags appended to the exec line (leading space if non-empty)
       files     — {absolute_path: content} to write as heredoc blocks before exec
 
-    Runtimes without a per-tool enforcement path (codex, gemini) return ("", {}).
-    Subsequent PRs land those translations.
+    Codex folds its tool enforcement into the MCP config.toml instead of using
+    this path — it returns ("", {}) here. See `_build_mcp_codex`.
     """
     if not tools:
         return "", {}
@@ -335,7 +384,7 @@ def build_wrapper_script(
         packages_section = _build_packages_section(environment.packages)
         setup_section = _build_setup_script_section(environment.setup_script)
 
-    mcp_section = _build_mcp_section(config.name, mcp_servers or [])
+    mcp_section = _build_mcp_section(config.name, mcp_servers or [], tools=tools)
     mcp_flags = _mcp_cmd_flags(config.name, mcp_servers or [])
 
     mcp_names = [s.name for s in (mcp_servers or [])]

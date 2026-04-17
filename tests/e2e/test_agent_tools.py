@@ -25,17 +25,23 @@ pytestmark = [pytest.mark.slow, pytest.mark.tool_matrix]
 REPRESENTATIVE_TOOL = {
     "claude": "web_fetch",
     "claude-oauth": "web_fetch",
+    "codex": "web_search",
 }
 
 RUNTIME_TOOL_NAMES = {
     "claude": {"web_fetch": "WebFetch"},
     "claude-oauth": {"web_fetch": "WebFetch"},
+    "codex": {"web_search": "web_search"},
 }
 
 PROMPTS = {
     "web_fetch": (
         "Use your web fetch tool to fetch https://httpbin.org/get and print the "
         "response body. Do not use shell."
+    ),
+    "web_search": (
+        "Use your web search tool to search for 'current UTC date' and print the "
+        "top result's title."
     ),
 }
 
@@ -58,16 +64,43 @@ def _parse_claude_tool_names(events: list[dict]) -> list[str]:
     return names
 
 
+def _parse_codex_tool_names(events: list[dict]) -> list[str]:
+    names: list[str] = []
+    for e in events:
+        if e.get("type") != "output":
+            continue
+        try:
+            obj = json.loads(e.get("data", ""))
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if obj.get("type") in ("item.started", "item.completed"):
+            item = obj.get("item", {})
+            item_type = item.get("type")
+            if item_type == "web_search":
+                names.append("web_search")
+            elif item_type == "command_execution":
+                names.append("shell")
+            elif item_type == "mcp_tool_call":
+                server = item.get("server", "")
+                tool = item.get("tool", "")
+                names.append(f"mcp__{server}__{tool}")
+    return names
+
+
 def _tool_was_invoked(events: list[dict], runtime: str, tool: str) -> bool:
     target = RUNTIME_TOOL_NAMES[runtime][tool]
     if runtime in ("claude", "claude-oauth"):
         return target in _parse_claude_tool_names(events)
+    if runtime == "codex":
+        return target in _parse_codex_tool_names(events)
     return False
 
 
 def _any_tool_was_invoked(events: list[dict], runtime: str) -> bool:
     if runtime in ("claude", "claude-oauth"):
         return bool(_parse_claude_tool_names(events))
+    if runtime == "codex":
+        return bool(_parse_codex_tool_names(events))
     return False
 
 
@@ -91,7 +124,7 @@ def _deny_all() -> list[dict]:
     return [{"type": "agent_toolset_20260401", "default_config": {"enabled": False}}]
 
 
-@pytest.fixture(scope="class", params=["claude"])
+@pytest.fixture(scope="class", params=["claude", "codex"])
 def runtime(request, e2e_runtimes):
     if request.param not in e2e_runtimes:
         pytest.skip(f"{request.param} not in E2E_RUNTIMES")
