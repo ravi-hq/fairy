@@ -1,8 +1,12 @@
 """E2E tests verifying Agent.mcp_servers reaches each runtime.
 
 Spawns `@modelcontextprotocol/server-everything` as a stdio MCP
-subprocess inside the sprite (pulled via `npx -y` on first run). No
-external MCP host is required.
+subprocess inside the sprite. The server is pre-installed via the
+Environment's `packages.npm` so the stdio handshake is effectively
+instant at session time — using `npx -y` inline raced with the
+agent's first decision tick (Claude saw `status:"pending"` and
+ToolSearched its way to "not available" before the server finished
+connecting).
 
 The agent is instructed to call the `echo` tool with a unique token
 per test; the token appearing in the session output proves (a) the
@@ -35,6 +39,9 @@ pytestmark = [pytest.mark.slow, pytest.mark.mcp_matrix]
 
 MCP_SERVER_NAME = "everything"
 MCP_ECHO_TOOL = "echo"
+MCP_SERVER_NPM_PKG = "@modelcontextprotocol/server-everything"
+# Binary name created by `npm install -g @modelcontextprotocol/server-everything`.
+MCP_SERVER_BIN = "mcp-server-everything"
 
 
 # Fields whose string values are event metadata, not model text. Same filter
@@ -86,8 +93,8 @@ def _everything_server_spec() -> dict:
     return {
         "type": "stdio",
         "name": MCP_SERVER_NAME,
-        "command": "npx",
-        "args": ["-y", "@modelcontextprotocol/server-everything"],
+        "command": MCP_SERVER_BIN,
+        "args": [],
     }
 
 
@@ -109,7 +116,8 @@ class TestMcpServerToolInvocable:
     """Server declared → agent calls echo and we see the unique signal."""
 
     def test_mcp_server_tool_is_invocable(
-        self, api: FairyClient, create_agent, create_session, runtime,
+        self, api: FairyClient, create_agent, create_session, create_environment,
+        runtime,
     ):
         signal = f"MCP-ECHO-{uuid.uuid4().hex[:12]}"
         prompt = (
@@ -117,14 +125,19 @@ class TestMcpServerToolInvocable:
             f"MCP server with argument message={signal!r}. Include the tool's "
             f"exact response in your reply."
         )
+        env = create_environment(
+            name=_unique(f"e2e-mcp-env-{runtime}"),
+            packages={"npm": [MCP_SERVER_NPM_PKG]},
+        )
         agent = create_agent(
             name=_unique(f"e2e-mcp-allow-{runtime}"),
             model=RUNTIME_MODELS[runtime],
             runtime=runtime,
+            environment_id=env["id"],
             mcp_servers=[_everything_server_spec()],
         )
-        session = create_session(agent_id=agent["id"], prompt=prompt, timeout=240)
-        final, events = api.run_session(session["id"])
+        session = create_session(agent_id=agent["id"], prompt=prompt, timeout=300)
+        final, events = api.run_session(session["id"], timeout=300)
         raw = stream_all_output(events)
         reassembled = _concat_json_strings(raw)
 
