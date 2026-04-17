@@ -90,11 +90,17 @@ def _concat_json_strings(stream_output: str) -> str:
 
 
 def _everything_server_spec() -> dict:
+    # Route through `bash -lc` so the subprocess rebuilds PATH from shell
+    # login config. Bare `mcp-server-everything` fails under Claude Code's
+    # `-p` mode (stream shows `status:"failed"` at session init) because it
+    # spawns stdio MCPs with a sanitized env that drops the npm-global bin
+    # path. Codex and gemini don't need this hop — they inherit PATH more
+    # permissively — but the cost is negligible so we apply it uniformly.
     return {
         "type": "stdio",
         "name": MCP_SERVER_NAME,
-        "command": MCP_SERVER_BIN,
-        "args": [],
+        "command": "bash",
+        "args": ["-lc", f"exec {MCP_SERVER_BIN}"],
     }
 
 
