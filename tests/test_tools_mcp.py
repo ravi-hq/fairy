@@ -684,6 +684,109 @@ class TestClaudeToolFlags:
         assert '--disallowedTools "Bash"' in script
         assert "--continue" in script
 
+# --- Phase 3: Gemini Policy Engine TOML ---
+
+
+class TestGeminiToolFiles:
+    def _files(self, tools):
+        from fairy.sprites_exec import _tool_files_gemini
+        return _tool_files_gemini(tools)
+
+    def test_no_toolset_returns_empty(self):
+        assert self._files([]) == {}
+
+    def test_default_enabled_no_overrides_returns_empty(self):
+        tools = [{"type": "agent_toolset_20260401", "default_config": {"enabled": True}}]
+        assert self._files(tools) == {}
+
+    def test_default_off_returns_deny_all(self):
+        from fairy.sprites_exec import GEMINI_POLICY_PATH
+        tools = [{"type": "agent_toolset_20260401", "default_config": {"enabled": False}}]
+        content = self._files(tools)[GEMINI_POLICY_PATH]
+        assert 'toolName = "*"' in content
+        assert 'decision = "deny"' in content
+
+    def test_default_off_with_allowlist(self):
+        from fairy.sprites_exec import GEMINI_POLICY_PATH
+        tools = [{
+            "type": "agent_toolset_20260401",
+            "default_config": {"enabled": False},
+            "configs": [{"name": "bash", "enabled": True}],
+        }]
+        content = self._files(tools)[GEMINI_POLICY_PATH]
+        assert 'toolName = "*"' in content
+        assert '"run_shell_command"' in content
+        assert 'decision = "allow"' in content
+
+    def test_write_disabled_denies_both_gemini_tools(self):
+        """Managed-Agents `write` must deny both `write_file` AND `replace`."""
+        from fairy.sprites_exec import GEMINI_POLICY_PATH
+        tools = [{
+            "type": "agent_toolset_20260401",
+            "default_config": {"enabled": True},
+            "configs": [{"name": "write", "enabled": False}],
+        }]
+        content = self._files(tools)[GEMINI_POLICY_PATH]
+        assert '"write_file"' in content
+        assert '"replace"' in content
+        assert 'decision = "deny"' in content
+
+    @pytest.mark.parametrize("canonical,expected", [
+        ("bash", ["run_shell_command"]),
+        ("read", ["read_file"]),
+        ("edit", ["replace"]),
+        ("glob", ["glob"]),
+        ("grep", ["grep_search"]),
+        ("web_fetch", ["web_fetch"]),
+        ("web_search", ["google_web_search"]),
+    ])
+    def test_every_canonical_name_maps_correctly(self, canonical, expected):
+        from fairy.sprites_exec import GEMINI_POLICY_PATH
+        tools = [{
+            "type": "agent_toolset_20260401",
+            "default_config": {"enabled": True},
+            "configs": [{"name": canonical, "enabled": False}],
+        }]
+        content = self._files(tools)[GEMINI_POLICY_PATH]
+        for name in expected:
+            assert f'"{name}"' in content
+
+    def test_interactive_false_on_every_rule(self):
+        from fairy.sprites_exec import GEMINI_POLICY_PATH
+        tools = [{
+            "type": "agent_toolset_20260401",
+            "default_config": {"enabled": True},
+            "configs": [{"name": "bash", "enabled": False}],
+        }]
+        content = self._files(tools)[GEMINI_POLICY_PATH]
+        assert "interactive = false" in content
+
+    def test_wrapper_script_gemini_writes_policy_file(self):
+        config = RUNTIMES["gemini"]
+        tools = [{
+            "type": "agent_toolset_20260401",
+            "default_config": {"enabled": True},
+            "configs": [{"name": "bash", "enabled": False}],
+        }]
+        script = build_wrapper_script(config, "key", "prompt", tools=tools)
+        assert "/home/sprite/.gemini/policies/fairy.toml" in script
+        assert "TOOLFILE_EOF" in script
+        assert '"run_shell_command"' in script
+
+    def test_gemini_no_tool_flags_on_exec_line(self):
+        """Gemini enforcement is file-based; no CLI flags appended to exec."""
+        config = RUNTIMES["gemini"]
+        tools = [{
+            "type": "agent_toolset_20260401",
+            "default_config": {"enabled": True},
+            "configs": [{"name": "bash", "enabled": False}],
+        }]
+        script = build_wrapper_script(config, "key", "prompt", tools=tools)
+        # Extract the exec line
+        exec_line = next(line for line in script.splitlines() if line.startswith("exec "))
+        assert "--tools" not in exec_line
+        assert "--disallowedTools" not in exec_line
+
 # --- Phase 4: Codex config.toml tool enforcement ---
 
 

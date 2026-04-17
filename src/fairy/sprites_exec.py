@@ -321,6 +321,77 @@ def _tool_flags_claude(tools: list[dict], mcp_server_names: list[str]) -> str:
     return f' --disallowedTools "{",".join(disabled_tools)}"'
 
 
+_GEMINI_TOOL_NAMES: dict[str, list[str]] = {
+    "bash": ["run_shell_command"],
+    "read": ["read_file"],
+    "write": ["write_file", "replace"],
+    "edit": ["replace"],
+    "glob": ["glob"],
+    "grep": ["grep_search"],
+    "web_fetch": ["web_fetch"],
+    "web_search": ["google_web_search"],
+}
+
+GEMINI_POLICY_PATH = "/home/sprite/.gemini/policies/fairy.toml"
+
+
+def _gemini_names_toml(names: list[str]) -> str:
+    return "[" + ", ".join(f'"{n}"' for n in names) + "]"
+
+
+def _tool_files_gemini(tools: list[dict]) -> dict[str, str]:
+    """Translate Managed-Agents tools spec → Gemini Policy Engine TOML.
+
+    Written to ~/.gemini/policies/fairy.toml; loaded on every gemini invocation
+    (including --resume), so restrictions persist across multi-turn sessions.
+
+    default_config.enabled=False → deny-all catch-all + allow-rules for enabled tools
+    default_config.enabled=True  → per-tool deny rules for each disabled tool
+    """
+    toolset = _find_agent_toolset(tools)
+    if toolset is None:
+        return {}
+    default_enabled = toolset.get("default_config", {}).get("enabled", True)
+    configs = {c["name"]: c.get("enabled", True) for c in toolset.get("configs", [])}
+
+    rules: list[str] = []
+
+    if not default_enabled:
+        rules.append(
+            "[[rule]]\n"
+            'toolName = "*"\n'
+            'decision = "deny"\n'
+            "priority = 1\n"
+            "interactive = false"
+        )
+        allowed: list[str] = []
+        for canonical, enabled in configs.items():
+            if enabled and canonical in _GEMINI_TOOL_NAMES:
+                allowed.extend(_GEMINI_TOOL_NAMES[canonical])
+        if allowed:
+            rules.append(
+                "[[rule]]\n"
+                f"toolName = {_gemini_names_toml(allowed)}\n"
+                'decision = "allow"\n'
+                "priority = 100\n"
+                "interactive = false"
+            )
+    else:
+        for canonical, enabled in configs.items():
+            if enabled or canonical not in _GEMINI_TOOL_NAMES:
+                continue
+            rules.append(
+                "[[rule]]\n"
+                f"toolName = {_gemini_names_toml(_GEMINI_TOOL_NAMES[canonical])}\n"
+                'decision = "deny"\n'
+                "interactive = false"
+            )
+
+    if not rules:
+        return {}
+    return {GEMINI_POLICY_PATH: "\n\n".join(rules) + "\n"}
+
+
 def _build_tool_flags(
     runtime_name: str,
     tools: list[dict],
@@ -339,6 +410,8 @@ def _build_tool_flags(
         return "", {}
     if runtime_name in ("claude", "claude-oauth"):
         return _tool_flags_claude(tools, mcp_server_names), {}
+    if runtime_name == "gemini":
+        return "", _tool_files_gemini(tools)
     return "", {}
 
 

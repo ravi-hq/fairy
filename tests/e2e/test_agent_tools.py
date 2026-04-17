@@ -26,12 +26,14 @@ REPRESENTATIVE_TOOL = {
     "claude": "web_fetch",
     "claude-oauth": "web_fetch",
     "codex": "web_search",
+    "gemini": "bash",
 }
 
 RUNTIME_TOOL_NAMES = {
     "claude": {"web_fetch": "WebFetch"},
     "claude-oauth": {"web_fetch": "WebFetch"},
     "codex": {"web_search": "web_search"},
+    "gemini": {"bash": "run_shell_command"},
 }
 
 PROMPTS = {
@@ -42,6 +44,10 @@ PROMPTS = {
     "web_search": (
         "Use your web search tool to search for 'current UTC date' and print the "
         "top result's title."
+    ),
+    "bash": (
+        "Run the shell command `echo TOOL_SIGNAL_BASH` using your shell tool and "
+        "print the output."
     ),
 }
 
@@ -87,12 +93,30 @@ def _parse_codex_tool_names(events: list[dict]) -> list[str]:
     return names
 
 
+def _parse_gemini_tool_names(events: list[dict]) -> list[str]:
+    names: list[str] = []
+    for e in events:
+        if e.get("type") != "output":
+            continue
+        try:
+            obj = json.loads(e.get("data", ""))
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if obj.get("type") == "tool_use":
+            name = obj.get("tool_name")
+            if name:
+                names.append(name)
+    return names
+
+
 def _tool_was_invoked(events: list[dict], runtime: str, tool: str) -> bool:
     target = RUNTIME_TOOL_NAMES[runtime][tool]
     if runtime in ("claude", "claude-oauth"):
         return target in _parse_claude_tool_names(events)
     if runtime == "codex":
         return target in _parse_codex_tool_names(events)
+    if runtime == "gemini":
+        return target in _parse_gemini_tool_names(events)
     return False
 
 
@@ -101,6 +125,8 @@ def _any_tool_was_invoked(events: list[dict], runtime: str) -> bool:
         return bool(_parse_claude_tool_names(events))
     if runtime == "codex":
         return bool(_parse_codex_tool_names(events))
+    if runtime == "gemini":
+        return bool(_parse_gemini_tool_names(events))
     return False
 
 
@@ -124,7 +150,7 @@ def _deny_all() -> list[dict]:
     return [{"type": "agent_toolset_20260401", "default_config": {"enabled": False}}]
 
 
-@pytest.fixture(scope="class", params=["claude", "codex"])
+@pytest.fixture(scope="class", params=["claude", "codex", "gemini"])
 def runtime(request, e2e_runtimes):
     if request.param not in e2e_runtimes:
         pytest.skip(f"{request.param} not in E2E_RUNTIMES")
