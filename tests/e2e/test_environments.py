@@ -265,6 +265,85 @@ class TestEnvironmentInSession:
         assert "combo_value" in output, f"Env var check failed: {output[:500]}"
         assert "SETUP_RAN" in output, f"Setup script check failed: {output[:500]}"
 
+    @pytest.mark.slow
+    def test_limited_networking_blocks_disallowed_host(
+        self, api, create_agent, create_session, create_environment, runtime
+    ):
+        """A domain outside allowed_hosts resolves to DNS REFUSED inside the sprite."""
+        if runtime not in ("claude", "claude-oauth"):
+            pytest.skip("Hardcoded allowed_hosts assume the claude runtime's API host")
+
+        env = create_environment(
+            name=_unique("e2e-netblock"),
+            networking={
+                "type": "limited",
+                "allowed_hosts": ["api.anthropic.com"],
+            },
+            setup_script=(
+                "python3 -c \"import socket; socket.gethostbyname('example.com')\" "
+                "2>/dev/null && echo EXAMPLE_RESOLVED > /tmp/fairy_net_block "
+                "|| echo EXAMPLE_BLOCKED > /tmp/fairy_net_block"
+            ),
+        )
+        agent = create_agent(
+            name=_unique("e2e-netblock-agent"),
+            model=RUNTIME_MODELS[runtime],
+            runtime=runtime,
+            environment_id=env["id"],
+        )
+        session = create_session(
+            agent_id=agent["id"],
+            prompt="Read the file /tmp/fairy_net_block and print its contents.",
+            timeout=180,
+        )
+        result, events = api.run_session(session["id"])
+        output = stream_all_output(events)
+        assert "EXAMPLE_BLOCKED" in output, (
+            f"Expected example.com to be blocked by DNS policy. Output: {output[:500]}"
+        )
+        assert "EXAMPLE_RESOLVED" not in output, (
+            f"example.com should not resolve under limited networking. Output: {output[:500]}"
+        )
+        assert result["status"] == "completed"
+
+    @pytest.mark.slow
+    def test_limited_networking_allows_listed_host(
+        self, api, create_agent, create_session, create_environment, runtime
+    ):
+        """A domain inside allowed_hosts resolves normally inside the sprite."""
+        if runtime not in ("claude", "claude-oauth"):
+            pytest.skip("Hardcoded allowed_hosts assume the claude runtime's API host")
+
+        env = create_environment(
+            name=_unique("e2e-netallow"),
+            networking={
+                "type": "limited",
+                "allowed_hosts": ["api.anthropic.com", "api.github.com"],
+            },
+            setup_script=(
+                "python3 -c \"import socket; socket.gethostbyname('api.github.com')\" "
+                "2>/dev/null && echo GITHUB_RESOLVED > /tmp/fairy_net_allow "
+                "|| echo GITHUB_BLOCKED > /tmp/fairy_net_allow"
+            ),
+        )
+        agent = create_agent(
+            name=_unique("e2e-netallow-agent"),
+            model=RUNTIME_MODELS[runtime],
+            runtime=runtime,
+            environment_id=env["id"],
+        )
+        session = create_session(
+            agent_id=agent["id"],
+            prompt="Read the file /tmp/fairy_net_allow and print its contents.",
+            timeout=180,
+        )
+        result, events = api.run_session(session["id"])
+        output = stream_all_output(events)
+        assert "GITHUB_RESOLVED" in output, (
+            f"Expected api.github.com to resolve under allow-list. Output: {output[:500]}"
+        )
+        assert result["status"] == "completed"
+
     def test_session_inherits_agent_environment(
         self, api, create_agent, create_session, create_environment, runtime
     ):

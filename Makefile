@@ -31,6 +31,10 @@ test-e2e:
 test-e2e-fast:
 	uv run pytest tests/e2e -v -n $(E2E_WORKERS) --dist loadfile -m "not slow"
 
+# Just the network-isolation e2e enforcement tests. Claude runtime only.
+test-e2e-networking:
+	uv run pytest tests/e2e/test_environments.py -v -k "limited_networking_blocks or limited_networking_allows"
+
 # Run everything — unit + e2e. E2E auto-skips if FAIRY_API_TOKEN is unset.
 test-all:
 	uv run pytest tests/ -v

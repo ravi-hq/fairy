@@ -1,5 +1,4 @@
 import functools
-from datetime import timezone
 
 from django.http import JsonResponse
 from django.utils import timezone as tz

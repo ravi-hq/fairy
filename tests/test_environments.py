@@ -384,6 +384,46 @@ class TestUpdateEnvironment:
         )
         assert resp.json()["version"] == 1
 
+    def test_update_networking_type_increments_version(
+        self, client: Client, auth_headers, environment
+    ):
+        resp = client.put(
+            f"/environments/{environment.id}",
+            data=json.dumps({
+                "version": 1,
+                "networking": {"type": "limited", "allowed_hosts": ["api.example.com"]},
+            }),
+            content_type="application/json",
+            **auth_headers,
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["version"] == 2
+        assert data["networking"]["type"] == "limited"
+        assert data["networking"]["allowed_hosts"] == ["api.example.com"]
+
+        new_version = EnvironmentVersion.objects.get(environment=environment, version=2)
+        assert new_version.networking_type == "limited"
+        assert new_version.networking_config == {"allowed_hosts": ["api.example.com"]}
+
+    def test_update_networking_no_change_keeps_version(
+        self, client: Client, auth_headers, environment
+    ):
+        resp = client.put(
+            f"/environments/{environment.id}",
+            data=json.dumps({
+                "version": 1,
+                "networking": {"type": "unrestricted"},
+            }),
+            content_type="application/json",
+            **auth_headers,
+        )
+        assert resp.status_code == 200
+        assert resp.json()["version"] == 1
+        assert not EnvironmentVersion.objects.filter(
+            environment=environment, version=2
+        ).exists()
+
 
 @pytest.mark.django_db
 class TestEnvironmentLifecycle:
