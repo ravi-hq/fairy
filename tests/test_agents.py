@@ -33,6 +33,13 @@ def runtime_key(user):
     return urk
 
 
+SAMPLE_SKILL = {
+    "name": "web-search",
+    "description": "Search the web for current information.",
+    "content": "---\nname: web-search\ndescription: Search the web for current information.\n---\n\nUse this skill when the user asks for up-to-date information.\n",
+}
+
+
 @pytest.fixture
 def agent(user):
     a = Agent.objects.create(
@@ -42,7 +49,7 @@ def agent(user):
         system="You are a helpful assistant.",
         model="claude-sonnet-4-6",
         runtime="claude",
-        skills=[{"type": "web_search"}],
+        skills=[SAMPLE_SKILL],
         metadata={"team": "platform"},
         version=1,
     )
@@ -66,7 +73,7 @@ def test_create_agent(client: Client, auth_headers):
             "runtime": "claude",
             "system": "You are helpful.",
             "description": "Does things",
-            "skills": [{"type": "code_search"}],
+            "skills": [SAMPLE_SKILL],
             "metadata": {"env": "prod"},
         }),
         content_type="application/json",
@@ -79,7 +86,7 @@ def test_create_agent(client: Client, auth_headers):
     assert data["runtime"] == "claude"
     assert data["system"] == "You are helpful."
     assert data["description"] == "Does things"
-    assert data["skills"] == [{"type": "code_search"}]
+    assert data["skills"] == [SAMPLE_SKILL]
     assert data["metadata"] == {"env": "prod"}
     assert data["version"] == 1
     assert data["archived_at"] is None

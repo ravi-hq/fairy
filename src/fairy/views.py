@@ -11,7 +11,7 @@ import re
 from typing import Literal
 
 from pydantic import BaseModel, Field, ValidationError, field_validator
-from sprites import SpritesClient, SpriteError
+from sprites import NetworkPolicy, PolicyRule, SpritesClient, SpriteError
 
 from fairy.auth import require_api_key
 from fairy.models import (
@@ -19,7 +19,13 @@ from fairy.models import (
     SessionResource, UserRuntimeKey,
 )
 from fairy.runtimes import RUNTIMES, AgentModel
-from fairy.sprites_exec import EnvironmentSetup, McpServerSpec, RepoSpec, build_wrapper_script
+from fairy.sprites_exec import (
+    EnvironmentSetup,
+    McpServerSpec,
+    RepoSpec,
+    SkillSpec,
+    build_wrapper_script,
+)
 from fairy.stream import run_session_background, stream_session_from_db
 
 logger = logging.getLogger(__name__)
@@ -55,6 +61,25 @@ def _mcp_servers_to_specs(mcp_servers: list[dict]) -> list[McpServerSpec]:
         )
         for s in mcp_servers
     ]
+
+
+def _skills_to_specs(skills: list[dict]) -> list[SkillSpec]:
+    """Convert agent's skills JSON to SkillSpec list for materialization."""
+    return [SkillSpec(name=s["name"], content=s["content"]) for s in skills]
+
+
+def _environment_to_network_policy(env: Environment | None) -> NetworkPolicy | None:
+    """Build a Sprites NetworkPolicy from an Environment's networking fields.
+
+    Returns None for unrestricted environments so the caller can skip the
+    update_network_policy call and rely on the Sprites default (allow-all).
+    """
+    if env is None or env.networking_type != "limited":
+        return None
+    allowed_hosts = (env.networking_config or {}).get("allowed_hosts", [])
+    rules = [PolicyRule(domain=host, action="allow") for host in allowed_hosts]
+    rules.append(PolicyRule(domain="*", action="deny"))
+    return NetworkPolicy(rules=rules)
 
 
 def _resources_to_repo_specs(resources: list) -> list[RepoSpec]:
@@ -205,6 +230,10 @@ def create_session(request):
         return JsonResponse({"detail": f"Failed to create Sprite: {e}"}, status=502)
 
     try:
+        network_policy = _environment_to_network_policy(environment_obj)
+        if network_policy is not None:
+            sprite.update_network_policy(network_policy)
+
         fs = sprite.filesystem()
         repo_specs = _resources_to_repo_specs(req.resources)
 
@@ -223,10 +252,11 @@ def create_session(request):
 
         mcp_specs = _mcp_servers_to_specs(agent_obj.mcp_servers) if agent_obj else []
         agent_tools = agent_obj.tools if agent_obj else []
+        skill_specs = _skills_to_specs(agent_obj.skills) if agent_obj else []
         script = build_wrapper_script(
             config, api_key, effective_prompt,
             repos=repo_specs, environment=env_setup, mcp_servers=mcp_specs,
-            tools=agent_tools,
+            tools=agent_tools, skills=skill_specs,
         )
         (fs / "run-agent.sh").write_text(script)
         sprite.command("chmod", "+x", "/run-agent.sh").run()
@@ -387,11 +417,13 @@ def send_prompt(request, session_id):
 
     try:
         fs = sprite.filesystem()
+        skill_specs = _skills_to_specs(session.agent.skills) if session.agent else []
         script = build_wrapper_script(
             config, api_key, req.prompt,
             continue_session=True,
             mcp_servers=mcp_specs,
             tools=agent_tools,
+            skills=skill_specs,
         )
         (fs / "run-agent.sh").write_text(script)
     except SpriteError as e:
@@ -498,6 +530,61 @@ def _validate_tools(tools: list) -> list:
     return tools
 
 
+MAX_SKILLS_PER_AGENT = 20
+MAX_SKILL_DESCRIPTION_LEN = 1024
+MAX_SKILL_CONTENT_BYTES = 64 * 1024
+
+_SKILL_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
+_SKILL_ALLOWED_KEYS = {"name", "description", "content"}
+_SKILL_HEREDOC_DELIMITER = "SKILL_EOF"
+
+
+def _validate_skills(skills: list) -> list:
+    if len(skills) > MAX_SKILLS_PER_AGENT:
+        raise ValueError(f"Maximum {MAX_SKILLS_PER_AGENT} skills per agent")
+    seen_names: set[str] = set()
+    for i, skill in enumerate(skills):
+        if not isinstance(skill, dict):
+            raise ValueError(f"skills[{i}] must be an object")
+
+        extra = set(skill) - _SKILL_ALLOWED_KEYS
+        if extra:
+            raise ValueError(
+                f"skills[{i}]: unknown keys {sorted(extra)!r}. "
+                f"Allowed: {sorted(_SKILL_ALLOWED_KEYS)}"
+            )
+        for field_name in ("name", "description", "content"):
+            if field_name not in skill:
+                raise ValueError(f"skills[{i}] missing required field: {field_name}")
+            if not isinstance(skill[field_name], str):
+                raise ValueError(f"skills[{i}].{field_name} must be a string")
+
+        name = skill["name"]
+        if not _SKILL_NAME_RE.match(name):
+            raise ValueError(
+                f"skills[{i}].name {name!r} must match [a-z0-9][a-z0-9-]{{0,63}}"
+            )
+        if name in seen_names:
+            raise ValueError(f"skills[{i}]: duplicate name {name!r}")
+        seen_names.add(name)
+
+        if len(skill["description"]) > MAX_SKILL_DESCRIPTION_LEN:
+            raise ValueError(
+                f"skills[{i}].description exceeds {MAX_SKILL_DESCRIPTION_LEN} chars"
+            )
+
+        content = skill["content"]
+        if len(content.encode("utf-8")) > MAX_SKILL_CONTENT_BYTES:
+            raise ValueError(
+                f"skills[{i}].content exceeds {MAX_SKILL_CONTENT_BYTES} bytes"
+            )
+        if _SKILL_HEREDOC_DELIMITER in content:
+            raise ValueError(
+                f"skills[{i}].content must not contain {_SKILL_HEREDOC_DELIMITER!r}"
+            )
+    return skills
+
+
 def _validate_mcp_servers(servers: list) -> list:
     names = set()
     for i, server in enumerate(servers):
@@ -554,6 +641,11 @@ class CreateAgentRequest(BaseModel):
     def validate_mcp_servers(cls, v: list) -> list:
         return _validate_mcp_servers(v)
 
+    @field_validator("skills")
+    @classmethod
+    def validate_skills(cls, v: list) -> list:
+        return _validate_skills(v)
+
 
 class UpdateAgentRequest(BaseModel):
     version: int = Field(description="Current version — optimistic concurrency check")
@@ -589,6 +681,13 @@ class UpdateAgentRequest(BaseModel):
     def validate_mcp_servers(cls, v: list | None) -> list | None:
         if v is not None:
             _validate_mcp_servers(v)
+        return v
+
+    @field_validator("skills")
+    @classmethod
+    def validate_skills(cls, v: list | None) -> list | None:
+        if v is not None:
+            _validate_skills(v)
         return v
 
 

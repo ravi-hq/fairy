@@ -36,6 +36,14 @@ test-e2e-fast:
 test-e2e-tools:
 	uv run pytest tests/e2e/test_agent_tools.py -v -m "tool_matrix"
 
+# Just the skills-materialization e2e tests (spawns one real session per runtime).
+test-e2e-skills:
+	uv run pytest tests/e2e/test_skills.py -v -n $(E2E_WORKERS) --dist loadfile
+
+# Just the network-isolation e2e enforcement tests. Claude runtime only.
+test-e2e-networking:
+	uv run pytest tests/e2e/test_environments.py -v -k "limited_networking_blocks or limited_networking_allows"
+
 # Run everything — unit + e2e. E2E auto-skips if FAIRY_API_TOKEN is unset.
 test-all:
 	uv run pytest tests/ -v

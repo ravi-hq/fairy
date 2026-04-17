@@ -36,6 +36,17 @@ class McpServerSpec:
     env: dict[str, str] = field(default_factory=dict)
 
 
+@dataclass(frozen=True)
+class SkillSpec:
+    """A SKILL.md file to materialize onto the Sprite filesystem.
+
+    `content` is the full SKILL.md text including YAML frontmatter. `name`
+    is the directory slug, validated upstream to match [a-z0-9][a-z0-9-]{0,63}.
+    """
+    name: str
+    content: str
+
+
 PACKAGE_MANAGER_ORDER = ["apt", "cargo", "gem", "go", "npm", "pip"]
 
 
@@ -307,6 +318,37 @@ def _format_tool_files_heredoc(files: dict[str, str]) -> str:
     return "\n".join(blocks)
 
 
+_SKILLS_ROOTS: dict[str, str] = {
+    "claude": "/home/sprite/.claude/skills",
+    "claude-oauth": "/home/sprite/.claude/skills",
+    "codex": "/home/sprite/.codex/skills",
+    "gemini": "/home/sprite/.gemini/skills",
+}
+
+
+def _build_skills_section(runtime_name: str, skills: list[SkillSpec]) -> str:
+    """Emit shell commands that write each SKILL.md into the runtime's skills dir.
+
+    Each skill becomes <root>/<name>/SKILL.md. Content is written via a
+    single-quoted heredoc so it is emitted verbatim — no variable expansion.
+    The literal string ``SKILL_EOF`` is rejected upstream in the validator to
+    prevent heredoc-closure injection.
+    """
+    if not skills:
+        return ""
+    root = _SKILLS_ROOTS.get(runtime_name)
+    if root is None:
+        return ""
+    lines = ["# Agent skills"]
+    for s in skills:
+        dir_path = f"{root}/{s.name}"
+        lines.append(f"mkdir -p {shlex.quote(dir_path)}")
+        lines.append(f"cat > {shlex.quote(dir_path + '/SKILL.md')} << 'SKILL_EOF'")
+        lines.append(s.content)
+        lines.append("SKILL_EOF")
+    return "\n".join(lines)
+
+
 def build_wrapper_script(
     config: RuntimeConfig,
     api_key: str,
@@ -317,6 +359,7 @@ def build_wrapper_script(
     environment: EnvironmentSetup | None = None,
     mcp_servers: list[McpServerSpec] | None = None,
     tools: list[dict] | None = None,
+    skills: list[SkillSpec] | None = None,
 ) -> str:
     """Build a shell script that exports the API key and runs the agent.
 
@@ -337,6 +380,7 @@ def build_wrapper_script(
 
     mcp_section = _build_mcp_section(config.name, mcp_servers or [])
     mcp_flags = _mcp_cmd_flags(config.name, mcp_servers or [])
+    skills_section = _build_skills_section(config.name, skills or [])
 
     mcp_names = [s.name for s in (mcp_servers or [])]
     tool_flags, tool_files = _build_tool_flags(config.name, tools or [], mcp_names)
@@ -366,6 +410,8 @@ fi
 {mcp_section}
 
 {tool_files_section}
+
+{skills_section}
 
 exec {cmd}{mcp_flags}{tool_flags}
 """

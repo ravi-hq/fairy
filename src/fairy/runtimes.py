@@ -62,8 +62,14 @@ RUNTIMES: dict[str, RuntimeConfig] = {
     ),
     "codex": RuntimeConfig(
         name="codex",
-        cmd='echo "$PROMPT" | codex exec --full-auto --json',
-        continue_cmd='codex exec resume --last --full-auto --json "$PROMPT"',
+        cmd=(
+            'echo "$PROMPT" | codex exec '
+            '--dangerously-bypass-approvals-and-sandbox --json'
+        ),
+        continue_cmd=(
+            'codex exec resume --last '
+            '--dangerously-bypass-approvals-and-sandbox --json "$PROMPT"'
+        ),
         env_var="CODEX_API_KEY",
     ),
     "gemini": RuntimeConfig(

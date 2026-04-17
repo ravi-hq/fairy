@@ -20,7 +20,19 @@ class TestAgentCRUD:
             runtime="claude",
             system="You are a helpful assistant.",
             description="E2E test agent",
-            skills=[{"type": "web_search"}],
+            skills=[
+                {
+                    "name": "web-search",
+                    "description": "Search the web for current information.",
+                    "content": (
+                        "---\n"
+                        "name: web-search\n"
+                        "description: Search the web for current information.\n"
+                        "---\n\n"
+                        "Use this skill when the user asks for up-to-date information.\n"
+                    ),
+                }
+            ],
             metadata={"team": "e2e"},
         )
         assert agent["type"] == "agent"
@@ -29,7 +41,7 @@ class TestAgentCRUD:
         assert agent["runtime"] == "claude"
         assert agent["system"] == "You are a helpful assistant."
         assert agent["description"] == "E2E test agent"
-        assert agent["skills"] == [{"type": "web_search"}]
+        assert agent["skills"][0]["name"] == "web-search"
         assert agent["metadata"] == {"team": "e2e"}
         assert agent["version"] == 1
         assert agent["archived_at"] is None
