@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+
+{% block libs %}
+  {{ super() }}
+  {% if page.meta and page.meta.stoplight %}
+    <link rel="stylesheet" href="https://unpkg.com/@stoplight/elements/styles.min.css">
+    <script src="https://unpkg.com/@stoplight/elements/web-components.min.js"></script>
+    <style>
+      elements-api { display: block; min-height: 80vh; }
+    </style>
+  {% endif %}
+{% endblock %}

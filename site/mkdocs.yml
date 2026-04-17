@@ -1,0 +1,63 @@
+site_name: Fairy
+site_url: https://ravi-hq.github.io/fairy
+repo_url: https://github.com/ravi-hq/fairy
+repo_name: ravi-hq/fairy
+
+theme:
+  name: material
+  custom_dir: overrides
+  palette:
+    - scheme: slate
+      primary: pink
+      accent: purple
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+    - scheme: default
+      primary: pink
+      accent: purple
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+  features:
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - content.code.copy
+    - search.suggest
+    - search.highlight
+
+nav:
+  - Home: index.md
+  - Getting Started:
+    - Quickstart: api/quickstart.md
+    - Core Concepts: api/concepts.md
+    - Overview: api/product.md
+  - Reference:
+    - API Reference: api/reference.md
+    - Authentication: api/authentication.md
+    - Streaming: api/streaming.md
+    - Errors: api/errors.md
+    - Pagination: api/pagination.md
+  - Patterns:
+    - CLI Wrapper: patterns/cli-wrapper.md
+    - Chat Bot: patterns/chat-bot.md
+    - CI Bot: patterns/ci-bot.md
+    - Internal Dashboard: patterns/dashboard.md
+    - Batch Automation: patterns/batch-automation.md
+  - Operators:
+    - Deploy Guide: operators/deploy.md
+
+extra_css:
+  - stylesheets/extra.css
+
+markdown_extensions:
+  - admonition
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - tables
+  - toc:
+      permalink: true

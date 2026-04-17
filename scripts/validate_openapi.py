@@ -10,6 +10,8 @@ Run: `uv run python -m scripts.validate_openapi`
 
 from __future__ import annotations
 
+import argparse
+import json
 import os
 import re
 import sys
@@ -146,6 +148,10 @@ def _load_spec() -> dict:
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description="Validate docs/openapi.yaml against Django routes.")
+    parser.add_argument("--export", metavar="PATH", help="Write openapi.yaml as JSON to PATH on success.")
+    args = parser.parse_args()
+
     _setup_django()
     from fairy.urls import urlpatterns
 
@@ -200,6 +206,16 @@ def main() -> int:
         return 1
 
     print(f"openapi.yaml OK ({len(code_by_path)} paths verified)")
+
+    if args.export:
+        export_path = Path(args.export)
+        with open(SPEC_PATH) as f:
+            spec_data = yaml.safe_load(f)
+        export_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(export_path, "w") as f:
+            json.dump(spec_data, f, indent=2)
+        print(f"exported to {export_path}")
+
     return 0
 
 
