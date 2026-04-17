@@ -4,7 +4,6 @@ from django.db import migrations
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("fairy", "0008_add_tools_mcp_servers_to_agent"),
     ]

@@ -40,8 +40,11 @@ def runtime_key(user):
 @pytest.fixture
 def agent(user):
     return Agent.objects.create(
-        user=user, name="Test Agent", model="claude-sonnet-4-6",
-        runtime="claude", version=1,
+        user=user,
+        name="Test Agent",
+        model="claude-sonnet-4-6",
+        runtime="claude",
+        version=1,
     )
 
 
@@ -122,9 +125,7 @@ class TestBuildCloneSection:
 
     def test_continue_session_no_repos(self):
         config = RUNTIMES["claude"]
-        script = build_wrapper_script(
-            config, "sk-test", "hello", continue_session=True, repos=[]
-        )
+        script = build_wrapper_script(config, "sk-test", "hello", continue_session=True, repos=[])
         assert "git clone" not in script
         assert "--continue" in script
 
@@ -137,51 +138,61 @@ class TestResourceValidation:
     def test_invalid_github_url_rejected(self, client: Client, auth_headers, runtime_key, agent):
         resp = client.post(
             "/sessions",
-            data=json.dumps({
-                "agent_id": str(agent.id),
-                "prompt": "hello",
-                "resources": [
-                    {"type": "github_repository", "url": "https://gitlab.com/org/repo"}
-                ],
-            }),
+            data=json.dumps(
+                {
+                    "agent_id": str(agent.id),
+                    "prompt": "hello",
+                    "resources": [
+                        {"type": "github_repository", "url": "https://gitlab.com/org/repo"}
+                    ],
+                }
+            ),
             content_type="application/json",
             **auth_headers,
         )
         assert resp.status_code == 422
 
-    def test_non_absolute_mount_path_rejected(self, client: Client, auth_headers, runtime_key, agent):
+    def test_non_absolute_mount_path_rejected(
+        self, client: Client, auth_headers, runtime_key, agent
+    ):
         resp = client.post(
             "/sessions",
-            data=json.dumps({
-                "agent_id": str(agent.id),
-                "prompt": "hello",
-                "resources": [
-                    {
-                        "type": "github_repository",
-                        "url": "https://github.com/org/repo",
-                        "mount_path": "relative/path",
-                    }
-                ],
-            }),
+            data=json.dumps(
+                {
+                    "agent_id": str(agent.id),
+                    "prompt": "hello",
+                    "resources": [
+                        {
+                            "type": "github_repository",
+                            "url": "https://github.com/org/repo",
+                            "mount_path": "relative/path",
+                        }
+                    ],
+                }
+            ),
             content_type="application/json",
             **auth_headers,
         )
         assert resp.status_code == 422
 
-    def test_sprite_root_mount_path_rejected(self, client: Client, auth_headers, runtime_key, agent):
+    def test_sprite_root_mount_path_rejected(
+        self, client: Client, auth_headers, runtime_key, agent
+    ):
         resp = client.post(
             "/sessions",
-            data=json.dumps({
-                "agent_id": str(agent.id),
-                "prompt": "hello",
-                "resources": [
-                    {
-                        "type": "github_repository",
-                        "url": "https://github.com/org/repo",
-                        "mount_path": "/home/sprite",
-                    }
-                ],
-            }),
+            data=json.dumps(
+                {
+                    "agent_id": str(agent.id),
+                    "prompt": "hello",
+                    "resources": [
+                        {
+                            "type": "github_repository",
+                            "url": "https://github.com/org/repo",
+                            "mount_path": "/home/sprite",
+                        }
+                    ],
+                }
+            ),
             content_type="application/json",
             **auth_headers,
         )
@@ -190,22 +201,24 @@ class TestResourceValidation:
     def test_duplicate_mount_paths_rejected(self, client: Client, auth_headers, runtime_key, agent):
         resp = client.post(
             "/sessions",
-            data=json.dumps({
-                "agent_id": str(agent.id),
-                "prompt": "hello",
-                "resources": [
-                    {
-                        "type": "github_repository",
-                        "url": "https://github.com/org/repo1",
-                        "mount_path": "/workspace/same",
-                    },
-                    {
-                        "type": "github_repository",
-                        "url": "https://github.com/org/repo2",
-                        "mount_path": "/workspace/same",
-                    },
-                ],
-            }),
+            data=json.dumps(
+                {
+                    "agent_id": str(agent.id),
+                    "prompt": "hello",
+                    "resources": [
+                        {
+                            "type": "github_repository",
+                            "url": "https://github.com/org/repo1",
+                            "mount_path": "/workspace/same",
+                        },
+                        {
+                            "type": "github_repository",
+                            "url": "https://github.com/org/repo2",
+                            "mount_path": "/workspace/same",
+                        },
+                    ],
+                }
+            ),
             content_type="application/json",
             **auth_headers,
         )
@@ -221,11 +234,13 @@ class TestResourceValidation:
         ]
         resp = client.post(
             "/sessions",
-            data=json.dumps({
-                "agent_id": str(agent.id),
-                "prompt": "hello",
-                "resources": resources,
-            }),
+            data=json.dumps(
+                {
+                    "agent_id": str(agent.id),
+                    "prompt": "hello",
+                    "resources": resources,
+                }
+            ),
             content_type="application/json",
             **auth_headers,
         )
@@ -242,18 +257,20 @@ class TestResourcesIntegration:
     ):
         resp = client.post(
             "/sessions",
-            data=json.dumps({
-                "agent_id": str(agent.id),
-                "prompt": "review the code",
-                "resources": [
-                    {
-                        "type": "github_repository",
-                        "url": "https://github.com/org/repo",
-                        "mount_path": "/workspace/repo",
-                        "authorization_token": "ghp_secret123",
-                    }
-                ],
-            }),
+            data=json.dumps(
+                {
+                    "agent_id": str(agent.id),
+                    "prompt": "review the code",
+                    "resources": [
+                        {
+                            "type": "github_repository",
+                            "url": "https://github.com/org/repo",
+                            "mount_path": "/workspace/repo",
+                            "authorization_token": "ghp_secret123",
+                        }
+                    ],
+                }
+            ),
             content_type="application/json",
             **auth_headers,
         )
@@ -292,13 +309,15 @@ class TestResourcesIntegration:
     ):
         resp = client.post(
             "/sessions",
-            data=json.dumps({
-                "agent_id": str(agent.id),
-                "prompt": "hello",
-                "resources": [
-                    {"type": "github_repository", "url": "https://github.com/org/my-repo"}
-                ],
-            }),
+            data=json.dumps(
+                {
+                    "agent_id": str(agent.id),
+                    "prompt": "hello",
+                    "resources": [
+                        {"type": "github_repository", "url": "https://github.com/org/my-repo"}
+                    ],
+                }
+            ),
             content_type="application/json",
             **auth_headers,
         )
@@ -311,13 +330,15 @@ class TestResourcesIntegration:
     ):
         resp = client.post(
             "/sessions",
-            data=json.dumps({
-                "agent_id": str(agent.id),
-                "prompt": "hello",
-                "resources": [
-                    {"type": "github_repository", "url": "https://github.com/org/public-repo"}
-                ],
-            }),
+            data=json.dumps(
+                {
+                    "agent_id": str(agent.id),
+                    "prompt": "hello",
+                    "resources": [
+                        {"type": "github_repository", "url": "https://github.com/org/public-repo"}
+                    ],
+                }
+            ),
             content_type="application/json",
             **auth_headers,
         )
@@ -347,13 +368,15 @@ class TestResourcesIntegration:
     ):
         resp = client.post(
             "/sessions",
-            data=json.dumps({
-                "agent_id": str(agent.id),
-                "prompt": "hello",
-                "resources": [
-                    {"type": "github_repository", "url": "https://github.com/org/repo.git"}
-                ],
-            }),
+            data=json.dumps(
+                {
+                    "agent_id": str(agent.id),
+                    "prompt": "hello",
+                    "resources": [
+                        {"type": "github_repository", "url": "https://github.com/org/repo.git"}
+                    ],
+                }
+            ),
             content_type="application/json",
             **auth_headers,
         )

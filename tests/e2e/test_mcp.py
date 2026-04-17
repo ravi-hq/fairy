@@ -45,12 +45,28 @@ MCP_SERVER_NPM_PKG = "@modelcontextprotocol/server-everything"
 # Fields whose string values are event metadata, not model text. Same filter
 # set as test_skills.py — keeps metadata from wedging between chunked content
 # deltas and breaking substring matches.
-_METADATA_KEYS = frozenset({
-    "type", "role", "session_id", "model", "timestamp", "id", "tool_id",
-    "tool_name", "tool_call_id", "tool_use_id", "parent_tool_use_id",
-    "status", "finish_reason", "stop_reason", "event_type", "msg_type",
-    "name", "uuid",
-})
+_METADATA_KEYS = frozenset(
+    {
+        "type",
+        "role",
+        "session_id",
+        "model",
+        "timestamp",
+        "id",
+        "tool_id",
+        "tool_name",
+        "tool_call_id",
+        "tool_use_id",
+        "parent_tool_use_id",
+        "status",
+        "finish_reason",
+        "stop_reason",
+        "event_type",
+        "msg_type",
+        "name",
+        "uuid",
+    }
+)
 
 
 def _concat_json_strings(stream_output: str) -> str:
@@ -120,7 +136,11 @@ class TestMcpServerToolInvocable:
     """Server declared → agent calls echo and we see the unique signal."""
 
     def test_mcp_server_tool_is_invocable(
-        self, api: FairyClient, create_agent, create_session, create_environment,
+        self,
+        api: FairyClient,
+        create_agent,
+        create_session,
+        create_environment,
         runtime,
     ):
         signal = f"MCP-ECHO-{uuid.uuid4().hex[:12]}"
@@ -146,10 +166,8 @@ class TestMcpServerToolInvocable:
         reassembled = _concat_json_strings(raw)
 
         assert final["status"] == "completed", (
-            f"Session status={final['status']} exit={final.get('exit_code')}\n"
-            f"Output: {raw[:500]}"
+            f"Session status={final['status']} exit={final.get('exit_code')}\nOutput: {raw[:500]}"
         )
         assert signal in reassembled, (
-            f"Expected echo signal {signal!r} in reassembled output.\n"
-            f"Output: {raw[:500]}"
+            f"Expected echo signal {signal!r} in reassembled output.\nOutput: {raw[:500]}"
         )

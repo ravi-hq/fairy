@@ -170,18 +170,20 @@ class TestCreateAgentWithMcp:
     def test_create_with_mcp_servers(self, client: Client, auth_headers):
         resp = client.post(
             "/agents",
-            data=json.dumps({
-                "name": "MCP Agent",
-                "model": "claude-sonnet-4-6",
-                "runtime": "claude",
-                "mcp_servers": [
-                    {
-                        "type": "url",
-                        "name": "github",
-                        "url": "https://mcp.github.com/mcp",
-                    },
-                ],
-            }),
+            data=json.dumps(
+                {
+                    "name": "MCP Agent",
+                    "model": "claude-sonnet-4-6",
+                    "runtime": "claude",
+                    "mcp_servers": [
+                        {
+                            "type": "url",
+                            "name": "github",
+                            "url": "https://mcp.github.com/mcp",
+                        },
+                    ],
+                }
+            ),
             content_type="application/json",
             **auth_headers,
         )
@@ -194,11 +196,13 @@ class TestCreateAgentWithMcp:
     def test_create_without_mcp_defaults_empty(self, client: Client, auth_headers):
         resp = client.post(
             "/agents",
-            data=json.dumps({
-                "name": "No MCP",
-                "model": "claude-sonnet-4-6",
-                "runtime": "claude",
-            }),
+            data=json.dumps(
+                {
+                    "name": "No MCP",
+                    "model": "claude-sonnet-4-6",
+                    "runtime": "claude",
+                }
+            ),
             content_type="application/json",
             **auth_headers,
         )
@@ -211,12 +215,14 @@ class TestCreateAgentWithMcp:
         """`tools` is no longer accepted — Pydantic silently drops unknown fields."""
         resp = client.post(
             "/agents",
-            data=json.dumps({
-                "name": "Ignored Tools",
-                "model": "claude-sonnet-4-6",
-                "runtime": "claude",
-                "tools": [{"type": "agent_toolset_20260401"}],
-            }),
+            data=json.dumps(
+                {
+                    "name": "Ignored Tools",
+                    "model": "claude-sonnet-4-6",
+                    "runtime": "claude",
+                    "tools": [{"type": "agent_toolset_20260401"}],
+                }
+            ),
             content_type="application/json",
             **auth_headers,
         )
@@ -229,12 +235,14 @@ class TestAgentMcpValidation:
     def test_mcp_server_missing_name(self, client: Client, auth_headers):
         resp = client.post(
             "/agents",
-            data=json.dumps({
-                "name": "Bad",
-                "model": "claude-sonnet-4-6",
-                "runtime": "claude",
-                "mcp_servers": [{"type": "url", "url": "https://example.com/mcp"}],
-            }),
+            data=json.dumps(
+                {
+                    "name": "Bad",
+                    "model": "claude-sonnet-4-6",
+                    "runtime": "claude",
+                    "mcp_servers": [{"type": "url", "url": "https://example.com/mcp"}],
+                }
+            ),
             content_type="application/json",
             **auth_headers,
         )
@@ -244,12 +252,14 @@ class TestAgentMcpValidation:
     def test_mcp_server_url_type_missing_url(self, client: Client, auth_headers):
         resp = client.post(
             "/agents",
-            data=json.dumps({
-                "name": "Bad",
-                "model": "claude-sonnet-4-6",
-                "runtime": "claude",
-                "mcp_servers": [{"type": "url", "name": "test"}],
-            }),
+            data=json.dumps(
+                {
+                    "name": "Bad",
+                    "model": "claude-sonnet-4-6",
+                    "runtime": "claude",
+                    "mcp_servers": [{"type": "url", "name": "test"}],
+                }
+            ),
             content_type="application/json",
             **auth_headers,
         )
@@ -259,12 +269,14 @@ class TestAgentMcpValidation:
     def test_mcp_server_stdio_type_missing_command(self, client: Client, auth_headers):
         resp = client.post(
             "/agents",
-            data=json.dumps({
-                "name": "Bad",
-                "model": "claude-sonnet-4-6",
-                "runtime": "claude",
-                "mcp_servers": [{"type": "stdio", "name": "test"}],
-            }),
+            data=json.dumps(
+                {
+                    "name": "Bad",
+                    "model": "claude-sonnet-4-6",
+                    "runtime": "claude",
+                    "mcp_servers": [{"type": "stdio", "name": "test"}],
+                }
+            ),
             content_type="application/json",
             **auth_headers,
         )
@@ -274,15 +286,17 @@ class TestAgentMcpValidation:
     def test_mcp_server_duplicate_names(self, client: Client, auth_headers):
         resp = client.post(
             "/agents",
-            data=json.dumps({
-                "name": "Bad",
-                "model": "claude-sonnet-4-6",
-                "runtime": "claude",
-                "mcp_servers": [
-                    {"name": "github", "url": "https://a.com/mcp"},
-                    {"name": "github", "url": "https://b.com/mcp"},
-                ],
-            }),
+            data=json.dumps(
+                {
+                    "name": "Bad",
+                    "model": "claude-sonnet-4-6",
+                    "runtime": "claude",
+                    "mcp_servers": [
+                        {"name": "github", "url": "https://a.com/mcp"},
+                        {"name": "github", "url": "https://b.com/mcp"},
+                    ],
+                }
+            ),
             content_type="application/json",
             **auth_headers,
         )
@@ -292,12 +306,14 @@ class TestAgentMcpValidation:
     def test_mcp_server_invalid_type(self, client: Client, auth_headers):
         resp = client.post(
             "/agents",
-            data=json.dumps({
-                "name": "Bad",
-                "model": "claude-sonnet-4-6",
-                "runtime": "claude",
-                "mcp_servers": [{"type": "grpc", "name": "test", "url": "https://a.com"}],
-            }),
+            data=json.dumps(
+                {
+                    "name": "Bad",
+                    "model": "claude-sonnet-4-6",
+                    "runtime": "claude",
+                    "mcp_servers": [{"type": "grpc", "name": "test", "url": "https://a.com"}],
+                }
+            ),
             content_type="application/json",
             **auth_headers,
         )
@@ -305,18 +321,17 @@ class TestAgentMcpValidation:
         assert "unknown type" in str(resp.json()["detail"]).lower()
 
     def test_mcp_server_max_20(self, client: Client, auth_headers):
-        servers = [
-            {"name": f"server-{i}", "url": f"https://s{i}.com/mcp"}
-            for i in range(21)
-        ]
+        servers = [{"name": f"server-{i}", "url": f"https://s{i}.com/mcp"} for i in range(21)]
         resp = client.post(
             "/agents",
-            data=json.dumps({
-                "name": "Bad",
-                "model": "claude-sonnet-4-6",
-                "runtime": "claude",
-                "mcp_servers": servers,
-            }),
+            data=json.dumps(
+                {
+                    "name": "Bad",
+                    "model": "claude-sonnet-4-6",
+                    "runtime": "claude",
+                    "mcp_servers": servers,
+                }
+            ),
             content_type="application/json",
             **auth_headers,
         )
@@ -328,22 +343,30 @@ class TestAgentMcpValidation:
 class TestUpdateAgentMcp:
     def test_update_mcp_servers(self, client: Client, auth_headers, user):
         agent = Agent.objects.create(
-            user=user, name="Agent", model="claude-sonnet-4-6",
-            runtime="claude", version=1,
+            user=user,
+            name="Agent",
+            model="claude-sonnet-4-6",
+            runtime="claude",
+            version=1,
         )
         AgentVersion.objects.create(
-            agent=agent, version=1, name=agent.name,
-            model=agent.model, runtime=agent.runtime,
+            agent=agent,
+            version=1,
+            name=agent.name,
+            model=agent.model,
+            runtime=agent.runtime,
         )
 
         resp = client.put(
             f"/agents/{agent.id}",
-            data=json.dumps({
-                "version": 1,
-                "mcp_servers": [
-                    {"name": "github", "url": "https://mcp.github.com/mcp"},
-                ],
-            }),
+            data=json.dumps(
+                {
+                    "version": 1,
+                    "mcp_servers": [
+                        {"name": "github", "url": "https://mcp.github.com/mcp"},
+                    ],
+                }
+            ),
             content_type="application/json",
             **auth_headers,
         )
@@ -354,20 +377,28 @@ class TestUpdateAgentMcp:
 
     def test_update_mcp_versioned(self, client: Client, auth_headers, user):
         agent = Agent.objects.create(
-            user=user, name="Agent", model="claude-sonnet-4-6",
-            runtime="claude", version=1,
+            user=user,
+            name="Agent",
+            model="claude-sonnet-4-6",
+            runtime="claude",
+            version=1,
         )
         AgentVersion.objects.create(
-            agent=agent, version=1, name=agent.name,
-            model=agent.model, runtime=agent.runtime,
+            agent=agent,
+            version=1,
+            name=agent.name,
+            model=agent.model,
+            runtime=agent.runtime,
         )
 
         client.put(
             f"/agents/{agent.id}",
-            data=json.dumps({
-                "version": 1,
-                "mcp_servers": [{"name": "s1", "url": "https://a.com/mcp"}],
-            }),
+            data=json.dumps(
+                {
+                    "version": 1,
+                    "mcp_servers": [{"name": "s1", "url": "https://a.com/mcp"}],
+                }
+            ),
             content_type="application/json",
             **auth_headers,
         )
@@ -388,8 +419,11 @@ class TestSessionMcpIntegration:
         self, client: Client, auth_headers, runtime_key, user, mock_sprites
     ):
         agent = Agent.objects.create(
-            user=user, name="MCP Agent", model="claude-sonnet-4-6",
-            runtime="claude", version=1,
+            user=user,
+            name="MCP Agent",
+            model="claude-sonnet-4-6",
+            runtime="claude",
+            version=1,
             mcp_servers=[
                 {"type": "url", "name": "github", "url": "https://mcp.github.com/mcp"},
             ],
@@ -412,8 +446,11 @@ class TestSessionMcpIntegration:
         self, client: Client, auth_headers, runtime_key, user, mock_sprites
     ):
         agent = Agent.objects.create(
-            user=user, name="Plain Agent", model="claude-sonnet-4-6",
-            runtime="claude", version=1,
+            user=user,
+            name="Plain Agent",
+            model="claude-sonnet-4-6",
+            runtime="claude",
+            version=1,
         )
         _, mock_fs = mock_sprites
         resp = client.post(
@@ -431,8 +468,11 @@ class TestSessionMcpIntegration:
         self, client: Client, auth_headers, runtime_key, user, mock_sprites
     ):
         agent = Agent.objects.create(
-            user=user, name="Auth Agent", model="claude-sonnet-4-6",
-            runtime="claude", version=1,
+            user=user,
+            name="Auth Agent",
+            model="claude-sonnet-4-6",
+            runtime="claude",
+            version=1,
             mcp_servers=[
                 {
                     "type": "url",

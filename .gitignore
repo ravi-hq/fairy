@@ -10,3 +10,5 @@ dist/
 fairy.db-shm
 fairy.db-wal
 .gstack/
+.coverage
+.mypy_cache/

@@ -9,7 +9,6 @@ def set_default_user(apps, schema_editor):
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
         ("fairy", "0002_agentsession_alter_userruntimekey_runtime_and_more"),

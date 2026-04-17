@@ -6,7 +6,6 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("fairy", "0001_initial"),
     ]
@@ -94,9 +93,7 @@ class Migration(migrations.Migration):
             options={
                 "db_table": "agent_session_logs",
                 "indexes": [
-                    models.Index(
-                        fields=["session", "id"], name="agent_sessi_session_049341_idx"
-                    )
+                    models.Index(fields=["session", "id"], name="agent_sessi_session_049341_idx")
                 ],
             },
         ),

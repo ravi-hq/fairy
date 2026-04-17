@@ -136,9 +136,7 @@ class FairyClient:
             if last_status in ("completed", "failed", "terminated"):
                 return resp.json()
             time.sleep(poll)
-        raise TimeoutError(
-            f"Session {sid} still '{last_status}' after {timeout}s"
-        )
+        raise TimeoutError(f"Session {sid} still '{last_status}' after {timeout}s")
 
     def collect_stream(self, sid, timeout=DEFAULT_TIMEOUT):
         """Consume SSE stream and return a list of parsed event dicts."""
@@ -182,17 +180,15 @@ class FairyClient:
 def stream_stdout(events: list[dict]) -> str:
     """Concatenate all stdout data from stream events."""
     return "".join(
-        e.get("data", "") for e in events
+        e.get("data", "")
+        for e in events
         if e.get("type") == "output" and e.get("stream") == "stdout"
     )
 
 
 def stream_all_output(events: list[dict]) -> str:
     """Concatenate all output data (stdout + stderr) from stream events."""
-    return "".join(
-        e.get("data", "") for e in events
-        if e.get("type") == "output"
-    )
+    return "".join(e.get("data", "") for e in events if e.get("type") == "output")
 
 
 # ---------------------------------------------------------------------------

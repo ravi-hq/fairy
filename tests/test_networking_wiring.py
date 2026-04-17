@@ -36,8 +36,11 @@ def runtime_key(user):
 @pytest.fixture
 def agent(user):
     return Agent.objects.create(
-        user=user, name="Test Agent", model="claude-sonnet-4-6",
-        runtime="claude", version=1,
+        user=user,
+        name="Test Agent",
+        model="claude-sonnet-4-6",
+        runtime="claude",
+        version=1,
     )
 
 
@@ -60,14 +63,18 @@ def mock_sprites(mocker):
 def _make_env(user, *, networking_type="unrestricted", allowed_hosts=None):
     networking_config = {"allowed_hosts": allowed_hosts} if allowed_hosts is not None else {}
     env = Environment.objects.create(
-        user=user, name=f"env-{networking_type}",
+        user=user,
+        name=f"env-{networking_type}",
         networking_type=networking_type,
         networking_config=networking_config,
         version=1,
     )
     EnvironmentVersion.objects.create(
-        environment=env, version=1, name=env.name,
-        packages=env.packages, env_vars=env.env_vars,
+        environment=env,
+        version=1,
+        name=env.name,
+        packages=env.packages,
+        env_vars=env.env_vars,
         setup_script=env.setup_script,
         networking_type=env.networking_type,
         networking_config=env.networking_config,
@@ -80,15 +87,19 @@ class TestSessionNetworkingIntegration:
         self, client: Client, auth_headers, runtime_key, user, agent, mock_sprites
     ):
         _, mock_sprite = mock_sprites
-        env = _make_env(user, networking_type="limited", allowed_hosts=["api.anthropic.com", "*.github.com"])
+        env = _make_env(
+            user, networking_type="limited", allowed_hosts=["api.anthropic.com", "*.github.com"]
+        )
 
         resp = client.post(
             "/sessions",
-            data=json.dumps({
-                "agent_id": str(agent.id),
-                "prompt": "hello",
-                "environment_id": str(env.id),
-            }),
+            data=json.dumps(
+                {
+                    "agent_id": str(agent.id),
+                    "prompt": "hello",
+                    "environment_id": str(env.id),
+                }
+            ),
             content_type="application/json",
             **auth_headers,
         )
@@ -111,11 +122,13 @@ class TestSessionNetworkingIntegration:
 
         resp = client.post(
             "/sessions",
-            data=json.dumps({
-                "agent_id": str(agent.id),
-                "prompt": "hello",
-                "environment_id": str(env.id),
-            }),
+            data=json.dumps(
+                {
+                    "agent_id": str(agent.id),
+                    "prompt": "hello",
+                    "environment_id": str(env.id),
+                }
+            ),
             content_type="application/json",
             **auth_headers,
         )
@@ -145,11 +158,13 @@ class TestSessionNetworkingIntegration:
 
         resp = client.post(
             "/sessions",
-            data=json.dumps({
-                "agent_id": str(agent.id),
-                "prompt": "hello",
-                "environment_id": str(env.id),
-            }),
+            data=json.dumps(
+                {
+                    "agent_id": str(agent.id),
+                    "prompt": "hello",
+                    "environment_id": str(env.id),
+                }
+            ),
             content_type="application/json",
             **auth_headers,
         )
@@ -165,11 +180,13 @@ class TestSessionNetworkingIntegration:
 
         resp = client.post(
             "/sessions",
-            data=json.dumps({
-                "agent_id": str(agent.id),
-                "prompt": "hello",
-                "environment_id": str(env.id),
-            }),
+            data=json.dumps(
+                {
+                    "agent_id": str(agent.id),
+                    "prompt": "hello",
+                    "environment_id": str(env.id),
+                }
+            ),
             content_type="application/json",
             **auth_headers,
         )

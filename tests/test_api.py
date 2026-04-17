@@ -39,8 +39,11 @@ def runtime_key(user):
 @pytest.fixture
 def agent(user):
     return Agent.objects.create(
-        user=user, name="Test Agent", model="claude-sonnet-4-6",
-        runtime="claude", version=1,
+        user=user,
+        name="Test Agent",
+        model="claude-sonnet-4-6",
+        runtime="claude",
+        version=1,
     )
 
 
@@ -95,7 +98,9 @@ def test_inactive_api_key_rejected(client: Client, api_key):
 
 @pytest.mark.django_db
 def test_run_invalid_json(client: Client, auth_headers):
-    resp = client.post("/sessions", data="not json", content_type="application/json", **auth_headers)
+    resp = client.post(
+        "/sessions", data="not json", content_type="application/json", **auth_headers
+    )
     assert resp.status_code == 400
     assert "Invalid JSON" in resp.json()["detail"]
 
@@ -246,9 +251,7 @@ def test_list_sessions_returns_user_sessions_newest_first(client: Client, auth_h
     older = AgentSession.objects.create(
         user=user, runtime="claude", prompt="one", status="completed", exit_code=0
     )
-    newer = AgentSession.objects.create(
-        user=user, runtime="claude", prompt="two", status="running"
-    )
+    newer = AgentSession.objects.create(user=user, runtime="claude", prompt="two", status="running")
 
     resp = client.get("/sessions", **auth_headers)
     assert resp.status_code == 200
@@ -283,9 +286,7 @@ def test_list_sessions_includes_terminal_states(client: Client, auth_headers, us
 def test_list_sessions_scoped_to_user(client: Client, auth_headers, user):
     AgentSession.objects.create(user=user, runtime="claude", prompt="mine", status="completed")
     other = User.objects.create_user(username="other", password="pass")
-    AgentSession.objects.create(
-        user=other, runtime="claude", prompt="theirs", status="completed"
-    )
+    AgentSession.objects.create(user=other, runtime="claude", prompt="theirs", status="completed")
 
     resp = client.get("/sessions", **auth_headers)
     assert resp.status_code == 200

@@ -54,28 +54,37 @@ def agent(user):
         version=1,
     )
     AgentVersion.objects.create(
-        agent=a, version=1, name=a.name, description=a.description,
-        system=a.system, model=a.model, runtime=a.runtime,
-        skills=a.skills, metadata=a.metadata,
+        agent=a,
+        version=1,
+        name=a.name,
+        description=a.description,
+        system=a.system,
+        model=a.model,
+        runtime=a.runtime,
+        skills=a.skills,
+        metadata=a.metadata,
     )
     return a
 
 
 # --- Create ---
 
+
 @pytest.mark.django_db
 def test_create_agent(client: Client, auth_headers):
     resp = client.post(
         "/agents",
-        data=json.dumps({
-            "name": "My Agent",
-            "model": "claude-sonnet-4-6",
-            "runtime": "claude",
-            "system": "You are helpful.",
-            "description": "Does things",
-            "skills": [SAMPLE_SKILL],
-            "metadata": {"env": "prod"},
-        }),
+        data=json.dumps(
+            {
+                "name": "My Agent",
+                "model": "claude-sonnet-4-6",
+                "runtime": "claude",
+                "system": "You are helpful.",
+                "description": "Does things",
+                "skills": [SAMPLE_SKILL],
+                "metadata": {"env": "prod"},
+            }
+        ),
         content_type="application/json",
         **auth_headers,
     )
@@ -148,6 +157,7 @@ def test_create_agent_missing_fields(client: Client, auth_headers):
 
 # --- List ---
 
+
 @pytest.mark.django_db
 def test_list_agents(client: Client, auth_headers, agent):
     resp = client.get("/agents", **auth_headers)
@@ -160,6 +170,7 @@ def test_list_agents(client: Client, auth_headers, agent):
 @pytest.mark.django_db
 def test_list_agents_excludes_archived(client: Client, auth_headers, agent):
     from django.utils import timezone
+
     agent.archived_at = timezone.now()
     agent.save()
 
@@ -171,13 +182,18 @@ def test_list_agents_excludes_archived(client: Client, auth_headers, agent):
 def test_list_agents_other_user_not_visible(client: Client, auth_headers):
     other = User.objects.create_user(username="other", password="pass")
     Agent.objects.create(
-        user=other, name="Other's Agent", model="x", runtime="claude", version=1,
+        user=other,
+        name="Other's Agent",
+        model="x",
+        runtime="claude",
+        version=1,
     )
     resp = client.get("/agents", **auth_headers)
     assert resp.json()["data"] == []
 
 
 # --- Get ---
+
 
 @pytest.mark.django_db
 def test_get_agent(client: Client, auth_headers, agent):
@@ -193,6 +209,7 @@ def test_get_agent_not_found(client: Client, auth_headers):
 
 
 # --- Update ---
+
 
 @pytest.mark.django_db
 def test_update_agent(client: Client, auth_headers, agent):
@@ -262,6 +279,7 @@ def test_update_agent_version_mismatch(client: Client, auth_headers, agent):
 @pytest.mark.django_db
 def test_update_archived_agent(client: Client, auth_headers, agent):
     from django.utils import timezone
+
     agent.archived_at = timezone.now()
     agent.save()
 
@@ -275,6 +293,7 @@ def test_update_archived_agent(client: Client, auth_headers, agent):
 
 
 # --- Archive ---
+
 
 @pytest.mark.django_db
 def test_archive_agent(client: Client, auth_headers, agent):
@@ -290,6 +309,7 @@ def test_archive_agent(client: Client, auth_headers, agent):
 @pytest.mark.django_db
 def test_archive_already_archived(client: Client, auth_headers, agent):
     from django.utils import timezone
+
     agent.archived_at = timezone.now()
     agent.save()
 
@@ -299,6 +319,7 @@ def test_archive_already_archived(client: Client, auth_headers, agent):
 
 # --- Versions ---
 
+
 @pytest.mark.django_db
 def test_list_versions(client: Client, auth_headers, agent):
     # Update to create version 2
@@ -306,8 +327,14 @@ def test_list_versions(client: Client, auth_headers, agent):
     agent.version = 2
     agent.save()
     AgentVersion.objects.create(
-        agent=agent, version=2, name=agent.name, system="v2 prompt",
-        model=agent.model, runtime=agent.runtime, skills=agent.skills, metadata=agent.metadata,
+        agent=agent,
+        version=2,
+        name=agent.name,
+        system="v2 prompt",
+        model=agent.model,
+        runtime=agent.runtime,
+        skills=agent.skills,
+        metadata=agent.metadata,
     )
 
     resp = client.get(f"/agents/{agent.id}/versions", **auth_headers)
@@ -319,6 +346,7 @@ def test_list_versions(client: Client, auth_headers, agent):
 
 
 # --- Session with agent_id ---
+
 
 @pytest.mark.django_db
 def test_create_session_with_agent(client: Client, auth_headers, agent, runtime_key, mocker):
@@ -349,7 +377,9 @@ def test_create_session_with_agent(client: Client, auth_headers, agent, runtime_
 
 
 @pytest.mark.django_db
-def test_create_session_with_agent_inherits_runtime(client: Client, auth_headers, agent, runtime_key, mocker):
+def test_create_session_with_agent_inherits_runtime(
+    client: Client, auth_headers, agent, runtime_key, mocker
+):
     mock_sprite = mocker.MagicMock()
     mock_fs = mocker.MagicMock()
     mock_sprite.filesystem.return_value = mock_fs
@@ -387,6 +417,7 @@ def test_create_session_missing_agent_id(client: Client, auth_headers):
 @pytest.mark.django_db
 def test_create_session_with_archived_agent(client: Client, auth_headers, agent, runtime_key):
     from django.utils import timezone
+
     agent.archived_at = timezone.now()
     agent.save()
 

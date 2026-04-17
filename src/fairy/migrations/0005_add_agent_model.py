@@ -7,7 +7,6 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("fairy", "0004_add_session_resource"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),

@@ -6,8 +6,13 @@ from django.contrib.auth.models import User
 from django.test import Client
 
 from fairy.models import (
-    Agent, AgentSession, AgentVersion, APIKey, Environment,
-    EnvironmentVersion, UserRuntimeKey,
+    Agent,
+    AgentSession,
+    AgentVersion,
+    APIKey,
+    Environment,
+    EnvironmentVersion,
+    UserRuntimeKey,
 )
 from fairy.runtimes import RUNTIMES
 from fairy.sprites_exec import EnvironmentSetup, build_wrapper_script
@@ -53,9 +58,13 @@ def environment(user):
         version=1,
     )
     EnvironmentVersion.objects.create(
-        environment=env, version=1, name=env.name,
-        packages=env.packages, env_vars=env.env_vars,
-        setup_script=env.setup_script, networking_type=env.networking_type,
+        environment=env,
+        version=1,
+        name=env.name,
+        packages=env.packages,
+        env_vars=env.env_vars,
+        setup_script=env.setup_script,
+        networking_type=env.networking_type,
         networking_config=env.networking_config,
     )
     return env
@@ -64,8 +73,11 @@ def environment(user):
 @pytest.fixture
 def agent(user):
     return Agent.objects.create(
-        user=user, name="Test Agent", model="claude-sonnet-4-6",
-        runtime="claude", version=1,
+        user=user,
+        name="Test Agent",
+        model="claude-sonnet-4-6",
+        runtime="claude",
+        version=1,
     )
 
 
@@ -129,15 +141,14 @@ class TestWrapperScriptWithEnvironment:
         """env vars → packages → clone → setup script → exec."""
         config = RUNTIMES["claude"]
         from fairy.sprites_exec import RepoSpec
+
         env = EnvironmentSetup(
             packages={"pip": ["pandas"]},
             env_vars={"KEY": "val"},
             setup_script="echo setup",
         )
         repo = RepoSpec(url="https://github.com/org/repo", mount_path="/workspace/repo")
-        script = build_wrapper_script(
-            config, "sk-test", "hello", repos=[repo], environment=env
-        )
+        script = build_wrapper_script(config, "sk-test", "hello", repos=[repo], environment=env)
         env_pos = script.index("export KEY=")
         pkg_pos = script.index("pip install")
         clone_pos = script.index("git clone")
@@ -199,13 +210,15 @@ class TestCreateEnvironment:
     def test_create_full(self, client: Client, auth_headers):
         resp = client.post(
             "/environments",
-            data=json.dumps({
-                "name": "data-science",
-                "packages": {"pip": ["pandas", "numpy"], "apt": ["ffmpeg"]},
-                "env_vars": {"DB_URL": "postgres://...", "DEBUG": "1"},
-                "setup_script": "echo ready",
-                "networking": {"type": "unrestricted"},
-            }),
+            data=json.dumps(
+                {
+                    "name": "data-science",
+                    "packages": {"pip": ["pandas", "numpy"], "apt": ["ffmpeg"]},
+                    "env_vars": {"DB_URL": "postgres://...", "DEBUG": "1"},
+                    "setup_script": "echo ready",
+                    "networking": {"type": "unrestricted"},
+                }
+            ),
             content_type="application/json",
             **auth_headers,
         )
@@ -222,9 +235,7 @@ class TestCreateEnvironment:
         assert "env_vars" not in data
 
         # Version record was created
-        assert EnvironmentVersion.objects.filter(
-            environment_id=data["id"], version=1
-        ).exists()
+        assert EnvironmentVersion.objects.filter(environment_id=data["id"], version=1).exists()
 
     def test_create_minimal(self, client: Client, auth_headers):
         resp = client.post(
@@ -243,14 +254,16 @@ class TestCreateEnvironment:
     def test_create_limited_networking(self, client: Client, auth_headers):
         resp = client.post(
             "/environments",
-            data=json.dumps({
-                "name": "restricted",
-                "networking": {
-                    "type": "limited",
-                    "allowed_hosts": ["api.example.com"],
-                    "allow_package_managers": True,
-                },
-            }),
+            data=json.dumps(
+                {
+                    "name": "restricted",
+                    "networking": {
+                        "type": "limited",
+                        "allowed_hosts": ["api.example.com"],
+                        "allow_package_managers": True,
+                    },
+                }
+            ),
             content_type="application/json",
             **auth_headers,
         )
@@ -262,10 +275,12 @@ class TestCreateEnvironment:
     def test_create_invalid_package_manager(self, client: Client, auth_headers):
         resp = client.post(
             "/environments",
-            data=json.dumps({
-                "name": "bad",
-                "packages": {"homebrew": ["wget"]},
-            }),
+            data=json.dumps(
+                {
+                    "name": "bad",
+                    "packages": {"homebrew": ["wget"]},
+                }
+            ),
             content_type="application/json",
             **auth_headers,
         )
@@ -275,10 +290,12 @@ class TestCreateEnvironment:
     def test_create_invalid_networking_type(self, client: Client, auth_headers):
         resp = client.post(
             "/environments",
-            data=json.dumps({
-                "name": "bad",
-                "networking": {"type": "open"},
-            }),
+            data=json.dumps(
+                {
+                    "name": "bad",
+                    "networking": {"type": "open"},
+                }
+            ),
             content_type="application/json",
             **auth_headers,
         )
@@ -286,8 +303,10 @@ class TestCreateEnvironment:
 
     def test_create_invalid_json(self, client: Client, auth_headers):
         resp = client.post(
-            "/environments", data="not json",
-            content_type="application/json", **auth_headers,
+            "/environments",
+            data="not json",
+            content_type="application/json",
+            **auth_headers,
         )
         assert resp.status_code == 400
 
@@ -303,6 +322,7 @@ class TestListEnvironments:
 
     def test_list_excludes_archived(self, client: Client, auth_headers, environment):
         from django.utils import timezone
+
         environment.archived_at = timezone.now()
         environment.save()
 
@@ -336,10 +356,12 @@ class TestUpdateEnvironment:
     def test_update_packages(self, client: Client, auth_headers, environment):
         resp = client.put(
             f"/environments/{environment.id}",
-            data=json.dumps({
-                "version": 1,
-                "packages": {"pip": ["requests"]},
-            }),
+            data=json.dumps(
+                {
+                    "version": 1,
+                    "packages": {"pip": ["requests"]},
+                }
+            ),
             content_type="application/json",
             **auth_headers,
         )
@@ -348,9 +370,7 @@ class TestUpdateEnvironment:
         assert data["packages"] == {"pip": ["requests"]}
         assert data["version"] == 2
 
-        assert EnvironmentVersion.objects.filter(
-            environment=environment, version=2
-        ).exists()
+        assert EnvironmentVersion.objects.filter(environment=environment, version=2).exists()
 
     def test_update_version_mismatch(self, client: Client, auth_headers, environment):
         resp = client.put(
@@ -364,6 +384,7 @@ class TestUpdateEnvironment:
 
     def test_update_archived(self, client: Client, auth_headers, environment):
         from django.utils import timezone
+
         environment.archived_at = timezone.now()
         environment.save()
 
@@ -389,10 +410,12 @@ class TestUpdateEnvironment:
     ):
         resp = client.put(
             f"/environments/{environment.id}",
-            data=json.dumps({
-                "version": 1,
-                "networking": {"type": "limited", "allowed_hosts": ["api.example.com"]},
-            }),
+            data=json.dumps(
+                {
+                    "version": 1,
+                    "networking": {"type": "limited", "allowed_hosts": ["api.example.com"]},
+                }
+            ),
             content_type="application/json",
             **auth_headers,
         )
@@ -411,18 +434,18 @@ class TestUpdateEnvironment:
     ):
         resp = client.put(
             f"/environments/{environment.id}",
-            data=json.dumps({
-                "version": 1,
-                "networking": {"type": "unrestricted"},
-            }),
+            data=json.dumps(
+                {
+                    "version": 1,
+                    "networking": {"type": "unrestricted"},
+                }
+            ),
             content_type="application/json",
             **auth_headers,
         )
         assert resp.status_code == 200
         assert resp.json()["version"] == 1
-        assert not EnvironmentVersion.objects.filter(
-            environment=environment, version=2
-        ).exists()
+        assert not EnvironmentVersion.objects.filter(environment=environment, version=2).exists()
 
 
 @pytest.mark.django_db
@@ -437,6 +460,7 @@ class TestEnvironmentLifecycle:
 
     def test_archive_already_archived(self, client: Client, auth_headers, environment):
         from django.utils import timezone
+
         environment.archived_at = timezone.now()
         environment.save()
 
@@ -450,8 +474,11 @@ class TestEnvironmentLifecycle:
 
     def test_delete_with_sessions_rejected(self, client: Client, auth_headers, environment, user):
         AgentSession.objects.create(
-            user=user, environment=environment,
-            runtime="claude", prompt="test", status="completed",
+            user=user,
+            environment=environment,
+            runtime="claude",
+            prompt="test",
+            status="completed",
         )
         resp = client.delete(f"/environments/{environment.id}/delete", **auth_headers)
         assert resp.status_code == 409
@@ -466,8 +493,11 @@ class TestEnvironmentVersions:
         environment.version = 2
         environment.save()
         EnvironmentVersion.objects.create(
-            environment=environment, version=2, name=environment.name,
-            packages=environment.packages, env_vars=environment.env_vars,
+            environment=environment,
+            version=2,
+            name=environment.name,
+            packages=environment.packages,
+            env_vars=environment.env_vars,
             setup_script=environment.setup_script,
             networking_type=environment.networking_type,
             networking_config=environment.networking_config,
@@ -492,11 +522,13 @@ class TestSessionEnvironmentIntegration:
         _, mock_fs = mock_sprites
         resp = client.post(
             "/sessions",
-            data=json.dumps({
-                "agent_id": str(agent.id),
-                "prompt": "analyze data",
-                "environment_id": str(environment.id),
-            }),
+            data=json.dumps(
+                {
+                    "agent_id": str(agent.id),
+                    "prompt": "analyze data",
+                    "environment_id": str(environment.id),
+                }
+            ),
             content_type="application/json",
             **auth_headers,
         )
@@ -515,8 +547,12 @@ class TestSessionEnvironmentIntegration:
         self, client: Client, auth_headers, runtime_key, environment, user, mock_sprites
     ):
         agent = Agent.objects.create(
-            user=user, name="Agent", model="claude-sonnet-4-6",
-            runtime="claude", environment=environment, version=1,
+            user=user,
+            name="Agent",
+            model="claude-sonnet-4-6",
+            runtime="claude",
+            environment=environment,
+            version=1,
         )
         _, mock_fs = mock_sprites
         resp = client.post(
@@ -536,21 +572,29 @@ class TestSessionEnvironmentIntegration:
         self, client: Client, auth_headers, runtime_key, environment, user, mock_sprites
     ):
         other_env = Environment.objects.create(
-            user=user, name="other-env",
-            packages={"npm": ["express"]}, version=1,
+            user=user,
+            name="other-env",
+            packages={"npm": ["express"]},
+            version=1,
         )
         agent = Agent.objects.create(
-            user=user, name="Agent", model="claude-sonnet-4-6",
-            runtime="claude", environment=environment, version=1,
+            user=user,
+            name="Agent",
+            model="claude-sonnet-4-6",
+            runtime="claude",
+            environment=environment,
+            version=1,
         )
         _, mock_fs = mock_sprites
         resp = client.post(
             "/sessions",
-            data=json.dumps({
-                "agent_id": str(agent.id),
-                "prompt": "hello",
-                "environment_id": str(other_env.id),
-            }),
+            data=json.dumps(
+                {
+                    "agent_id": str(agent.id),
+                    "prompt": "hello",
+                    "environment_id": str(other_env.id),
+                }
+            ),
             content_type="application/json",
             **auth_headers,
         )
@@ -567,16 +611,19 @@ class TestSessionEnvironmentIntegration:
         self, client: Client, auth_headers, runtime_key, environment, agent
     ):
         from django.utils import timezone
+
         environment.archived_at = timezone.now()
         environment.save()
 
         resp = client.post(
             "/sessions",
-            data=json.dumps({
-                "agent_id": str(agent.id),
-                "prompt": "hello",
-                "environment_id": str(environment.id),
-            }),
+            data=json.dumps(
+                {
+                    "agent_id": str(agent.id),
+                    "prompt": "hello",
+                    "environment_id": str(environment.id),
+                }
+            ),
             content_type="application/json",
             **auth_headers,
         )
@@ -588,11 +635,13 @@ class TestSessionEnvironmentIntegration:
     ):
         resp = client.post(
             "/sessions",
-            data=json.dumps({
-                "agent_id": str(agent.id),
-                "prompt": "hello",
-                "environment_id": str(uuid.uuid4()),
-            }),
+            data=json.dumps(
+                {
+                    "agent_id": str(agent.id),
+                    "prompt": "hello",
+                    "environment_id": str(uuid.uuid4()),
+                }
+            ),
             content_type="application/json",
             **auth_headers,
         )
@@ -603,8 +652,12 @@ class TestSessionEnvironmentIntegration:
         self, client: Client, auth_headers, user, environment
     ):
         session = AgentSession.objects.create(
-            user=user, environment=environment,
-            runtime="claude", prompt="test", status="completed", exit_code=0,
+            user=user,
+            environment=environment,
+            runtime="claude",
+            prompt="test",
+            status="completed",
+            exit_code=0,
         )
         resp = client.get(f"/sessions/{session.id}", **auth_headers)
         assert resp.status_code == 200
@@ -628,17 +681,17 @@ class TestSessionEnvironmentIntegration:
 
 @pytest.mark.django_db
 class TestAgentEnvironmentIntegration:
-    def test_create_agent_with_environment(
-        self, client: Client, auth_headers, environment
-    ):
+    def test_create_agent_with_environment(self, client: Client, auth_headers, environment):
         resp = client.post(
             "/agents",
-            data=json.dumps({
-                "name": "My Agent",
-                "model": "claude-sonnet-4-6",
-                "runtime": "claude",
-                "environment_id": str(environment.id),
-            }),
+            data=json.dumps(
+                {
+                    "name": "My Agent",
+                    "model": "claude-sonnet-4-6",
+                    "runtime": "claude",
+                    "environment_id": str(environment.id),
+                }
+            ),
             content_type="application/json",
             **auth_headers,
         )
@@ -648,35 +701,43 @@ class TestAgentEnvironmentIntegration:
     def test_create_agent_without_environment(self, client: Client, auth_headers):
         resp = client.post(
             "/agents",
-            data=json.dumps({
-                "name": "My Agent",
-                "model": "claude-sonnet-4-6",
-                "runtime": "claude",
-            }),
+            data=json.dumps(
+                {
+                    "name": "My Agent",
+                    "model": "claude-sonnet-4-6",
+                    "runtime": "claude",
+                }
+            ),
             content_type="application/json",
             **auth_headers,
         )
         assert resp.status_code == 201
         assert resp.json()["environment_id"] is None
 
-    def test_update_agent_environment(
-        self, client: Client, auth_headers, environment, user
-    ):
+    def test_update_agent_environment(self, client: Client, auth_headers, environment, user):
         agent = Agent.objects.create(
-            user=user, name="Agent", model="claude-sonnet-4-6",
-            runtime="claude", version=1,
+            user=user,
+            name="Agent",
+            model="claude-sonnet-4-6",
+            runtime="claude",
+            version=1,
         )
         AgentVersion.objects.create(
-            agent=agent, version=1, name=agent.name,
-            model=agent.model, runtime=agent.runtime,
+            agent=agent,
+            version=1,
+            name=agent.name,
+            model=agent.model,
+            runtime=agent.runtime,
         )
 
         resp = client.put(
             f"/agents/{agent.id}",
-            data=json.dumps({
-                "version": 1,
-                "environment_id": str(environment.id),
-            }),
+            data=json.dumps(
+                {
+                    "version": 1,
+                    "environment_id": str(environment.id),
+                }
+            ),
             content_type="application/json",
             **auth_headers,
         )

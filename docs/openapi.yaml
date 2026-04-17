@@ -1,0 +1,696 @@
+openapi: 3.1.0
+info:
+  title: Fairy API
+  version: "0.1.0"
+  description: |
+    Fairy runs AI coding agents on Sprites. It manages three resources: agents,
+    environments, and sessions. See docs/API.md for the full operator guide.
+
+servers:
+  - url: http://localhost:8777
+    description: Local dev
+  - url: https://fairy.example
+    description: Production (replace with your deployment)
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: health
+  - name: agents
+  - name: environments
+  - name: sessions
+
+paths:
+  /health:
+    get:
+      tags: [health]
+      summary: Liveness check
+      security: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+
+  /agents:
+    get:
+      tags: [agents]
+      summary: List non-archived agents
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Agent"
+    post:
+      tags: [agents]
+      summary: Create an agent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AgentCreate"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Agent"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /agents/{agent_id}:
+    parameters:
+      - $ref: "#/components/parameters/AgentId"
+    get:
+      tags: [agents]
+      summary: Get an agent
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Agent"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      tags: [agents]
+      summary: Update an agent (optimistic concurrency)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AgentUpdate"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Agent"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /agents/{agent_id}/archive:
+    parameters:
+      - $ref: "#/components/parameters/AgentId"
+    post:
+      tags: [agents]
+      summary: Archive an agent
+      responses:
+        "200":
+          description: Archived
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /agents/{agent_id}/versions:
+    parameters:
+      - $ref: "#/components/parameters/AgentId"
+    get:
+      tags: [agents]
+      summary: List version history for an agent
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/AgentVersion"
+
+  /environments:
+    get:
+      tags: [environments]
+      summary: List non-archived environments
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Environment"
+    post:
+      tags: [environments]
+      summary: Create an environment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EnvironmentCreate"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Environment"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /environments/{environment_id}:
+    parameters:
+      - $ref: "#/components/parameters/EnvironmentId"
+    get:
+      tags: [environments]
+      summary: Get an environment
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Environment"
+    put:
+      tags: [environments]
+      summary: Update an environment (optimistic concurrency)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EnvironmentUpdate"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Environment"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /environments/{environment_id}/archive:
+    parameters:
+      - $ref: "#/components/parameters/EnvironmentId"
+    post:
+      tags: [environments]
+      summary: Archive an environment
+      responses:
+        "200":
+          description: Archived
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /environments/{environment_id}/delete:
+    parameters:
+      - $ref: "#/components/parameters/EnvironmentId"
+    delete:
+      tags: [environments]
+      summary: Hard-delete an environment
+      responses:
+        "204":
+          description: Deleted
+
+  /environments/{environment_id}/versions:
+    parameters:
+      - $ref: "#/components/parameters/EnvironmentId"
+    get:
+      tags: [environments]
+      summary: List version history for an environment
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/EnvironmentVersion"
+
+  /sessions:
+    get:
+      tags: [sessions]
+      summary: List sessions owned by the caller
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Session"
+    post:
+      tags: [sessions]
+      summary: Create a session and start running it
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SessionCreate"
+      responses:
+        "202":
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /sessions/{session_id}:
+    parameters:
+      - $ref: "#/components/parameters/SessionId"
+    get:
+      tags: [sessions]
+      summary: Get a session
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+
+  /sessions/{session_id}/prompt:
+    parameters:
+      - $ref: "#/components/parameters/SessionId"
+    post:
+      tags: [sessions]
+      summary: Resume a non-running session with a new prompt
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [prompt]
+              properties:
+                prompt:
+                  type: string
+                timeout:
+                  type: number
+      responses:
+        "202":
+          description: Accepted
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /sessions/{session_id}/terminate:
+    parameters:
+      - $ref: "#/components/parameters/SessionId"
+    post:
+      tags: [sessions]
+      summary: Terminate a running session
+      responses:
+        "200":
+          description: Terminated
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /sessions/{session_id}/delete:
+    parameters:
+      - $ref: "#/components/parameters/SessionId"
+    delete:
+      tags: [sessions]
+      summary: Delete a session row
+      responses:
+        "204":
+          description: Deleted
+
+  /sessions/{session_id}/stream:
+    parameters:
+      - $ref: "#/components/parameters/SessionId"
+    get:
+      tags: [sessions]
+      summary: Server-sent events stream of session output
+      responses:
+        "200":
+          description: text/event-stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: fairy_<token>
+
+  parameters:
+    AgentId:
+      name: agent_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    EnvironmentId:
+      name: environment_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    SessionId:
+      name: session_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+  responses:
+    NotFound:
+      description: Not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Conflict:
+      description: Conflict
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    ValidationError:
+      description: Pydantic validation error
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              detail:
+                type: array
+                items:
+                  type: object
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        detail:
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                type: object
+
+    Agent:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        model:
+          type: string
+        runtime:
+          type: string
+        system_prompt:
+          type: string
+          nullable: true
+        metadata:
+          type: object
+          additionalProperties: true
+        version:
+          type: integer
+        archived_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    AgentCreate:
+      type: object
+      required: [name, model, runtime]
+      properties:
+        name:
+          type: string
+        model:
+          type: string
+        runtime:
+          type: string
+        system_prompt:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+        tools:
+          type: array
+          items:
+            type: object
+        mcp_servers:
+          type: array
+          items:
+            type: object
+        skills:
+          type: array
+          items:
+            type: object
+
+    AgentUpdate:
+      type: object
+      required: [version]
+      properties:
+        version:
+          type: integer
+        name:
+          type: string
+        model:
+          type: string
+        runtime:
+          type: string
+        system_prompt:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+        tools:
+          type: array
+          items:
+            type: object
+        mcp_servers:
+          type: array
+          items:
+            type: object
+        skills:
+          type: array
+          items:
+            type: object
+
+    AgentVersion:
+      type: object
+      properties:
+        version:
+          type: integer
+        name:
+          type: string
+        model:
+          type: string
+        runtime:
+          type: string
+        system_prompt:
+          type: string
+          nullable: true
+        metadata:
+          type: object
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+
+    Environment:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        resources:
+          type: array
+          items:
+            type: object
+        setup_commands:
+          type: array
+          items:
+            type: string
+        network_policy:
+          type: object
+          nullable: true
+        metadata:
+          type: object
+          additionalProperties: true
+        version:
+          type: integer
+        archived_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    EnvironmentCreate:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        resources:
+          type: array
+          items:
+            type: object
+        setup_commands:
+          type: array
+          items:
+            type: string
+        env_vars:
+          type: object
+          additionalProperties:
+            type: string
+        network_policy:
+          type: object
+        metadata:
+          type: object
+          additionalProperties: true
+
+    EnvironmentUpdate:
+      type: object
+      required: [version]
+      properties:
+        version:
+          type: integer
+        name:
+          type: string
+        resources:
+          type: array
+          items:
+            type: object
+        setup_commands:
+          type: array
+          items:
+            type: string
+        env_vars:
+          type: object
+          additionalProperties:
+            type: string
+        network_policy:
+          type: object
+        metadata:
+          type: object
+          additionalProperties: true
+
+    EnvironmentVersion:
+      type: object
+      properties:
+        version:
+          type: integer
+        name:
+          type: string
+        resources:
+          type: array
+          items:
+            type: object
+        setup_commands:
+          type: array
+          items:
+            type: string
+        network_policy:
+          type: object
+          nullable: true
+        metadata:
+          type: object
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+
+    Session:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        agent_id:
+          type: string
+          format: uuid
+        environment_id:
+          type: string
+          format: uuid
+          nullable: true
+        status:
+          type: string
+          enum: [pending, running, completed, failed, terminated]
+        prompt:
+          type: string
+        stream_url:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        ended_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    SessionCreate:
+      type: object
+      required: [agent_id, prompt]
+      properties:
+        agent_id:
+          type: string
+          format: uuid
+        environment_id:
+          type: string
+          format: uuid
+        prompt:
+          type: string
+        timeout:
+          type: number
+        metadata:
+          type: object
+          additionalProperties: true

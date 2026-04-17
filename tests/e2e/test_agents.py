@@ -229,9 +229,7 @@ class TestAgentArchive:
         ids = [a["id"] for a in resp.json()["data"]]
         assert agent["id"] not in ids
 
-    def test_session_with_archived_agent_rejected(
-        self, api, create_agent, e2e_runtimes
-    ):
+    def test_session_with_archived_agent_rejected(self, api, create_agent, e2e_runtimes):
         if not e2e_runtimes:
             pytest.skip("No runtimes configured")
         runtime = e2e_runtimes[0]
@@ -290,10 +288,7 @@ class TestAgentMcp:
         assert resp.status_code == 422
 
     def test_mcp_server_max_20_rejected(self, api):
-        servers = [
-            {"name": f"s{i}", "url": f"https://s{i}.com/mcp"}
-            for i in range(21)
-        ]
+        servers = [{"name": f"s{i}", "url": f"https://s{i}.com/mcp"} for i in range(21)]
         resp = api.create_agent(
             name=_unique("e2e-maxmcp"),
             model="claude-sonnet-4-6",
@@ -331,9 +326,7 @@ class TestAgentSystemPrompt:
     """Verify the agent's system prompt is prepended to the user prompt."""
 
     @pytest.mark.slow
-    def test_system_prompt_in_session(
-        self, api, create_agent, create_session, e2e_runtimes
-    ):
+    def test_system_prompt_in_session(self, api, create_agent, create_session, e2e_runtimes):
         if not e2e_runtimes:
             pytest.skip("No runtimes configured")
         runtime = e2e_runtimes[0]
@@ -343,8 +336,7 @@ class TestAgentSystemPrompt:
             model=RUNTIME_MODELS[runtime],
             runtime=runtime,
             system=(
-                "You must always include the word FAIRY_SYSTEM_MARKER "
-                "in every response you give."
+                "You must always include the word FAIRY_SYSTEM_MARKER in every response you give."
             ),
         )
         session = create_session(

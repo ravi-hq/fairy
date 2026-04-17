@@ -1,0 +1,38 @@
+setup: .bakery/setup.sh
+
+gates:
+  # --- Fast feedback tier (preflight, no DB needed) ---
+  - name: format
+    command: uv run ruff format --check src/ tests/
+    preflight: true
+
+  - name: lint
+    command: uv run ruff check src/ tests/
+    preflight: true
+
+  - name: typecheck
+    command: uv run mypy
+    preflight: true
+
+  - name: openapi
+    command: uv run python -m scripts.validate_openapi
+    preflight: true
+
+  # --- Security tier (preflight, no DB needed) ---
+  - name: security-deps
+    command: uv run pip-audit
+    preflight: true
+
+  - name: security-code
+    command: uv run bandit -r src/ -ll
+    preflight: true
+
+  # --- Coverage-gated test tier ---
+  - name: test
+    command: uv run pytest --cov=fairy --cov-report=term-missing --cov-fail-under=85
+    preflight: false
+
+  # --- Duplication check (catch AI copy-paste drift) ---
+  - name: duplication
+    command: uv run pylint src/ --disable=all --enable=duplicate-code --min-similarity-lines=8 --exit-zero
+    preflight: false

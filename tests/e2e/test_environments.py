@@ -186,19 +186,14 @@ class TestEnvironmentInSession:
         )
         session = create_session(
             agent_id=agent["id"],
-            prompt=(
-                "Run this exact command and print the output: "
-                "echo \"ENVVAR=$FAIRY_E2E_SECRET\""
-            ),
+            prompt=('Run this exact command and print the output: echo "ENVVAR=$FAIRY_E2E_SECRET"'),
             timeout=180,
         )
         result, events = api.run_session(session["id"])
         assert result["status"] == "completed"
 
         output = stream_all_output(events)
-        assert "magic_value_42" in output, (
-            f"Env var value not found in output: {output[:500]}"
-        )
+        assert "magic_value_42" in output, f"Env var value not found in output: {output[:500]}"
 
     @pytest.mark.slow
     def test_setup_script_runs(
@@ -217,18 +212,14 @@ class TestEnvironmentInSession:
         )
         session = create_session(
             agent_id=agent["id"],
-            prompt=(
-                "Read the file /tmp/fairy_setup_marker and print its contents."
-            ),
+            prompt=("Read the file /tmp/fairy_setup_marker and print its contents."),
             timeout=180,
         )
         result, events = api.run_session(session["id"])
         assert result["status"] == "completed"
 
         output = stream_all_output(events)
-        assert "FAIRY_SETUP_COMPLETE" in output, (
-            f"Setup marker not found in output: {output[:500]}"
-        )
+        assert "FAIRY_SETUP_COMPLETE" in output, f"Setup marker not found in output: {output[:500]}"
 
     @pytest.mark.slow
     def test_full_environment_integration(
@@ -252,7 +243,7 @@ class TestEnvironmentInSession:
             prompt=(
                 "Run these three commands and print all their output:\n"
                 "1. python3 -c \"import cowsay; print('PKG_OK')\"\n"
-                "2. echo \"ENV=$FAIRY_E2E_COMBO\"\n"
+                '2. echo "ENV=$FAIRY_E2E_COMBO"\n'
                 "3. cat /tmp/fairy_combo_marker"
             ),
             timeout=300,

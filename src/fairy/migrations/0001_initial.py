@@ -6,7 +6,6 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     initial = True
 
     dependencies = [
@@ -76,9 +75,7 @@ class Migration(migrations.Migration):
             options={
                 "db_table": "user_runtime_keys",
                 "constraints": [
-                    models.UniqueConstraint(
-                        fields=("user", "runtime"), name="unique_user_runtime"
-                    )
+                    models.UniqueConstraint(fields=("user", "runtime"), name="unique_user_runtime")
                 ],
             },
         ),

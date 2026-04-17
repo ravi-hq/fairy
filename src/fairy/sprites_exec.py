@@ -10,6 +10,7 @@ from fairy.runtimes import RuntimeConfig
 @dataclass(frozen=True)
 class EnvironmentSetup:
     """Container environment configuration extracted from an Environment model."""
+
     packages: dict[str, list[str]]
     env_vars: dict[str, str]
     setup_script: str
@@ -25,6 +26,7 @@ class RepoSpec:
 @dataclass(frozen=True)
 class McpServerSpec:
     """Normalized MCP server config, translated to runtime-specific format."""
+
     name: str
     type: str = "url"  # "url" or "stdio"
     # For type: "url"
@@ -43,6 +45,7 @@ class SkillSpec:
     `content` is the full SKILL.md text including YAML frontmatter. `name`
     is the directory slug, validated upstream to match [a-z0-9][a-z0-9-]{0,63}.
     """
+
     name: str
     content: str
 
@@ -104,9 +107,7 @@ def _build_clone_section(repos: list[RepoSpec]) -> str:
     cred_lines: list[str] = []
     for repo in repos:
         if repo.token:
-            cred_lines.append(
-                f"https://{repo.token}:x-oauth-basic@github.com"
-            )
+            cred_lines.append(f"https://{repo.token}:x-oauth-basic@github.com")
     if cred_lines:
         # Write credentials file and configure git to use it
         lines.append("cat > /tmp/.git-credentials << 'CREDENTIALS_EOF'")
@@ -143,12 +144,7 @@ def _build_mcp_claude(servers: list[McpServerSpec]) -> str:
                 entry["env"] = s.env
             config[s.name] = entry
     content = json.dumps({"mcpServers": config}, indent=2)
-    return (
-        "# MCP server configuration\n"
-        "cat > /tmp/mcp.json << 'MCP_EOF'\n"
-        f"{content}\n"
-        "MCP_EOF\n"
-    )
+    return f"# MCP server configuration\ncat > /tmp/mcp.json << 'MCP_EOF'\n{content}\nMCP_EOF\n"
 
 
 def _build_mcp_codex(servers: list[McpServerSpec]) -> str:

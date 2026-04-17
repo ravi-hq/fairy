@@ -114,9 +114,7 @@ class SessionResource(models.Model):
         ("github_repository", "GitHub Repository"),
     ]
 
-    session = models.ForeignKey(
-        AgentSession, on_delete=models.CASCADE, related_name="resources"
-    )
+    session = models.ForeignKey(AgentSession, on_delete=models.CASCADE, related_name="resources")
     resource_type = models.CharField(max_length=32, choices=RESOURCE_TYPE_CHOICES)
     url = models.URLField(max_length=500)
     mount_path = models.CharField(max_length=500)
@@ -180,9 +178,7 @@ class Environment(models.Model):
 
 
 class EnvironmentVersion(models.Model):
-    environment = models.ForeignKey(
-        Environment, on_delete=models.CASCADE, related_name="versions"
-    )
+    environment = models.ForeignKey(Environment, on_delete=models.CASCADE, related_name="versions")
     version = models.PositiveIntegerField()
     name = models.CharField(max_length=200)
     packages = models.JSONField(default=dict, blank=True)
@@ -245,9 +241,7 @@ class AgentVersion(models.Model):
     system = models.TextField(blank=True, default="")
     model = models.CharField(max_length=100)
     runtime = models.CharField(max_length=32)
-    environment = models.ForeignKey(
-        Environment, on_delete=models.SET_NULL, null=True, blank=True
-    )
+    environment = models.ForeignKey(Environment, on_delete=models.SET_NULL, null=True, blank=True)
     skills = models.JSONField(default=list, blank=True)
     mcp_servers = models.JSONField(default=list, blank=True)
     metadata = models.JSONField(default=dict, blank=True)
@@ -256,9 +250,7 @@ class AgentVersion(models.Model):
     class Meta:
         db_table = "agent_versions"
         constraints = [
-            models.UniqueConstraint(
-                fields=["agent", "version"], name="unique_agent_version"
-            ),
+            models.UniqueConstraint(fields=["agent", "version"], name="unique_agent_version"),
         ]
         ordering = ["-version"]
 
@@ -272,9 +264,7 @@ class AgentSessionLog(models.Model):
         ("stderr", "stderr"),
     ]
 
-    session = models.ForeignKey(
-        AgentSession, on_delete=models.CASCADE, related_name="logs"
-    )
+    session = models.ForeignKey(AgentSession, on_delete=models.CASCADE, related_name="logs")
     stream = models.CharField(max_length=6, choices=STREAM_CHOICES)
     data = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)

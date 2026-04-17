@@ -21,12 +21,28 @@ pytestmark = pytest.mark.slow
 # Fields whose string values are event metadata, not model text. Filtering
 # them out keeps metadata from wedging itself between chunked content deltas
 # and breaking substring matches.
-_METADATA_KEYS = frozenset({
-    "type", "role", "session_id", "model", "timestamp", "id", "tool_id",
-    "tool_name", "tool_call_id", "tool_use_id", "parent_tool_use_id",
-    "status", "finish_reason", "stop_reason", "event_type", "msg_type",
-    "name", "uuid",
-})
+_METADATA_KEYS = frozenset(
+    {
+        "type",
+        "role",
+        "session_id",
+        "model",
+        "timestamp",
+        "id",
+        "tool_id",
+        "tool_name",
+        "tool_call_id",
+        "tool_use_id",
+        "parent_tool_use_id",
+        "status",
+        "finish_reason",
+        "stop_reason",
+        "event_type",
+        "msg_type",
+        "name",
+        "uuid",
+    }
+)
 
 
 def _concat_json_strings(stream_output: str) -> str:
@@ -94,7 +110,7 @@ def test_skill_is_invoked_by_runtime(api, create_agent, create_session, runtime)
         f"When this skill is invoked, your response MUST include both of the "
         f"following, verbatim:\n"
         f"\n"
-        f"1. A sentence about goats (the animal). Mention the word \"goat\" "
+        f'1. A sentence about goats (the animal). Mention the word "goat" '
         f"explicitly.\n"
         f"2. The verification code exactly as written: {code}\n"
         f"\n"
@@ -125,8 +141,7 @@ def test_skill_is_invoked_by_runtime(api, create_agent, create_session, runtime)
 
     result, events = api.run_session(session["id"])
     assert result["status"] == "completed", (
-        f"Session failed: status={result['status']}, "
-        f"exit_code={result.get('exit_code')}"
+        f"Session failed: status={result['status']}, exit_code={result.get('exit_code')}"
     )
 
     raw = stream_all_output(events)

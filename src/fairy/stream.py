@@ -41,7 +41,7 @@ class TaggingQueueWriter(io.RawIOBase):
     def writable(self) -> bool:
         return True
 
-    def write(self, b: bytes | bytearray) -> int:
+    def write(self, b) -> int:  # type: ignore[override]
         data = bytes(b)
         self._queue.put(TaggedChunk(self._stream, data))
         return len(data)
@@ -149,11 +149,13 @@ def stream_session_from_db(session_id: str) -> Generator[str, None, None]:
 
         for chunk in chunks:
             last_id = chunk["id"]
-            yield json.dumps({
-                "type": "output",
-                "stream": chunk["stream"],
-                "data": chunk["data"],
-            })
+            yield json.dumps(
+                {
+                    "type": "output",
+                    "stream": chunk["stream"],
+                    "data": chunk["data"],
+                }
+            )
 
         # Check if session is done
         session = AgentSession.objects.get(pk=session_id)

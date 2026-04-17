@@ -15,8 +15,13 @@ from sprites import NetworkPolicy, PolicyRule, SpritesClient, SpriteError
 
 from fairy.auth import require_api_key
 from fairy.models import (
-    Agent, AgentSession, AgentVersion, Environment, EnvironmentVersion,
-    SessionResource, UserRuntimeKey,
+    Agent,
+    AgentSession,
+    AgentVersion,
+    Environment,
+    EnvironmentVersion,
+    SessionResource,
+    UserRuntimeKey,
 )
 from fairy.runtimes import RUNTIMES, AgentModel
 from fairy.sprites_exec import (
@@ -161,7 +166,9 @@ class RunRequest(BaseModel):
     agent_id: str = Field(description="Agent ID to use for this session")
     prompt: str = Field(description="The prompt to send to the agent")
     timeout: int = Field(default=600, ge=10, le=3600, description="Max seconds")
-    environment_id: str | None = Field(default=None, description="Environment ID (overrides agent default)")
+    environment_id: str | None = Field(
+        default=None, description="Environment ID (overrides agent default)"
+    )
     resources: list[GitHubRepoResource] = Field(
         default_factory=list,
         description="GitHub repositories to clone into the session",
@@ -277,9 +284,13 @@ def sessions_list_create(request):
         mcp_specs = _mcp_servers_to_specs(agent_obj.mcp_servers) if agent_obj else []
         skill_specs = _skills_to_specs(agent_obj.skills) if agent_obj else []
         script = build_wrapper_script(
-            config, api_key, effective_prompt,
-            repos=repo_specs, environment=env_setup,
-            mcp_servers=mcp_specs, skills=skill_specs,
+            config,
+            api_key,
+            effective_prompt,
+            repos=repo_specs,
+            environment=env_setup,
+            mcp_servers=mcp_specs,
+            skills=skill_specs,
         )
         (fs / "run-agent.sh").write_text(script)
         sprite.command("chmod", "+x", "/run-agent.sh").run()
@@ -422,8 +433,11 @@ def send_prompt(request, session_id):
         fs = sprite.filesystem()
         skill_specs = _skills_to_specs(session.agent.skills) if session.agent else []
         script = build_wrapper_script(
-            config, api_key, req.prompt,
-            continue_session=True, skills=skill_specs,
+            config,
+            api_key,
+            req.prompt,
+            continue_session=True,
+            skills=skill_specs,
         )
         (fs / "run-agent.sh").write_text(script)
     except SpriteError as e:
@@ -478,10 +492,12 @@ def terminate_session(request, session_id):
     session.sprite_name = ""
     session.save(update_fields=["status", "sprite_name", "updated_at"])
 
-    return JsonResponse({
-        "id": str(session.id),
-        "status": "terminated",
-    })
+    return JsonResponse(
+        {
+            "id": str(session.id),
+            "status": "terminated",
+        }
+    )
 
 
 @csrf_exempt
@@ -507,7 +523,17 @@ def delete_session(request, session_id):
 # Agents
 # ---------------------------------------------------------------------------
 
-AGENT_VERSIONED_FIELDS = ("name", "description", "system", "model", "runtime", "environment", "skills", "mcp_servers", "metadata")
+AGENT_VERSIONED_FIELDS = (
+    "name",
+    "description",
+    "system",
+    "model",
+    "runtime",
+    "environment",
+    "skills",
+    "mcp_servers",
+    "metadata",
+)
 
 
 VALID_MCP_SERVER_TYPES = {"url", "stdio"}
@@ -544,27 +570,19 @@ def _validate_skills(skills: list) -> list:
 
         name = skill["name"]
         if not _SKILL_NAME_RE.match(name):
-            raise ValueError(
-                f"skills[{i}].name {name!r} must match [a-z0-9][a-z0-9-]{{0,63}}"
-            )
+            raise ValueError(f"skills[{i}].name {name!r} must match [a-z0-9][a-z0-9-]{{0,63}}")
         if name in seen_names:
             raise ValueError(f"skills[{i}]: duplicate name {name!r}")
         seen_names.add(name)
 
         if len(skill["description"]) > MAX_SKILL_DESCRIPTION_LEN:
-            raise ValueError(
-                f"skills[{i}].description exceeds {MAX_SKILL_DESCRIPTION_LEN} chars"
-            )
+            raise ValueError(f"skills[{i}].description exceeds {MAX_SKILL_DESCRIPTION_LEN} chars")
 
         content = skill["content"]
         if len(content.encode("utf-8")) > MAX_SKILL_CONTENT_BYTES:
-            raise ValueError(
-                f"skills[{i}].content exceeds {MAX_SKILL_CONTENT_BYTES} bytes"
-            )
+            raise ValueError(f"skills[{i}].content exceeds {MAX_SKILL_CONTENT_BYTES} bytes")
         if _SKILL_HEREDOC_DELIMITER in content:
-            raise ValueError(
-                f"skills[{i}].content must not contain {_SKILL_HEREDOC_DELIMITER!r}"
-            )
+            raise ValueError(f"skills[{i}].content must not contain {_SKILL_HEREDOC_DELIMITER!r}")
     return skills
 
 
@@ -608,9 +626,7 @@ class CreateAgentRequest(BaseModel):
     @classmethod
     def validate_model(cls, v: str) -> str:
         if v not in AgentModel.values():
-            raise ValueError(
-                f"Unknown model: {v}. Must be one of: {sorted(AgentModel.values())}"
-            )
+            raise ValueError(f"Unknown model: {v}. Must be one of: {sorted(AgentModel.values())}")
         return v
 
     @field_validator("mcp_servers")
@@ -640,9 +656,7 @@ class UpdateAgentRequest(BaseModel):
     @classmethod
     def validate_model(cls, v: str | None) -> str | None:
         if v is not None and v not in AgentModel.values():
-            raise ValueError(
-                f"Unknown model: {v}. Must be one of: {sorted(AgentModel.values())}"
-            )
+            raise ValueError(f"Unknown model: {v}. Must be one of: {sorted(AgentModel.values())}")
         return v
 
     @field_validator("mcp_servers")
@@ -761,7 +775,9 @@ def agents_list_create(request):
         return JsonResponse(_serialize_agent(agent), status=201)
 
     elif request.method == "GET":
-        qs = Agent.objects.filter(user=request.user, archived_at__isnull=True).order_by("-created_at")
+        qs = Agent.objects.filter(user=request.user, archived_at__isnull=True).order_by(
+            "-created_at"
+        )
         return JsonResponse({"data": [_serialize_agent(a) for a in qs]})
 
     return JsonResponse({"detail": "Method not allowed"}, status=405)
@@ -860,6 +876,7 @@ def agent_archive(request, agent_id):
         return JsonResponse({"detail": "Agent is already archived"}, status=409)
 
     from django.utils import timezone
+
     agent.archived_at = timezone.now()
     agent.save(update_fields=["archived_at", "updated_at"])
 
@@ -1032,9 +1049,9 @@ def environments_list_create(request):
         return JsonResponse(_serialize_environment(env), status=201)
 
     elif request.method == "GET":
-        qs = Environment.objects.filter(
-            user=request.user, archived_at__isnull=True
-        ).order_by("-created_at")
+        qs = Environment.objects.filter(user=request.user, archived_at__isnull=True).order_by(
+            "-created_at"
+        )
         return JsonResponse({"data": [_serialize_environment(e) for e in qs]})
 
     return JsonResponse({"detail": "Method not allowed"}, status=405)
@@ -1121,6 +1138,7 @@ def environment_archive(request, environment_id):
         return JsonResponse({"detail": "Environment is already archived"}, status=409)
 
     from django.utils import timezone
+
     env.archived_at = timezone.now()
     env.save(update_fields=["archived_at", "updated_at"])
 

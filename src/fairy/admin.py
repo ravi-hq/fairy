@@ -6,8 +6,14 @@ from django.contrib.auth.models import User
 from sprites import SpritesClient, SpriteError
 
 from fairy.models import (
-    Agent, AgentVersion, APIKey, AgentSession, AgentSessionLog,
-    Environment, EnvironmentVersion, UserRuntimeKey,
+    Agent,
+    AgentVersion,
+    APIKey,
+    AgentSession,
+    AgentSessionLog,
+    Environment,
+    EnvironmentVersion,
+    UserRuntimeKey,
 )
 
 
@@ -145,7 +151,15 @@ class AgentSessionAdmin(admin.ModelAdmin):
     list_filter = ("runtime", "status")
     search_fields = ("id", "sprite_name", "user__email")
     readonly_fields = (
-        "id", "user", "runtime", "prompt", "sprite_name", "status", "exit_code", "created_at", "updated_at"
+        "id",
+        "user",
+        "runtime",
+        "prompt",
+        "sprite_name",
+        "status",
+        "exit_code",
+        "created_at",
+        "updated_at",
     )
     inlines = [AgentSessionLogInline]
     actions = ["terminate_sessions"]

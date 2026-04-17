@@ -254,9 +254,7 @@ class TestMultiTurn:
             f"Turn 1 data not found in turn 2 output. Output: {output[:500]}"
         )
 
-    def test_send_prompt_while_running_rejected(
-        self, api, create_agent, create_session, runtime
-    ):
+    def test_send_prompt_while_running_rejected(self, api, create_agent, create_session, runtime):
         """Cannot send a prompt while the session is already running."""
         agent = create_agent(
             name=_unique(f"e2e-busy-{runtime}"),
@@ -265,10 +263,7 @@ class TestMultiTurn:
         )
         session = create_session(
             agent_id=agent["id"],
-            prompt=(
-                "Count from 1 to 100, printing each number on a new line. "
-                "Take your time."
-            ),
+            prompt=("Count from 1 to 100, printing each number on a new line. Take your time."),
             timeout=120,
         )
 
