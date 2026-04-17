@@ -79,11 +79,11 @@ resources.
 - List endpoints return `{"data":[...]}`. Single-resource endpoints return the
   object directly (no envelope).
 - **No pagination. No filtering.** `GET /agents` and `GET /environments`
-  always return the full non-archived set ordered by `-created_at`. `GET
-  /sessions` does **not exist** — sessions are accessed by ID only. Track
-  session IDs yourself.
-- Archived resources are hidden from list endpoints but remain accessible via
-  `GET /{resource}/{id}`.
+  return the full non-archived set ordered by `-created_at`. `GET /sessions`
+  returns every session the caller owns — including terminal states
+  (`completed`, `failed`, `terminated`) — ordered by `-created_at`.
+- Archived agents and environments are hidden from list endpoints but remain
+  accessible via `GET /{resource}/{id}`. Sessions have no archive concept.
 
 ### 2.3 Error envelope
 
@@ -583,7 +583,39 @@ agent starts:
 - Max 10 per session, no duplicate resolved mount_paths.
 - `authorization_token` is used for private repos (standard HTTPS basic auth).
 
-### 6.3 GET a session
+### 6.3 List sessions
+
+```
+GET /sessions
+```
+
+Returns every session the caller owns, ordered by `-created_at`. No pagination,
+no filters. Terminal sessions (`completed`, `failed`, `terminated`) are
+included — there is no archive concept for sessions. If you want to drop them,
+`DELETE /sessions/{id}/delete`.
+
+```json
+{
+  "data": [
+    {
+      "id": "<uuid>",
+      "agent_id": "<uuid>",
+      "environment_id": "<uuid> | null",
+      "runtime": "claude",
+      "status": "pending | running | completed | failed | terminated",
+      "exit_code": 0,
+      "created_at": "...",
+      "updated_at": "...",
+      "resources": [...]
+    }
+  ]
+}
+```
+
+Each entry has the same shape as `GET /sessions/{id}` (see §6.4). `prompt` is
+not exposed in the list or on single reads.
+
+### 6.4 GET a session
 
 ```
 GET /sessions/{id}
@@ -606,7 +638,7 @@ GET /sessions/{id}
 No `prompt`, no `version`, no `type`, no `archived_at`. `exit_code` is `null`
 until the session reaches a terminal state.
 
-### 6.4 SSE stream
+### 6.5 SSE stream
 
 ```
 GET /sessions/{id}/stream
@@ -658,7 +690,7 @@ for line in resp.iter_lines(decode_unicode=True):
         break
 ```
 
-### 6.5 Multi-turn via POST /prompt
+### 6.6 Multi-turn via POST /prompt
 
 ```
 POST /sessions/{id}/prompt
@@ -686,7 +718,7 @@ What does NOT re-run between turns:
 
 Conflict cases: prompt on `running` → 409; prompt on `terminated` → 409.
 
-### 6.6 Terminate and delete
+### 6.7 Terminate and delete
 
 ```
 POST /sessions/{id}/terminate
@@ -815,14 +847,13 @@ POST   /environments/{uuid}/archive         # archive               → 200
 DELETE /environments/{uuid}/delete          # hard delete           → 200
 GET    /environments/{uuid}/versions        # version history       → 200 {"data":[...]}
 POST   /sessions                            # create                → 202
+GET    /sessions                            # list                  → 200 {"data":[...]}
 GET    /sessions/{uuid}                     # retrieve              → 200
 POST   /sessions/{uuid}/prompt              # multi-turn resume     → 202
 POST   /sessions/{uuid}/terminate           # terminate             → 200
 DELETE /sessions/{uuid}/delete              # delete record         → 200
 GET    /sessions/{uuid}/stream              # SSE stream            → 200 text/event-stream
 ```
-
-There is no `GET /sessions` list endpoint. Track session IDs client-side.
 
 ---
 

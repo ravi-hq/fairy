@@ -41,6 +41,7 @@ POST   /environments/{uuid}/archive         # 200
 DELETE /environments/{uuid}/delete          # 200 (hard delete; blocked if sessions exist)
 GET    /environments/{uuid}/versions        # 200 {"data":[...]}
 POST   /sessions                            # 202  ← not 201; execution is async
+GET    /sessions                            # 200 {"data":[...]}  (all statuses, newest first)
 GET    /sessions/{uuid}                     # 200
 POST   /sessions/{uuid}/prompt              # 202  (multi-turn)
 POST   /sessions/{uuid}/terminate           # 200
@@ -48,7 +49,7 @@ DELETE /sessions/{uuid}/delete              # 200
 GET    /sessions/{uuid}/stream              # 200 text/event-stream
 ```
 
-There is **no** `GET /sessions` list endpoint. Track session IDs client-side. This is intentional — don't add it.
+`GET /sessions` returns every session the caller owns (all statuses — no archive concept), newest first. `GET /agents` and `GET /environments` return the non-archived set. None of the list endpoints take query params or paginate.
 
 ## Conventions
 
@@ -57,6 +58,7 @@ There is **no** `GET /sessions` list endpoint. Track session IDs client-side. Th
 - List: `{"data":[<resource>,...]}` — no pagination, no query params.
 - Single: resource object, no envelope.
 - Error: `{"detail": ...}` for every status, including successful deletes (`{"detail":"Session deleted"}`).
+- `GET /sessions` and `GET /sessions/{id}` return the same per-session shape (no `prompt`, no `version`, no `archived_at`).
 
 ### The 422 quirk
 

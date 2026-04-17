@@ -106,6 +106,20 @@ def _serialize_resources(session: AgentSession) -> list[dict]:
     ]
 
 
+def _serialize_session(session: AgentSession) -> dict:
+    return {
+        "id": str(session.id),
+        "agent_id": str(session.agent_id) if session.agent_id else None,
+        "environment_id": str(session.environment_id) if session.environment_id else None,
+        "runtime": session.runtime,
+        "status": session.status,
+        "exit_code": session.exit_code,
+        "created_at": session.created_at.isoformat(),
+        "updated_at": session.updated_at.isoformat(),
+        "resources": _serialize_resources(session),
+    }
+
+
 class GitHubRepoResource(BaseModel):
     type: Literal["github_repository"]
     url: str = Field(description="HTTPS GitHub repo URL, e.g. https://github.com/org/repo")
@@ -170,10 +184,20 @@ def health(request):
 
 
 @csrf_exempt
-@require_POST
 @require_api_key
-def create_session(request):
-    """Create a session, start execution in background, return session info."""
+def sessions_list_create(request):
+    """POST: create a session. GET: list the caller's sessions."""
+    if request.method == "GET":
+        qs = (
+            AgentSession.objects.filter(user=request.user)
+            .prefetch_related("resources")
+            .order_by("-created_at")
+        )
+        return JsonResponse({"data": [_serialize_session(s) for s in qs]})
+
+    if request.method != "POST":
+        return JsonResponse({"detail": "Method not allowed"}, status=405)
+
     try:
         body = json.loads(request.body)
     except (json.JSONDecodeError, ValueError):
@@ -318,17 +342,7 @@ def get_session(request, session_id):
     except (AgentSession.DoesNotExist, ValueError):
         return JsonResponse({"detail": "Session not found"}, status=404)
 
-    return JsonResponse({
-        "id": str(session.id),
-        "agent_id": str(session.agent_id) if session.agent_id else None,
-        "environment_id": str(session.environment_id) if session.environment_id else None,
-        "runtime": session.runtime,
-        "status": session.status,
-        "exit_code": session.exit_code,
-        "created_at": session.created_at.isoformat(),
-        "updated_at": session.updated_at.isoformat(),
-        "resources": _serialize_resources(session),
-    })
+    return JsonResponse(_serialize_session(session))
 
 
 @require_GET
