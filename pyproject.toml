@@ -31,4 +31,5 @@ pythonpath = ["src"]
 markers = [
     "slow: tests that create real agent sessions (may take minutes)",
     "tool_matrix: verifies agent tool enforcement across runtimes",
+    "mcp_matrix: verifies MCP server + mcp_toolset enforcement across runtimes",
 ]

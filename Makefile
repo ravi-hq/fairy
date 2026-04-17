@@ -36,6 +36,13 @@ test-e2e-fast:
 test-e2e-tools:
 	uv run pytest tests/e2e/test_agent_tools.py -v -m "tool_matrix"
 
+# MCP-enforcement matrix — ~14 real sessions across runtimes.
+# Requires FAIRY_API_TOKEN. The /test-mcp endpoint is served by the Fairy
+# deployment when DEBUG=True or FAIRY_TESTING=1; set MCP_TEST_URL to override
+# with a different test server.
+test-e2e-mcp:
+	uv run pytest tests/e2e/test_mcp_enforcement.py -v -m "mcp_matrix"
+
 # Run everything — unit + e2e. E2E auto-skips if FAIRY_API_TOKEN is unset.
 test-all:
 	uv run pytest tests/ -v

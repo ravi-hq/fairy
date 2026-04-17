@@ -23,6 +23,41 @@ class RepoSpec:
 
 
 @dataclass(frozen=True)
+class McpToolsetRules:
+    """Normalized mcp_toolset restrictions for a single server.
+
+    default_enabled: default for tools not listed in per_tool (True = allow-by-default).
+    per_tool: {tool_name: enabled} — overrides default for specific tools.
+    """
+    default_enabled: bool
+    per_tool: dict[str, bool] = field(default_factory=dict)
+
+
+def _build_mcp_toolset_rules(tools: list[dict]) -> dict[str, McpToolsetRules]:
+    """Extract per-server rules from mcp_toolset tool entries.
+
+    Servers without an mcp_toolset entry are absent from the result (no restrictions).
+    An entry with no default_config and no configs keeps default_enabled=True and
+    empty per_tool, producing a no-op rules record that runtime writers may skip.
+    """
+    rules: dict[str, McpToolsetRules] = {}
+    for t in tools:
+        if not isinstance(t, dict) or t.get("type") != "mcp_toolset":
+            continue
+        name = t.get("mcp_server_name")
+        if not name:
+            continue
+        default_enabled = t.get("default_config", {}).get("enabled", True)
+        per_tool = {
+            c["name"]: c.get("enabled", True)
+            for c in t.get("configs", [])
+            if isinstance(c, dict) and "name" in c
+        }
+        rules[name] = McpToolsetRules(default_enabled=default_enabled, per_tool=per_tool)
+    return rules
+
+
+@dataclass(frozen=True)
 class McpServerSpec:
     """Normalized MCP server config, translated to runtime-specific format."""
     name: str
@@ -392,10 +427,51 @@ def _tool_files_gemini(tools: list[dict]) -> dict[str, str]:
     return {GEMINI_POLICY_PATH: "\n\n".join(rules) + "\n"}
 
 
+CLAUDE_SETTINGS_PATH = "/home/sprite/.claude/settings.json"
+
+
+def _tool_files_claude_mcp(
+    rules: dict[str, McpToolsetRules],
+) -> dict[str, str]:
+    """Write ~/.claude/settings.json with permissions.allow/deny for MCP tools.
+
+    Claude `-p` mode silently ignores MCP names in `--disallowedTools` (upstream
+    issue #12863). The only working deny path in headless mode is `permissions.deny`
+    in a settings file. Tool names use double-underscore `mcp__<server>[__<tool>]`.
+    """
+    deny: list[dict[str, str]] = []
+    allow: list[dict[str, str]] = []
+    for server_name, r in rules.items():
+        if not r.default_enabled and not r.per_tool:
+            deny.append({"tool": f"mcp__{server_name}"})
+            continue
+        if not r.default_enabled:
+            deny.append({"tool": f"mcp__{server_name}"})
+            for tool_name, enabled in r.per_tool.items():
+                if enabled:
+                    allow.append({"tool": f"mcp__{server_name}__{tool_name}"})
+        else:
+            for tool_name, enabled in r.per_tool.items():
+                if not enabled:
+                    deny.append({"tool": f"mcp__{server_name}__{tool_name}"})
+
+    if not deny and not allow:
+        return {}
+
+    permissions: dict[str, list] = {}
+    if allow:
+        permissions["allow"] = allow
+    if deny:
+        permissions["deny"] = deny
+
+    return {CLAUDE_SETTINGS_PATH: json.dumps({"permissions": permissions}, indent=2) + "\n"}
+
+
 def _build_tool_flags(
     runtime_name: str,
     tools: list[dict],
     mcp_server_names: list[str],
+    rules: dict[str, McpToolsetRules] | None = None,
 ) -> tuple[str, dict[str, str]]:
     """Translate Agent.tools into runtime-specific enforcement.
 
@@ -406,10 +482,13 @@ def _build_tool_flags(
     Codex folds its tool enforcement into the MCP config.toml instead of using
     this path — it returns ("", {}) here. See `_build_mcp_codex`.
     """
-    if not tools:
+    rules = rules or {}
+    if not tools and not rules:
         return "", {}
     if runtime_name in ("claude", "claude-oauth"):
-        return _tool_flags_claude(tools, mcp_server_names), {}
+        flags = _tool_flags_claude(tools, mcp_server_names)
+        files = _tool_files_claude_mcp(rules)
+        return flags, files
     if runtime_name == "gemini":
         return "", _tool_files_gemini(tools)
     return "", {}
@@ -457,11 +536,14 @@ def build_wrapper_script(
         packages_section = _build_packages_section(environment.packages)
         setup_section = _build_setup_script_section(environment.setup_script)
 
+    mcp_rules = _build_mcp_toolset_rules(tools or [])
     mcp_section = _build_mcp_section(config.name, mcp_servers or [], tools=tools)
     mcp_flags = _mcp_cmd_flags(config.name, mcp_servers or [])
 
     mcp_names = [s.name for s in (mcp_servers or [])]
-    tool_flags, tool_files = _build_tool_flags(config.name, tools or [], mcp_names)
+    tool_flags, tool_files = _build_tool_flags(
+        config.name, tools or [], mcp_names, rules=mcp_rules,
+    )
     tool_files_section = _format_tool_files_heredoc(tool_files)
 
     return f"""#!/bin/bash

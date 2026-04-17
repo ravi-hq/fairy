@@ -493,9 +493,48 @@ def _validate_tools(tools: list) -> list:
                 f"tools[{i}]: unknown type {tool['type']!r}. "
                 f"Must be one of: {sorted(VALID_TOOL_TYPES)}"
             )
-        if tool["type"] == "mcp_toolset" and "mcp_server_name" not in tool:
-            raise ValueError(f"tools[{i}] (mcp_toolset): missing required field: mcp_server_name")
+        if tool["type"] == "mcp_toolset":
+            if "mcp_server_name" not in tool:
+                raise ValueError(
+                    f"tools[{i}] (mcp_toolset): missing required field: mcp_server_name"
+                )
+            if "configs" in tool:
+                configs = tool["configs"]
+                if not isinstance(configs, list):
+                    raise ValueError(f"tools[{i}].configs must be a list")
+                for j, cfg in enumerate(configs):
+                    if not isinstance(cfg, dict):
+                        raise ValueError(f"tools[{i}].configs[{j}] must be an object")
+                    if "name" in cfg and not isinstance(cfg["name"], str):
+                        raise ValueError(f"tools[{i}].configs[{j}].name must be a string")
+                    if "enabled" in cfg and not isinstance(cfg["enabled"], bool):
+                        raise ValueError(
+                            f"tools[{i}].configs[{j}].enabled must be a boolean"
+                        )
+            if "default_config" in tool:
+                dc = tool["default_config"]
+                if not isinstance(dc, dict):
+                    raise ValueError(f"tools[{i}].default_config must be an object")
+                if "enabled" in dc and not isinstance(dc["enabled"], bool):
+                    raise ValueError(
+                        f"tools[{i}].default_config.enabled must be a boolean"
+                    )
     return tools
+
+
+def _cross_validate_tool_refs(tools: list, mcp_servers: list) -> None:
+    """Check that every mcp_toolset.mcp_server_name references a server in mcp_servers."""
+    server_names = {s["name"] for s in mcp_servers if isinstance(s, dict) and "name" in s}
+    for i, tool in enumerate(tools):
+        if not isinstance(tool, dict):
+            continue
+        if tool.get("type") != "mcp_toolset":
+            continue
+        name = tool.get("mcp_server_name")
+        if name and name not in server_names:
+            raise ValueError(
+                f"tools[{i}] (mcp_toolset) references unknown server: {name!r}"
+            )
 
 
 def _validate_mcp_servers(servers: list) -> list:
@@ -665,6 +704,11 @@ def agents_list_create(request):
         except ValidationError as e:
             return JsonResponse({"detail": e.errors(include_context=False)}, status=422)
 
+        try:
+            _cross_validate_tool_refs(req.tools, req.mcp_servers)
+        except ValueError as e:
+            return JsonResponse({"detail": str(e)}, status=422)
+
         if req.runtime not in RUNTIMES:
             return JsonResponse(
                 {"detail": f"Unknown runtime: {req.runtime}. Must be one of: {list(RUNTIMES)}"},
@@ -740,6 +784,13 @@ def agent_detail(request, agent_id):
                 {"detail": f"Unknown runtime: {req.runtime}. Must be one of: {list(RUNTIMES)}"},
                 status=400,
             )
+
+        effective_tools = req.tools if req.tools is not None else agent.tools
+        effective_mcp_servers = req.mcp_servers if req.mcp_servers is not None else agent.mcp_servers
+        try:
+            _cross_validate_tool_refs(effective_tools, effective_mcp_servers)
+        except ValueError as e:
+            return JsonResponse({"detail": str(e)}, status=422)
 
         # Detect changes
         changed = False
