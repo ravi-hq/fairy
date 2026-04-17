@@ -1,5 +1,4 @@
 import json
-import uuid
 
 import pytest
 from django.contrib.auth.models import User
@@ -7,7 +6,7 @@ from django.test import Client
 
 from fairy.models import Agent, AgentVersion, APIKey, UserRuntimeKey
 from fairy.runtimes import RUNTIMES
-from fairy.sprites_exec import McpServerSpec, build_wrapper_script
+from fairy.sprites_exec import McpServerSpec, _build_tool_flags, build_wrapper_script
 
 
 # --- Fixtures ---
@@ -201,7 +200,7 @@ class TestCreateAgentWithTools:
         assert len(data["mcp_servers"]) == 1
         assert data["mcp_servers"][0]["name"] == "github"
 
-    def test_create_with_custom_tool(self, client: Client, auth_headers):
+    def test_custom_tool_type_rejected(self, client: Client, auth_headers):
         resp = client.post(
             "/agents",
             data=json.dumps({
@@ -224,9 +223,8 @@ class TestCreateAgentWithTools:
             content_type="application/json",
             **auth_headers,
         )
-        assert resp.status_code == 201
-        data = resp.json()
-        assert data["tools"][0]["name"] == "get_weather"
+        assert resp.status_code == 422
+        assert "unknown type" in str(resp.json()["detail"]).lower()
 
     def test_create_without_tools_defaults_empty(self, client: Client, auth_headers):
         resp = client.post(
@@ -276,21 +274,6 @@ class TestAgentToolsValidation:
         )
         assert resp.status_code == 422
         assert "type" in str(resp.json()["detail"]).lower()
-
-    def test_custom_tool_missing_fields(self, client: Client, auth_headers):
-        resp = client.post(
-            "/agents",
-            data=json.dumps({
-                "name": "Bad",
-                "model": "claude-sonnet-4-6",
-                "runtime": "claude",
-                "tools": [{"type": "custom", "name": "foo"}],
-            }),
-            content_type="application/json",
-            **auth_headers,
-        )
-        assert resp.status_code == 422
-        assert "description" in str(resp.json()["detail"]).lower()
 
     def test_mcp_toolset_missing_server_name(self, client: Client, auth_headers):
         resp = client.post(
@@ -540,3 +523,164 @@ class TestSessionMcpIntegration:
         written_script = mock_fs.write_text.call_args[0][0]
         assert "Authorization" in written_script
         assert "Bearer ${SECRET}" in written_script
+
+
+# --- Wrapper script tool-enforcement wiring (Phase 1 — scaffolding only) ---
+
+
+class TestWrapperScriptToolPlumbing:
+    @pytest.mark.parametrize("runtime_name", ["claude", "claude-oauth", "codex", "gemini"])
+    def test_build_tool_flags_empty_returns_empty(self, runtime_name):
+        flags, files = _build_tool_flags(runtime_name, [], [])
+        assert flags == ""
+        assert files == {}
+
+    @pytest.mark.parametrize("runtime_name", ["claude", "claude-oauth", "codex", "gemini"])
+    def test_wrapper_script_accepts_tools_kwarg(self, runtime_name):
+        config = RUNTIMES[runtime_name]
+        tools = [{"type": "agent_toolset_20260401"}]
+        script = build_wrapper_script(config, "sk-test", "hello", tools=tools)
+        assert script.startswith("#!/bin/bash")
+
+    def test_wrapper_script_tools_default_is_none(self):
+        config = RUNTIMES["claude"]
+        script = build_wrapper_script(config, "sk-test", "hello")
+        assert "exec claude" in script
+        # No tool flags emitted when no tools passed
+        assert "--tools" not in script
+        assert "--disallowedTools" not in script
+
+    def test_wrapper_script_empty_tools_no_flags(self):
+        config = RUNTIMES["claude"]
+        script = build_wrapper_script(config, "sk-test", "hello", tools=[])
+        assert "--tools" not in script
+        assert "--disallowedTools" not in script
+
+
+# --- Phase 2: Claude tool flag translation ---
+
+
+class TestClaudeToolFlags:
+    def _flags(self, tools, mcp_refs=None):
+        from fairy.sprites_exec import _tool_flags_claude
+        return _tool_flags_claude(tools, mcp_refs or [])
+
+    def test_empty_returns_empty(self):
+        assert self._flags([]) == ""
+
+    def test_only_mcp_toolset_no_agent_toolset_returns_empty(self):
+        """mcp_toolset alone doesn't restrict built-ins; needs an agent_toolset."""
+        tools = [{"type": "mcp_toolset", "mcp_server_name": "github"}]
+        assert self._flags(tools, ["github"]) == ""
+
+    def test_default_enabled_true_no_overrides_returns_empty(self):
+        tools = [{"type": "agent_toolset_20260401", "default_config": {"enabled": True}}]
+        assert self._flags(tools) == ""
+
+    def test_default_enabled_missing_treated_as_true(self):
+        """Absent default_config defaults to enabled=True (no flags)."""
+        tools = [{"type": "agent_toolset_20260401"}]
+        assert self._flags(tools) == ""
+
+    def test_default_enabled_false_no_overrides_disables_all(self):
+        tools = [{"type": "agent_toolset_20260401", "default_config": {"enabled": False}}]
+        assert self._flags(tools) == ' --tools ""'
+
+    def test_default_enabled_false_with_allowlist(self):
+        tools = [{
+            "type": "agent_toolset_20260401",
+            "default_config": {"enabled": False},
+            "configs": [
+                {"name": "bash", "enabled": True},
+                {"name": "read", "enabled": True},
+            ],
+        }]
+        # Order follows _CLAUDE_TOOL_NAMES insertion order (bash, read first)
+        assert self._flags(tools) == ' --tools "Bash,Read"'
+
+    def test_default_enabled_true_with_denylist(self):
+        tools = [{
+            "type": "agent_toolset_20260401",
+            "default_config": {"enabled": True},
+            "configs": [
+                {"name": "web_fetch", "enabled": False},
+                {"name": "web_search", "enabled": False},
+            ],
+        }]
+        flags = self._flags(tools)
+        # Order matches configs input order
+        assert flags == ' --disallowedTools "WebFetch,WebSearch"'
+
+    @pytest.mark.parametrize("canonical,pascal", [
+        ("bash", "Bash"), ("read", "Read"), ("write", "Write"),
+        ("edit", "Edit"), ("glob", "Glob"), ("grep", "Grep"),
+        ("web_fetch", "WebFetch"), ("web_search", "WebSearch"),
+    ])
+    def test_every_canonical_name_maps_correctly(self, canonical, pascal):
+        tools = [{
+            "type": "agent_toolset_20260401",
+            "default_config": {"enabled": True},
+            "configs": [{"name": canonical, "enabled": False}],
+        }]
+        assert self._flags(tools) == f' --disallowedTools "{pascal}"'
+
+    def test_mcp_toolset_included_in_allowlist(self):
+        tools = [
+            {"type": "agent_toolset_20260401", "default_config": {"enabled": False}},
+            {"type": "mcp_toolset", "mcp_server_name": "slack"},
+        ]
+        assert self._flags(tools, ["slack"]) == ' --tools "mcp__slack"'
+
+    def test_mcp_toolset_combined_with_built_in_allowlist(self):
+        tools = [
+            {
+                "type": "agent_toolset_20260401",
+                "default_config": {"enabled": False},
+                "configs": [{"name": "read", "enabled": True}],
+            },
+            {"type": "mcp_toolset", "mcp_server_name": "github"},
+        ]
+        assert self._flags(tools, ["github"]) == ' --tools "Read,mcp__github"'
+
+    def test_unknown_tool_name_in_configs_is_ignored(self):
+        """If user passes a name not in the canonical map, skip it."""
+        tools = [{
+            "type": "agent_toolset_20260401",
+            "default_config": {"enabled": True},
+            "configs": [{"name": "not_a_real_tool", "enabled": False}],
+        }]
+        assert self._flags(tools) == ""
+
+    def test_wrapper_script_claude_includes_tool_flags(self):
+        config = RUNTIMES["claude"]
+        tools = [{
+            "type": "agent_toolset_20260401",
+            "default_config": {"enabled": True},
+            "configs": [{"name": "web_fetch", "enabled": False}],
+        }]
+        script = build_wrapper_script(config, "key", "prompt", tools=tools)
+        assert '--disallowedTools "WebFetch"' in script
+
+    def test_wrapper_script_claude_oauth_includes_tool_flags(self):
+        config = RUNTIMES["claude-oauth"]
+        tools = [{
+            "type": "agent_toolset_20260401",
+            "default_config": {"enabled": False},
+        }]
+        script = build_wrapper_script(config, "key", "prompt", tools=tools)
+        assert '--tools ""' in script
+
+    def test_claude_continue_session_includes_tool_flags(self):
+        """Restrictions don't persist on --continue — must re-emit flags."""
+        config = RUNTIMES["claude"]
+        tools = [{
+            "type": "agent_toolset_20260401",
+            "default_config": {"enabled": True},
+            "configs": [{"name": "bash", "enabled": False}],
+        }]
+        script = build_wrapper_script(
+            config, "key", "prompt", continue_session=True, tools=tools
+        )
+        assert '--disallowedTools "Bash"' in script
+        assert "--continue" in script
+

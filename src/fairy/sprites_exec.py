@@ -215,6 +215,98 @@ def _mcp_cmd_flags(runtime_name: str, servers: list[McpServerSpec]) -> str:
     return ""
 
 
+_CLAUDE_TOOL_NAMES: dict[str, str] = {
+    "bash": "Bash",
+    "read": "Read",
+    "write": "Write",
+    "edit": "Edit",
+    "glob": "Glob",
+    "grep": "Grep",
+    "web_fetch": "WebFetch",
+    "web_search": "WebSearch",
+}
+
+
+def _find_agent_toolset(tools: list[dict]) -> dict | None:
+    for t in tools:
+        if t.get("type") == "agent_toolset_20260401":
+            return t
+    return None
+
+
+def _tool_flags_claude(tools: list[dict], mcp_server_names: list[str]) -> str:
+    """Translate Managed-Agents tools spec → claude CLI flags.
+
+    default_config.enabled=False → `--tools "<enabled>"` allowlist (empty string disables all)
+    default_config.enabled=True (or missing) with per-tool disabled → `--disallowedTools "..."`
+    mcp_toolset entries extend the allowlist with `mcp__<server>`.
+    """
+    toolset = _find_agent_toolset(tools)
+    mcp_refs = [
+        t["mcp_server_name"] for t in tools
+        if t.get("type") == "mcp_toolset" and "mcp_server_name" in t
+    ]
+
+    if toolset is None:
+        return ""
+
+    default_enabled = toolset.get("default_config", {}).get("enabled", True)
+    configs = {c["name"]: c.get("enabled", True) for c in toolset.get("configs", [])}
+
+    if not default_enabled:
+        enabled_tools = [
+            _CLAUDE_TOOL_NAMES[name]
+            for name in _CLAUDE_TOOL_NAMES
+            if configs.get(name, False)
+        ]
+        enabled_tools += [f"mcp__{name}" for name in mcp_refs]
+        return f' --tools "{",".join(enabled_tools)}"'
+
+    disabled_tools = [
+        _CLAUDE_TOOL_NAMES[name]
+        for name, enabled in configs.items()
+        if name in _CLAUDE_TOOL_NAMES and not enabled
+    ]
+    if not disabled_tools:
+        return ""
+    return f' --disallowedTools "{",".join(disabled_tools)}"'
+
+
+def _build_tool_flags(
+    runtime_name: str,
+    tools: list[dict],
+    mcp_server_names: list[str],
+) -> tuple[str, dict[str, str]]:
+    """Translate Agent.tools into runtime-specific enforcement.
+
+    Returns (cli_flags, files):
+      cli_flags — extra flags appended to the exec line (leading space if non-empty)
+      files     — {absolute_path: content} to write as heredoc blocks before exec
+
+    Runtimes without a per-tool enforcement path (codex, gemini) return ("", {}).
+    Subsequent PRs land those translations.
+    """
+    if not tools:
+        return "", {}
+    if runtime_name in ("claude", "claude-oauth"):
+        return _tool_flags_claude(tools, mcp_server_names), {}
+    return "", {}
+
+
+def _format_tool_files_heredoc(files: dict[str, str]) -> str:
+    """Render file writes as mkdir + heredoc blocks for the wrapper script."""
+    if not files:
+        return ""
+    blocks: list[str] = ["# Tool enforcement files"]
+    for path, content in files.items():
+        parent = path.rsplit("/", 1)[0] if "/" in path else "."
+        blocks.append(f"mkdir -p {shlex.quote(parent)}")
+        blocks.append(f"cat > {shlex.quote(path)} << 'TOOLFILE_EOF'")
+        blocks.append(content.rstrip("\n"))
+        blocks.append("TOOLFILE_EOF")
+    return "\n".join(blocks)
+
+
 def build_wrapper_script(
     config: RuntimeConfig,
     api_key: str,
@@ -224,6 +316,7 @@ def build_wrapper_script(
     repos: list[RepoSpec] | None = None,
     environment: EnvironmentSetup | None = None,
     mcp_servers: list[McpServerSpec] | None = None,
+    tools: list[dict] | None = None,
 ) -> str:
     """Build a shell script that exports the API key and runs the agent.
 
@@ -244,6 +337,10 @@ def build_wrapper_script(
 
     mcp_section = _build_mcp_section(config.name, mcp_servers or [])
     mcp_flags = _mcp_cmd_flags(config.name, mcp_servers or [])
+
+    mcp_names = [s.name for s in (mcp_servers or [])]
+    tool_flags, tool_files = _build_tool_flags(config.name, tools or [], mcp_names)
+    tool_files_section = _format_tool_files_heredoc(tool_files)
 
     return f"""#!/bin/bash
 set -euo pipefail
@@ -268,5 +365,7 @@ fi
 
 {mcp_section}
 
-exec {cmd}{mcp_flags}
+{tool_files_section}
+
+exec {cmd}{mcp_flags}{tool_flags}
 """

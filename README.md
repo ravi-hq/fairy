@@ -50,6 +50,30 @@ families:
 
 Full list in `src/fairy/runtimes.py`.
 
+## Tools
+
+Agents accept a `tools` field modeled on Anthropic's Managed Agents
+`agent_toolset_20260401` spec. Canonical tool names are `bash`, `read`, `write`,
+`edit`, `glob`, `grep`, `web_fetch`, `web_search`. Each runtime translates this
+spec to its own CLI flags / config files.
+
+### Enforcement per runtime
+
+| Canonical tool | claude / claude-oauth | codex                            | gemini                                       |
+| -------------- | --------------------- | -------------------------------- | -------------------------------------------- |
+| `bash`         | ✓                     | not enforceable                  | ✓                                            |
+| `read`         | ✓                     | not enforceable                  | ✓                                            |
+| `write`        | ✓                     | ✓ (only when `edit` also off)    | ✓ (denies both `write_file` and `replace`)   |
+| `edit`         | ✓                     | not enforceable                  | ✓                                            |
+| `glob`         | ✓                     | not enforceable                  | ✓                                            |
+| `grep`         | ✓                     | not enforceable                  | ✓                                            |
+| `web_fetch`    | ✓                     | no codex equivalent (no-op)      | ✓                                            |
+| `web_search`   | ✓                     | ✓                                | ✓                                            |
+
+Configurations are accepted silently even when unenforceable on the selected
+runtime. For full behavioral guarantees, use `claude` or `gemini`; `codex` is
+best-effort.
+
 ## Testing
 
 ### Unit / integration tests
@@ -90,6 +114,9 @@ FAIRY_API_TOKEN=<token> make test-e2e-fast
 
 # full suite
 FAIRY_API_TOKEN=<token> make test-e2e
+
+# tool-enforcement matrix — ~11 sessions verifying tools flow through per runtime
+FAIRY_API_TOKEN=<token> E2E_RUNTIMES=claude,codex,gemini make test-e2e-tools
 
 # single class
 FAIRY_API_TOKEN=<token> \
