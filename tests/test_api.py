@@ -229,6 +229,72 @@ def test_get_session_other_user_not_visible(client: Client, auth_headers):
 
 
 @pytest.mark.django_db
+def test_list_sessions_requires_auth(client: Client):
+    resp = client.get("/sessions")
+    assert resp.status_code == 401
+
+
+@pytest.mark.django_db
+def test_list_sessions_empty(client: Client, auth_headers):
+    resp = client.get("/sessions", **auth_headers)
+    assert resp.status_code == 200
+    assert resp.json() == {"data": []}
+
+
+@pytest.mark.django_db
+def test_list_sessions_returns_user_sessions_newest_first(client: Client, auth_headers, user):
+    older = AgentSession.objects.create(
+        user=user, runtime="claude", prompt="one", status="completed", exit_code=0
+    )
+    newer = AgentSession.objects.create(
+        user=user, runtime="claude", prompt="two", status="running"
+    )
+
+    resp = client.get("/sessions", **auth_headers)
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert [s["id"] for s in data] == [str(newer.id), str(older.id)]
+
+    first = data[0]
+    assert first["runtime"] == "claude"
+    assert first["status"] == "running"
+    assert first["exit_code"] is None
+    assert "created_at" in first and "updated_at" in first
+    assert first["resources"] == []
+    # prompt is not exposed on session read endpoints
+    assert "prompt" not in first
+
+
+@pytest.mark.django_db
+def test_list_sessions_includes_terminal_states(client: Client, auth_headers, user):
+    """Listing returns all sessions regardless of status — there's no archive concept."""
+    AgentSession.objects.create(user=user, runtime="claude", prompt="p", status="terminated")
+    AgentSession.objects.create(
+        user=user, runtime="claude", prompt="p", status="failed", exit_code=2
+    )
+
+    resp = client.get("/sessions", **auth_headers)
+    assert resp.status_code == 200
+    statuses = sorted(s["status"] for s in resp.json()["data"])
+    assert statuses == ["failed", "terminated"]
+
+
+@pytest.mark.django_db
+def test_list_sessions_scoped_to_user(client: Client, auth_headers, user):
+    AgentSession.objects.create(user=user, runtime="claude", prompt="mine", status="completed")
+    other = User.objects.create_user(username="other", password="pass")
+    AgentSession.objects.create(
+        user=other, runtime="claude", prompt="theirs", status="completed"
+    )
+
+    resp = client.get("/sessions", **auth_headers)
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert len(data) == 1
+    assert AgentSession.objects.get(pk=data[0]["id"]).user == user
+
+
+@pytest.mark.django_db
 def test_stream_session_replays_completed(client: Client, auth_headers, user):
     """Stream endpoint replays logs from a completed session."""
     session = AgentSession.objects.create(

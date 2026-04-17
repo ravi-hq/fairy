@@ -16,7 +16,7 @@ urlpatterns = [
     path("agents/<uuid:agent_id>/archive", views.agent_archive),
     path("agents/<uuid:agent_id>/versions", views.agent_versions),
     # Sessions
-    path("sessions", views.create_session),
+    path("sessions", views.sessions_list_create),
     path("sessions/<uuid:session_id>", views.get_session),
     path("sessions/<uuid:session_id>/prompt", views.send_prompt),
     path("sessions/<uuid:session_id>/terminate", views.terminate_session),
