@@ -39,6 +39,12 @@ test-e2e-skills:
 test-e2e-networking:
 	uv run pytest tests/e2e/test_environments.py -v -k "limited_networking_blocks or limited_networking_allows"
 
+# Just the MCP e2e tests. The /test-mcp endpoint is served by the Fairy
+# deployment when DEBUG=True or FAIRY_TESTING=1; set MCP_TEST_URL to point
+# at a different test server.
+test-e2e-mcp:
+	uv run pytest tests/e2e/test_mcp.py -v -m "mcp_matrix"
+
 # Run everything — unit + e2e. E2E auto-skips if FAIRY_API_TOKEN is unset.
 test-all:
 	uv run pytest tests/ -v
