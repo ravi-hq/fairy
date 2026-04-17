@@ -507,7 +507,6 @@ MAX_SKILL_DESCRIPTION_LEN = 1024
 MAX_SKILL_CONTENT_BYTES = 64 * 1024
 
 _SKILL_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
-_SKILL_NAME_RESERVED = {"anthropic", "claude"}
 _SKILL_ALLOWED_KEYS = {"name", "description", "content"}
 _SKILL_HEREDOC_DELIMITER = "SKILL_EOF"
 
@@ -537,8 +536,6 @@ def _validate_skills(skills: list) -> list:
             raise ValueError(
                 f"skills[{i}].name {name!r} must match [a-z0-9][a-z0-9-]{{0,63}}"
             )
-        if name in _SKILL_NAME_RESERVED:
-            raise ValueError(f"skills[{i}].name {name!r} is reserved")
         if name in seen_names:
             raise ValueError(f"skills[{i}]: duplicate name {name!r}")
         seen_names.add(name)

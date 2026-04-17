@@ -226,15 +226,6 @@ class TestSkillsValidation:
         resp = self._post(client, auth_headers, [_skill(name="a" * 65)])
         assert resp.status_code == 422
 
-    def test_name_reserved_anthropic(self, client: Client, auth_headers):
-        resp = self._post(client, auth_headers, [_skill(name="anthropic")])
-        assert resp.status_code == 422
-        assert "reserved" in str(resp.json()["detail"]).lower()
-
-    def test_name_reserved_claude(self, client: Client, auth_headers):
-        resp = self._post(client, auth_headers, [_skill(name="claude")])
-        assert resp.status_code == 422
-
     def test_duplicate_names(self, client: Client, auth_headers):
         resp = self._post(client, auth_headers, [_skill(name="foo"), _skill(name="foo")])
         assert resp.status_code == 422
