@@ -108,6 +108,250 @@ curl -sS -X POST "$FAIRY_URL/agents" \
   }'
 ```
 
+## MCP servers
+
+Agents can declare MCP servers under `mcp_servers`. Each entry has a
+`name` (unique per agent) and either `type: "url"` or `type: "stdio"`.
+Max 20 servers per agent.
+
+### 5. URL MCP server
+
+Declare a remote HTTP MCP server. With no matching `mcp_toolset` entry,
+all tools the server exposes are available to the agent.
+
+```bash
+curl -sS -X POST "$FAIRY_URL/agents" \
+  -H "Authorization: Bearer $FAIRY_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "with-github-mcp",
+    "model": "claude-sonnet-4-6",
+    "runtime": "claude",
+    "mcp_servers": [
+      {"type": "url", "name": "github", "url": "https://mcp.github.com/mcp"}
+    ]
+  }'
+```
+
+### 6. URL MCP server with auth headers
+
+Headers are forwarded on every MCP request. `${VAR}` references are
+substituted from the agent's environment `env_vars` at session start, so
+you don't have to embed secrets in the agent definition itself.
+
+```bash
+curl -sS -X POST "$FAIRY_URL/agents" \
+  -H "Authorization: Bearer $FAIRY_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "with-auth-mcp",
+    "model": "claude-sonnet-4-6",
+    "runtime": "claude",
+    "mcp_servers": [{
+      "type": "url",
+      "name": "github",
+      "url": "https://mcp.github.com/mcp",
+      "headers": {"Authorization": "Bearer ${GITHUB_TOKEN}"}
+    }]
+  }'
+```
+
+### 7. stdio MCP server
+
+Launches a local process inside the Sprite and speaks MCP over its
+stdin/stdout. Good for filesystem / git / database MCP servers that run
+locally.
+
+```bash
+curl -sS -X POST "$FAIRY_URL/agents" \
+  -H "Authorization: Bearer $FAIRY_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "with-fs-mcp",
+    "model": "claude-sonnet-4-6",
+    "runtime": "claude",
+    "mcp_servers": [{
+      "type": "stdio",
+      "name": "fs",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/workspace"],
+      "env": {"NODE_ENV": "production"}
+    }]
+  }'
+```
+
+### 8. Multiple MCP servers
+
+Any mix of URL and stdio servers on one agent.
+
+```bash
+curl -sS -X POST "$FAIRY_URL/agents" \
+  -H "Authorization: Bearer $FAIRY_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "multi-mcp",
+    "model": "claude-sonnet-4-6",
+    "runtime": "claude",
+    "mcp_servers": [
+      {"type": "url",   "name": "github", "url": "https://mcp.github.com/mcp"},
+      {"type": "stdio", "name": "fs",     "command": "npx",
+       "args": ["-y", "@modelcontextprotocol/server-filesystem", "/workspace"]}
+    ]
+  }'
+```
+
+## Restricting MCP servers with `mcp_toolset`
+
+Add an `mcp_toolset` entry to `tools` to allow/deny individual tools on a
+named server. Every `mcp_server_name` must reference an entry in
+`mcp_servers` (or the request 422s — see Error C below).
+
+The shape:
+
+```json
+{
+  "type": "mcp_toolset",
+  "mcp_server_name": "<server-name>",
+  "default_config": {"enabled": true | false},
+  "configs": [{"name": "<tool>", "enabled": true | false}, ...]
+}
+```
+
+`default_config.enabled` sets the policy for tools not listed in
+`configs`; `configs` entries override per-tool.
+
+### 9. Allow a server (explicit, equivalent to declaring it with no toolset)
+
+```bash
+curl -sS -X POST "$FAIRY_URL/agents" \
+  -H "Authorization: Bearer $FAIRY_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "allow-github",
+    "model": "claude-sonnet-4-6",
+    "runtime": "claude",
+    "mcp_servers": [{"type": "url", "name": "github", "url": "https://mcp.github.com/mcp"}],
+    "tools": [{"type": "mcp_toolset", "mcp_server_name": "github"}]
+  }'
+```
+
+### 10. Deny a whole server
+
+Server stays declared (so the agent knows it *could* exist), but all its
+tools are blocked. Useful for staged rollouts — flip `enabled` to `true`
+later without touching the agent-version history for `mcp_servers`.
+
+```bash
+curl -sS -X POST "$FAIRY_URL/agents" \
+  -H "Authorization: Bearer $FAIRY_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "deny-github",
+    "model": "claude-sonnet-4-6",
+    "runtime": "claude",
+    "mcp_servers": [{"type": "url", "name": "github", "url": "https://mcp.github.com/mcp"}],
+    "tools": [{
+      "type": "mcp_toolset",
+      "mcp_server_name": "github",
+      "default_config": {"enabled": false}
+    }]
+  }'
+```
+
+### 11. Per-tool denylist on a server
+
+Default-allow, disable individual dangerous tools.
+
+```bash
+curl -sS -X POST "$FAIRY_URL/agents" \
+  -H "Authorization: Bearer $FAIRY_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "safe-github",
+    "model": "claude-sonnet-4-6",
+    "runtime": "claude",
+    "mcp_servers": [{"type": "url", "name": "github", "url": "https://mcp.github.com/mcp"}],
+    "tools": [{
+      "type": "mcp_toolset",
+      "mcp_server_name": "github",
+      "configs": [
+        {"name": "delete_repository", "enabled": false},
+        {"name": "force_push",        "enabled": false}
+      ]
+    }]
+  }'
+```
+
+### 12. Per-tool allowlist on a server
+
+Deny-by-default, with a short list of explicitly-enabled tools. This is
+the shape most real deployments will use.
+
+```bash
+curl -sS -X POST "$FAIRY_URL/agents" \
+  -H "Authorization: Bearer $FAIRY_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "minimal-github",
+    "model": "claude-sonnet-4-6",
+    "runtime": "claude",
+    "mcp_servers": [{"type": "url", "name": "github", "url": "https://mcp.github.com/mcp"}],
+    "tools": [{
+      "type": "mcp_toolset",
+      "mcp_server_name": "github",
+      "default_config": {"enabled": false},
+      "configs": [
+        {"name": "search_issues", "enabled": true},
+        {"name": "get_pr",        "enabled": true}
+      ]
+    }]
+  }'
+```
+
+## Combining built-in + MCP toolsets
+
+### 13. Restricted built-ins + allowlisted MCP server
+
+A realistic production shape: narrow the built-in toolset, declare an
+MCP server, and allowlist a few of its tools.
+
+```bash
+curl -sS -X POST "$FAIRY_URL/agents" \
+  -H "Authorization: Bearer $FAIRY_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "scoped-github-pr-agent",
+    "model": "claude-sonnet-4-6",
+    "runtime": "claude",
+    "mcp_servers": [{
+      "type": "url",
+      "name": "github",
+      "url": "https://mcp.github.com/mcp",
+      "headers": {"Authorization": "Bearer ${GITHUB_TOKEN}"}
+    }],
+    "tools": [
+      {
+        "type": "agent_toolset_20260401",
+        "default_config": {"enabled": false},
+        "configs": [
+          {"name": "read", "enabled": true},
+          {"name": "grep", "enabled": true}
+        ]
+      },
+      {
+        "type": "mcp_toolset",
+        "mcp_server_name": "github",
+        "default_config": {"enabled": false},
+        "configs": [
+          {"name": "get_pr",      "enabled": true},
+          {"name": "list_pr_files","enabled": true},
+          {"name": "create_review","enabled": true}
+        ]
+      }
+    ]
+  }'
+```
+
 ## Updating tools on an existing agent
 
 `PUT /agents/{id}` requires the current `version` for optimistic concurrency.
@@ -170,3 +414,28 @@ curl -sS -X POST "$FAIRY_URL/agents" \
     "tools": [{"type": "mcp_toolset"}]
   }'
 ```
+
+### C. `mcp_toolset` referencing a server not in `mcp_servers`
+
+Every `mcp_server_name` must match a declared server on the same agent.
+This is checked on both create and update, using the merged effective
+state — so removing a server while an old `mcp_toolset` still references
+it also 422s.
+
+```bash
+curl -sS -X POST "$FAIRY_URL/agents" \
+  -H "Authorization: Bearer $FAIRY_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "dangling-ref",
+    "model": "claude-sonnet-4-6",
+    "runtime": "claude",
+    "mcp_servers": [],
+    "tools": [{"type": "mcp_toolset", "mcp_server_name": "ghost"}]
+  }'
+```
+
+### D. More than 20 MCP servers
+
+Fairy caps `mcp_servers` at 20 entries. Adding a 21st returns `422` with
+a `detail` that mentions the limit.
