@@ -12,7 +12,7 @@ Backed by `thoughts/research/2026-04-17-agent-skills-support.md`.
 
 - **Track 1 — Fairy internals**: `Agent.skills` is a `JSONField(default=list)` on both `Agent` and `AgentVersion`, fully plumbed through serialization/versioning but never consumed in `sprites_exec.py`. The `tools`/`mcp_servers` pair is the closest existing parallel.
 - **Track 2 — Anthropic Skills API**: Claude Code CLI does **not** resolve remote `skill_id`s. Filesystem-only. Managed-agents `container.skills` is a separate surface that only works from `POST /v1/messages`.
-- **Track 3 — Runtime CLIs**: All three runtimes implement the [agentskills.io](https://agentskills.io) standard — same SKILL.md format, different paths: `.claude/skills/`, `.agents/skills/`, `.gemini/skills/`.
+- **Track 3 — Runtime CLIs**: All three runtimes implement the [agentskills.io](https://agentskills.io) standard — same SKILL.md format, different user-level paths: `~/.claude/skills/`, `~/.codex/skills/`, `~/.gemini/skills/`. Codex/Gemini also support repo-scoped `.agents/skills/`, but Fairy writes to the user-level path since Sprites are agent-home environments, not repo roots.
 - **Track 4 — OSS ecosystem**: 36.82% of public skills carry ≥1 security flaw. Argues for inline content in Phase 1 rather than URL fetch.
 
 ### Key Discoveries
@@ -110,7 +110,7 @@ Add a per-runtime path resolver and a section builder. Insert below the existing
 _SKILLS_ROOTS: dict[str, str] = {
     "claude": "/home/sprite/.claude/skills",
     "claude-oauth": "/home/sprite/.claude/skills",
-    "codex": "/home/sprite/.agents/skills",
+    "codex": "/home/sprite/.codex/skills",
     "gemini": "/home/sprite/.gemini/skills",
 }
 
@@ -312,7 +312,7 @@ Model on `tests/test_tools_mcp.py:59-392`. Cover:
 
 **Wrapper-script mechanics:**
 - `test_claude_skills_written_to_dot_claude_skills` — `_build_skills_section("claude", [SkillSpec("foo", "---\nname: foo\n---\nbody")])` emits `mkdir -p /home/sprite/.claude/skills/foo` and `cat > /home/sprite/.claude/skills/foo/SKILL.md`.
-- `test_codex_skills_written_to_agents_dir` — path is `/home/sprite/.agents/skills/foo/SKILL.md`.
+- `test_codex_skills_written_to_codex_dir` — path is `/home/sprite/.codex/skills/foo/SKILL.md`.
 - `test_gemini_skills_written_to_gemini_dir` — path is `/home/sprite/.gemini/skills/foo/SKILL.md`.
 - `test_claude_oauth_shares_claude_path` — `claude-oauth` uses `/home/sprite/.claude/skills/foo`.
 - `test_no_skills_backward_compat` — empty list produces no skills section (parallel to `test_no_mcp_backward_compat` at `tests/test_tools_mcp.py:138`).
@@ -360,7 +360,7 @@ A one-time `skills_fixture()` helper in `tests/conftest.py` returning a canonica
 - [ ] `curl -X POST /agents` with `skills: [{"name": "claude", ...}]` returns 422 (reserved name).
 - [ ] `curl -X POST /agents` with 21 valid skills returns 422.
 - [ ] Start a session on `claude` runtime; `sprite.command("ls", "/home/sprite/.claude/skills/<name>/").run()` shows `SKILL.md`; `cat` shows the content verbatim.
-- [ ] Same verification on `codex` (`.agents/skills/...`) and `gemini` (`.gemini/skills/...`).
+- [ ] Same verification on `codex` (`.codex/skills/...`) and `gemini` (`.gemini/skills/...`).
 - [ ] `POST /sessions/{id}/prompt` on a completed session re-writes the SKILL.md (check `mtime` on the file in the Sprite).
 - [ ] `FAIRY_API_TOKEN=<token> make test-e2e-fast` passes.
 

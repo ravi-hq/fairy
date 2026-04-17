@@ -31,6 +31,10 @@ test-e2e:
 test-e2e-fast:
 	uv run pytest tests/e2e -v -n $(E2E_WORKERS) --dist loadfile -m "not slow"
 
+# Just the skills-materialization e2e tests (spawns one real session per runtime).
+test-e2e-skills:
+	uv run pytest tests/e2e/test_skills.py -v -n $(E2E_WORKERS) --dist loadfile
+
 # Just the network-isolation e2e enforcement tests. Claude runtime only.
 test-e2e-networking:
 	uv run pytest tests/e2e/test_environments.py -v -k "limited_networking_blocks or limited_networking_allows"
