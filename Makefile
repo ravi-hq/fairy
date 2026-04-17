@@ -31,6 +31,10 @@ test-e2e:
 test-e2e-fast:
 	uv run pytest tests/e2e -v -n $(E2E_WORKERS) --dist loadfile -m "not slow"
 
+# Just the skills-materialization e2e tests (spawns one real session per runtime).
+test-e2e-skills:
+	uv run pytest tests/e2e/test_skills.py -v -n $(E2E_WORKERS) --dist loadfile
+
 # Run everything — unit + e2e. E2E auto-skips if FAIRY_API_TOKEN is unset.
 test-all:
 	uv run pytest tests/ -v
