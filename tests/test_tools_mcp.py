@@ -162,25 +162,18 @@ class TestWrapperScriptMcp:
         assert mcp_pos < exec_pos
 
 
-# --- Agent CRUD with tools/mcp_servers ---
+# --- Agent CRUD with mcp_servers ---
 
 
 @pytest.mark.django_db
-class TestCreateAgentWithTools:
-    def test_create_with_tools_and_mcp(self, client: Client, auth_headers):
+class TestCreateAgentWithMcp:
+    def test_create_with_mcp_servers(self, client: Client, auth_headers):
         resp = client.post(
             "/agents",
             data=json.dumps({
-                "name": "Tool Agent",
+                "name": "MCP Agent",
                 "model": "claude-sonnet-4-6",
                 "runtime": "claude",
-                "tools": [
-                    {"type": "agent_toolset_20260401"},
-                    {
-                        "type": "mcp_toolset",
-                        "mcp_server_name": "github",
-                    },
-                ],
                 "mcp_servers": [
                     {
                         "type": "url",
@@ -194,44 +187,15 @@ class TestCreateAgentWithTools:
         )
         assert resp.status_code == 201
         data = resp.json()
-        assert len(data["tools"]) == 2
-        assert data["tools"][0]["type"] == "agent_toolset_20260401"
-        assert data["tools"][1]["type"] == "mcp_toolset"
+        assert "tools" not in data
         assert len(data["mcp_servers"]) == 1
         assert data["mcp_servers"][0]["name"] == "github"
 
-    def test_create_with_custom_tool(self, client: Client, auth_headers):
+    def test_create_without_mcp_defaults_empty(self, client: Client, auth_headers):
         resp = client.post(
             "/agents",
             data=json.dumps({
-                "name": "Custom Tool Agent",
-                "model": "claude-sonnet-4-6",
-                "runtime": "claude",
-                "tools": [
-                    {
-                        "type": "custom",
-                        "name": "get_weather",
-                        "description": "Get weather for a location",
-                        "input_schema": {
-                            "type": "object",
-                            "properties": {"location": {"type": "string"}},
-                            "required": ["location"],
-                        },
-                    },
-                ],
-            }),
-            content_type="application/json",
-            **auth_headers,
-        )
-        assert resp.status_code == 201
-        data = resp.json()
-        assert data["tools"][0]["name"] == "get_weather"
-
-    def test_create_without_tools_defaults_empty(self, client: Client, auth_headers):
-        resp = client.post(
-            "/agents",
-            data=json.dumps({
-                "name": "No Tools",
+                "name": "No MCP",
                 "model": "claude-sonnet-4-6",
                 "runtime": "claude",
             }),
@@ -240,71 +204,24 @@ class TestCreateAgentWithTools:
         )
         assert resp.status_code == 201
         data = resp.json()
-        assert data["tools"] == []
         assert data["mcp_servers"] == []
+        assert "tools" not in data
 
-
-@pytest.mark.django_db
-class TestAgentToolsValidation:
-    def test_invalid_tool_type(self, client: Client, auth_headers):
+    def test_tools_field_ignored_on_create(self, client: Client, auth_headers):
+        """`tools` is no longer accepted — Pydantic silently drops unknown fields."""
         resp = client.post(
             "/agents",
             data=json.dumps({
-                "name": "Bad",
+                "name": "Ignored Tools",
                 "model": "claude-sonnet-4-6",
                 "runtime": "claude",
-                "tools": [{"type": "invalid"}],
+                "tools": [{"type": "agent_toolset_20260401"}],
             }),
             content_type="application/json",
             **auth_headers,
         )
-        assert resp.status_code == 422
-        assert "unknown type" in str(resp.json()["detail"]).lower()
-
-    def test_tool_missing_type(self, client: Client, auth_headers):
-        resp = client.post(
-            "/agents",
-            data=json.dumps({
-                "name": "Bad",
-                "model": "claude-sonnet-4-6",
-                "runtime": "claude",
-                "tools": [{"name": "foo"}],
-            }),
-            content_type="application/json",
-            **auth_headers,
-        )
-        assert resp.status_code == 422
-        assert "type" in str(resp.json()["detail"]).lower()
-
-    def test_custom_tool_missing_fields(self, client: Client, auth_headers):
-        resp = client.post(
-            "/agents",
-            data=json.dumps({
-                "name": "Bad",
-                "model": "claude-sonnet-4-6",
-                "runtime": "claude",
-                "tools": [{"type": "custom", "name": "foo"}],
-            }),
-            content_type="application/json",
-            **auth_headers,
-        )
-        assert resp.status_code == 422
-        assert "description" in str(resp.json()["detail"]).lower()
-
-    def test_mcp_toolset_missing_server_name(self, client: Client, auth_headers):
-        resp = client.post(
-            "/agents",
-            data=json.dumps({
-                "name": "Bad",
-                "model": "claude-sonnet-4-6",
-                "runtime": "claude",
-                "tools": [{"type": "mcp_toolset"}],
-            }),
-            content_type="application/json",
-            **auth_headers,
-        )
-        assert resp.status_code == 422
-        assert "mcp_server_name" in str(resp.json()["detail"]).lower()
+        assert resp.status_code == 201
+        assert "tools" not in resp.json()
 
 
 @pytest.mark.django_db
@@ -408,8 +325,8 @@ class TestAgentMcpValidation:
 
 
 @pytest.mark.django_db
-class TestUpdateAgentTools:
-    def test_update_tools(self, client: Client, auth_headers, user):
+class TestUpdateAgentMcp:
+    def test_update_mcp_servers(self, client: Client, auth_headers, user):
         agent = Agent.objects.create(
             user=user, name="Agent", model="claude-sonnet-4-6",
             runtime="claude", version=1,
@@ -423,7 +340,6 @@ class TestUpdateAgentTools:
             f"/agents/{agent.id}",
             data=json.dumps({
                 "version": 1,
-                "tools": [{"type": "agent_toolset_20260401"}],
                 "mcp_servers": [
                     {"name": "github", "url": "https://mcp.github.com/mcp"},
                 ],
@@ -434,10 +350,9 @@ class TestUpdateAgentTools:
         assert resp.status_code == 200
         data = resp.json()
         assert data["version"] == 2
-        assert len(data["tools"]) == 1
         assert len(data["mcp_servers"]) == 1
 
-    def test_update_tools_versioned(self, client: Client, auth_headers, user):
+    def test_update_mcp_versioned(self, client: Client, auth_headers, user):
         agent = Agent.objects.create(
             user=user, name="Agent", model="claude-sonnet-4-6",
             runtime="claude", version=1,

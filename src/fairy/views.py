@@ -493,31 +493,10 @@ def delete_session(request, session_id):
 # Agents
 # ---------------------------------------------------------------------------
 
-AGENT_VERSIONED_FIELDS = ("name", "description", "system", "model", "runtime", "environment", "skills", "tools", "mcp_servers", "metadata")
+AGENT_VERSIONED_FIELDS = ("name", "description", "system", "model", "runtime", "environment", "skills", "mcp_servers", "metadata")
 
 
-VALID_TOOL_TYPES = {"agent_toolset_20260401", "mcp_toolset", "custom"}
 VALID_MCP_SERVER_TYPES = {"url", "stdio"}
-
-
-def _validate_tools(tools: list) -> list:
-    for i, tool in enumerate(tools):
-        if not isinstance(tool, dict):
-            raise ValueError(f"tools[{i}] must be an object")
-        if "type" not in tool:
-            raise ValueError(f"tools[{i}] missing required field: type")
-        if tool["type"] not in VALID_TOOL_TYPES:
-            raise ValueError(
-                f"tools[{i}]: unknown type {tool['type']!r}. "
-                f"Must be one of: {sorted(VALID_TOOL_TYPES)}"
-            )
-        if tool["type"] == "custom":
-            for field_name in ("name", "description", "input_schema"):
-                if field_name not in tool:
-                    raise ValueError(f"tools[{i}] (custom): missing required field: {field_name}")
-        if tool["type"] == "mcp_toolset" and "mcp_server_name" not in tool:
-            raise ValueError(f"tools[{i}] (mcp_toolset): missing required field: mcp_server_name")
-    return tools
 
 
 MAX_SKILLS_PER_AGENT = 20
@@ -608,7 +587,6 @@ class CreateAgentRequest(BaseModel):
     description: str = Field(default="")
     environment_id: str | None = Field(default=None)
     skills: list = Field(default_factory=list)
-    tools: list = Field(default_factory=list)
     mcp_servers: list = Field(default_factory=list)
     metadata: dict = Field(default_factory=dict)
 
@@ -620,11 +598,6 @@ class CreateAgentRequest(BaseModel):
                 f"Unknown model: {v}. Must be one of: {sorted(AgentModel.values())}"
             )
         return v
-
-    @field_validator("tools")
-    @classmethod
-    def validate_tools(cls, v: list) -> list:
-        return _validate_tools(v)
 
     @field_validator("mcp_servers")
     @classmethod
@@ -646,7 +619,6 @@ class UpdateAgentRequest(BaseModel):
     description: str | None = None
     environment_id: str | None = None
     skills: list | None = None
-    tools: list | None = None
     mcp_servers: list | None = None
     metadata: dict | None = None
 
@@ -657,13 +629,6 @@ class UpdateAgentRequest(BaseModel):
             raise ValueError(
                 f"Unknown model: {v}. Must be one of: {sorted(AgentModel.values())}"
             )
-        return v
-
-    @field_validator("tools")
-    @classmethod
-    def validate_tools(cls, v: list | None) -> list | None:
-        if v is not None:
-            _validate_tools(v)
         return v
 
     @field_validator("mcp_servers")
@@ -692,7 +657,6 @@ def _serialize_agent(agent: Agent) -> dict:
         "runtime": agent.runtime,
         "environment_id": str(agent.environment_id) if agent.environment_id else None,
         "skills": agent.skills,
-        "tools": agent.tools,
         "mcp_servers": agent.mcp_servers,
         "metadata": agent.metadata,
         "version": agent.version,
@@ -713,7 +677,6 @@ def _serialize_agent_version(av: AgentVersion) -> dict:
         "runtime": av.runtime,
         "environment_id": str(av.environment_id) if av.environment_id else None,
         "skills": av.skills,
-        "tools": av.tools,
         "mcp_servers": av.mcp_servers,
         "metadata": av.metadata,
         "version": av.version,
@@ -733,7 +696,6 @@ def _snapshot_version(agent: Agent):
         runtime=agent.runtime,
         environment=agent.environment,
         skills=agent.skills,
-        tools=agent.tools,
         mcp_servers=agent.mcp_servers,
         metadata=agent.metadata,
     )
@@ -776,7 +738,6 @@ def agents_list_create(request):
             runtime=req.runtime,
             environment=env_obj,
             skills=req.skills,
-            tools=req.tools,
             mcp_servers=req.mcp_servers,
             metadata=req.metadata,
             version=1,
@@ -843,7 +804,7 @@ def agent_detail(request, agent_id):
                 agent.environment = env_obj
                 changed = True
 
-        for field in ("name", "model", "runtime", "system", "description", "skills", "tools", "mcp_servers"):
+        for field in ("name", "model", "runtime", "system", "description", "skills", "mcp_servers"):
             value = getattr(req, field)
             if value is not None and value != getattr(agent, field):
                 setattr(agent, field, value)

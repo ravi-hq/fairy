@@ -219,7 +219,6 @@ class Agent(models.Model):
         Environment, on_delete=models.SET_NULL, null=True, blank=True, related_name="agents"
     )
     skills = models.JSONField(default=list, blank=True)
-    tools = models.JSONField(default=list, blank=True)
     mcp_servers = models.JSONField(default=list, blank=True)
     metadata = models.JSONField(default=dict, blank=True)
     version = models.PositiveIntegerField(default=1)
@@ -250,7 +249,6 @@ class AgentVersion(models.Model):
         Environment, on_delete=models.SET_NULL, null=True, blank=True
     )
     skills = models.JSONField(default=list, blank=True)
-    tools = models.JSONField(default=list, blank=True)
     mcp_servers = models.JSONField(default=list, blank=True)
     metadata = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
