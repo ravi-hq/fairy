@@ -1224,3 +1224,73 @@ class TestCodexMcpToolsetRules:
 
 # --- Gemini MCP toolset rules emission ---
 
+# --- Gemini MCP toolset rules emission ---
+
+
+class TestGeminiMcpToolsetRules:
+    def _config(self, tools, servers):
+        script = build_wrapper_script(
+            RUNTIMES["gemini"], "k", "p", mcp_servers=servers, tools=tools,
+        )
+        # Extract the heredoc body between `<< 'MCP_EOF'\n` and `\nMCP_EOF`
+        start = script.index("cat > ~/.gemini/settings.json << 'MCP_EOF'\n") + len(
+            "cat > ~/.gemini/settings.json << 'MCP_EOF'\n"
+        )
+        end = script.index("\nMCP_EOF\n", start)
+        return json.loads(script[start:end])
+
+    def test_no_rules_no_include_exclude(self):
+        servers = [McpServerSpec(name="gh", type="url", url="https://mcp.gh/mcp")]
+        cfg = self._config([], servers)
+        assert cfg["mcpServers"]["gh"]["httpUrl"] == "https://mcp.gh/mcp"
+        assert "includeTools" not in cfg["mcpServers"]["gh"]
+        assert "excludeTools" not in cfg["mcpServers"]["gh"]
+
+    def test_default_disabled_no_configs_emits_empty_include_tools(self):
+        servers = [McpServerSpec(name="gh", type="url", url="https://mcp.gh/mcp")]
+        tools = [{
+            "type": "mcp_toolset",
+            "mcp_server_name": "gh",
+            "default_config": {"enabled": False},
+        }]
+        cfg = self._config(tools, servers)
+        assert cfg["mcpServers"]["gh"]["includeTools"] == []
+
+    def test_per_tool_deny_emits_exclude_tools(self):
+        servers = [McpServerSpec(name="gh", type="url", url="https://mcp.gh/mcp")]
+        tools = [{
+            "type": "mcp_toolset",
+            "mcp_server_name": "gh",
+            "configs": [{"name": "create_issue", "enabled": False}],
+        }]
+        cfg = self._config(tools, servers)
+        assert cfg["mcpServers"]["gh"]["excludeTools"] == ["create_issue"]
+        assert "includeTools" not in cfg["mcpServers"]["gh"]
+
+    def test_default_disabled_with_allow_emits_include_tools(self):
+        servers = [McpServerSpec(name="gh", type="url", url="https://mcp.gh/mcp")]
+        tools = [{
+            "type": "mcp_toolset",
+            "mcp_server_name": "gh",
+            "default_config": {"enabled": False},
+            "configs": [{"name": "list_issues", "enabled": True}],
+        }]
+        cfg = self._config(tools, servers)
+        assert cfg["mcpServers"]["gh"]["includeTools"] == ["list_issues"]
+
+    def test_rules_coexist_with_trust_and_headers(self):
+        servers = [McpServerSpec(
+            name="gh", type="url", url="https://mcp.gh/mcp",
+            headers={"Authorization": "Bearer x"},
+        )]
+        tools = [{
+            "type": "mcp_toolset",
+            "mcp_server_name": "gh",
+            "configs": [{"name": "create_issue", "enabled": False}],
+        }]
+        cfg = self._config(tools, servers)
+        entry = cfg["mcpServers"]["gh"]
+        assert entry["trust"] is True
+        assert entry["headers"] == {"Authorization": "Bearer x"}
+        assert entry["excludeTools"] == ["create_issue"]
+

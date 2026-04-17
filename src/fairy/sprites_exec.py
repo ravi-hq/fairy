@@ -152,8 +152,16 @@ def _build_clone_section(repos: list[RepoSpec]) -> str:
     return "\n".join(lines)
 
 
-def _build_mcp_claude(servers: list[McpServerSpec]) -> str:
-    """Generate Claude MCP config JSON and write command."""
+def _build_mcp_claude(
+    servers: list[McpServerSpec],
+    rules: dict[str, McpToolsetRules] | None = None,  # noqa: ARG001 — read by _tool_files_claude_mcp
+) -> str:
+    """Generate Claude MCP config JSON and write command.
+
+    The rules parameter is threaded through for signature parity with codex/gemini,
+    but Claude applies MCP allow/deny via a separate `~/.claude/settings.json`
+    writer (`_tool_files_claude_mcp`), not inside this file.
+    """
     config: dict[str, dict] = {}
     for s in servers:
         if s.type == "url":
@@ -260,20 +268,46 @@ def _build_mcp_codex(
     return "\n".join(lines)
 
 
-def _build_mcp_gemini(servers: list[McpServerSpec]) -> str:
-    """Generate Gemini MCP config JSON and write command."""
+def _build_mcp_gemini(
+    servers: list[McpServerSpec],
+    rules: dict[str, McpToolsetRules] | None = None,
+) -> str:
+    """Generate Gemini MCP config JSON and write command.
+
+    MCP tool allow/deny is emitted as includeTools/excludeTools on each mcpServers
+    entry — not via the Policy Engine TOML that `_tool_files_gemini` writes for
+    built-in tools. Policy Engine uses single-underscore `mcp_{server}_{tool}`
+    naming which misparses server aliases containing underscores, so we keep MCP
+    rules localized to the settings.json file that this function already writes.
+    """
+    rules = rules or {}
     config: dict[str, dict] = {}
     for s in servers:
         if s.type == "url":
             entry: dict = {"httpUrl": s.url, "trust": True}
             if s.headers:
                 entry["headers"] = s.headers
-            config[s.name] = entry
         elif s.type == "stdio":
             entry = {"command": s.command, "args": s.args, "trust": True}
             if s.env:
                 entry["env"] = s.env
-            config[s.name] = entry
+        else:
+            continue
+
+        server_rules = rules.get(s.name)
+        if server_rules is not None:
+            if not server_rules.default_enabled and not server_rules.per_tool:
+                entry["includeTools"] = []
+            else:
+                allowed = [t for t, e in server_rules.per_tool.items() if e]
+                denied = [t for t, e in server_rules.per_tool.items() if not e]
+                if not server_rules.default_enabled and allowed:
+                    entry["includeTools"] = allowed
+                if denied:
+                    entry["excludeTools"] = denied
+
+        config[s.name] = entry
+
     content = json.dumps({"mcpServers": config}, indent=2)
     return (
         "# MCP server configuration\n"
@@ -295,17 +329,17 @@ def _build_mcp_section(
     so `tools` is threaded through here. Other runtimes emit tool enforcement via
     the separate `_tool_files_*` path.
 
-    `rules` carries per-server mcp_toolset allow/deny. Codex consumes it inside
-    its MCP config; claude consumes it via `_tool_files_claude_mcp`.
+    `rules` carries per-server mcp_toolset allow/deny. Codex and gemini consume it
+    inside their MCP config; claude consumes it via `_tool_files_claude_mcp`.
     """
     if runtime_name == "codex":
         return _build_mcp_codex(servers, tools=tools, rules=rules)
     if not servers:
         return ""
     if runtime_name in ("claude", "claude-oauth"):
-        return _build_mcp_claude(servers)
+        return _build_mcp_claude(servers, rules=rules)
     if runtime_name == "gemini":
-        return _build_mcp_gemini(servers)
+        return _build_mcp_gemini(servers, rules=rules)
     return ""
 
 

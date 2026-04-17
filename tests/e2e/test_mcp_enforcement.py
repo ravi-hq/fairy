@@ -43,6 +43,7 @@ RUNTIME_MCP_TOOL_NAMES = {
     "claude":       f"mcp__{MCP_TEST_SERVER_NAME}__{MCP_TEST_TOOL_NAME}",
     "claude-oauth": f"mcp__{MCP_TEST_SERVER_NAME}__{MCP_TEST_TOOL_NAME}",
     "codex":        f"mcp__{MCP_TEST_SERVER_NAME}__{MCP_TEST_TOOL_NAME}",
+    "gemini":       f"mcp__{MCP_TEST_SERVER_NAME}__{MCP_TEST_TOOL_NAME}",
 }
 
 PROMPT_INVOKE = (
@@ -96,12 +97,30 @@ def _parse_codex_mcp_tool_names(events: list[dict]) -> list[str]:
     return names
 
 
+def _parse_gemini_mcp_tool_names(events: list[dict]) -> list[str]:
+    names: list[str] = []
+    for e in events:
+        if e.get("type") != "output":
+            continue
+        try:
+            obj = json.loads(e.get("data", ""))
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if obj.get("type") == "tool_use":
+            name = obj.get("tool_name") or obj.get("name") or ""
+            if name.startswith("mcp__"):
+                names.append(name)
+    return names
+
+
 def _mcp_tool_was_invoked(events: list[dict], runtime: str) -> bool:
     target = RUNTIME_MCP_TOOL_NAMES[runtime]
     if runtime in ("claude", "claude-oauth"):
         return target in _parse_claude_mcp_tool_names(events)
     if runtime == "codex":
         return target in _parse_codex_mcp_tool_names(events)
+    if runtime == "gemini":
+        return target in _parse_gemini_mcp_tool_names(events)
     return False
 
 
@@ -110,6 +129,8 @@ def _any_mcp_tool_was_invoked(events: list[dict], runtime: str) -> bool:
         return bool(_parse_claude_mcp_tool_names(events))
     if runtime == "codex":
         return bool(_parse_codex_mcp_tool_names(events))
+    if runtime == "gemini":
+        return bool(_parse_gemini_mcp_tool_names(events))
     return False
 
 
@@ -157,7 +178,7 @@ def mcp_test_url(fairy_url):
     return f"{fairy_url.rstrip('/')}/test-mcp"
 
 
-@pytest.fixture(scope="class", params=["claude", "codex"])
+@pytest.fixture(scope="class", params=["claude", "codex", "gemini"])
 def runtime(request, e2e_runtimes):
     if request.param not in e2e_runtimes:
         pytest.skip(f"{request.param} not in E2E_RUNTIMES")
