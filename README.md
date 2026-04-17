@@ -74,6 +74,28 @@ Configurations are accepted silently even when unenforceable on the selected
 runtime. For full behavioral guarantees, use `claude` or `gemini`; `codex` is
 best-effort.
 
+### MCP servers and mcp_toolset
+
+Agents also accept `mcp_servers` (an array of URL/stdio MCP endpoints) and
+`mcp_toolset` entries inside `tools` (per-server allow/deny lists). The
+runtime translation surface:
+
+| Scenario | claude / claude-oauth | codex | gemini |
+| --- | --- | --- | --- |
+| Server declared, no restriction | ✓ (always) | ✓ (always) | ✓ (always) |
+| `mcp_toolset default_config.enabled=false` (deny server) | ✓ via `~/.claude/settings.json` `permissions.deny` | ✓ via `enabled = false` on `[mcp_servers.<name>]` | ✓ via `includeTools=[]` |
+| `mcp_toolset configs[].enabled=false` (deny one tool) | ✓ via `permissions.deny` with `mcp__<server>__<tool>` | ✓ via `disabled_tools` | ✓ via `excludeTools` |
+| `default_config.enabled=false` + allow one tool | ✓ (deny server + allow specific) | ✓ via `enabled_tools` | ✓ via `includeTools` |
+
+Claude MCP tool names in `--disallowedTools` are silently ignored in `-p` mode
+(upstream [claude-code#12863](https://github.com/anthropics/claude-code/issues/12863)),
+so Fairy writes `~/.claude/settings.json` `permissions.deny` rules instead.
+Restrictions reapply on every `POST /sessions/{id}/prompt` because the wrapper
+script is rebuilt per call.
+
+Unknown `mcp_toolset.mcp_server_name` values — referencing a server not in the
+agent's `mcp_servers` — are rejected with `422`.
+
 ## Testing
 
 ### Unit / integration tests
@@ -117,6 +139,12 @@ FAIRY_API_TOKEN=<token> make test-e2e
 
 # tool-enforcement matrix — ~11 sessions verifying tools flow through per runtime
 FAIRY_API_TOKEN=<token> E2E_RUNTIMES=claude,codex,gemini make test-e2e-tools
+
+# MCP-enforcement matrix — ~14 sessions verifying mcp_servers + mcp_toolset
+# are respected. Fairy must be running with DEBUG=True or FAIRY_TESTING=1 so
+# the /test-mcp endpoint is live; set MCP_TEST_URL to point at a different
+# test server.
+FAIRY_API_TOKEN=<token> E2E_RUNTIMES=claude,codex,gemini make test-e2e-mcp
 
 # single class
 FAIRY_API_TOKEN=<token> \
