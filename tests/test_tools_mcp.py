@@ -6,7 +6,15 @@ from django.test import Client
 
 from fairy.models import Agent, AgentVersion, APIKey, UserRuntimeKey
 from fairy.runtimes import RUNTIMES
-from fairy.sprites_exec import McpServerSpec, _build_tool_flags, build_wrapper_script
+from fairy.sprites_exec import (
+    CLAUDE_SETTINGS_PATH,
+    McpServerSpec,
+    McpToolsetRules,
+    _build_mcp_toolset_rules,
+    _build_tool_flags,
+    _tool_files_claude_mcp,
+    build_wrapper_script,
+)
 
 
 # --- Fixtures ---
@@ -878,3 +886,414 @@ class TestCodexToolConfig:
         exec_line = next(line for line in script.splitlines() if line.startswith("exec "))
         assert "--tools" not in exec_line
         assert "--disallowedTools" not in exec_line
+
+
+# --- MCP toolset rules helper ---
+
+
+class TestBuildMcpToolsetRules:
+    def test_empty_tools_returns_empty(self):
+        assert _build_mcp_toolset_rules([]) == {}
+
+    def test_no_mcp_toolset_returns_empty(self):
+        tools = [{"type": "agent_toolset_20260401"}]
+        assert _build_mcp_toolset_rules(tools) == {}
+
+    def test_bare_mcp_toolset_keeps_default_allow(self):
+        tools = [{"type": "mcp_toolset", "mcp_server_name": "github"}]
+        rules = _build_mcp_toolset_rules(tools)
+        assert rules == {"github": McpToolsetRules(default_enabled=True, per_tool={})}
+
+    def test_default_config_disabled(self):
+        tools = [{
+            "type": "mcp_toolset",
+            "mcp_server_name": "github",
+            "default_config": {"enabled": False},
+        }]
+        rules = _build_mcp_toolset_rules(tools)
+        assert rules["github"].default_enabled is False
+        assert rules["github"].per_tool == {}
+
+    def test_per_tool_configs_override_default(self):
+        tools = [{
+            "type": "mcp_toolset",
+            "mcp_server_name": "github",
+            "default_config": {"enabled": True},
+            "configs": [
+                {"name": "create_issue", "enabled": False},
+                {"name": "list_issues", "enabled": True},
+            ],
+        }]
+        rules = _build_mcp_toolset_rules(tools)
+        assert rules["github"].default_enabled is True
+        assert rules["github"].per_tool == {"create_issue": False, "list_issues": True}
+
+    def test_multiple_servers_isolated(self):
+        tools = [
+            {"type": "mcp_toolset", "mcp_server_name": "github"},
+            {
+                "type": "mcp_toolset",
+                "mcp_server_name": "linear",
+                "default_config": {"enabled": False},
+            },
+        ]
+        rules = _build_mcp_toolset_rules(tools)
+        assert set(rules) == {"github", "linear"}
+        assert rules["linear"].default_enabled is False
+
+    def test_configs_missing_name_ignored(self):
+        tools = [{
+            "type": "mcp_toolset",
+            "mcp_server_name": "github",
+            "configs": [{"enabled": False}],  # no 'name'
+        }]
+        rules = _build_mcp_toolset_rules(tools)
+        assert rules["github"].per_tool == {}
+
+
+# --- Codex MCP toolset rules emission ---
+
+
+class TestCodexMcpToolsetRules:
+    def _script(self, tools, servers):
+        return build_wrapper_script(
+            RUNTIMES["codex"], "k", "p", mcp_servers=servers, tools=tools,
+        )
+
+    def test_no_rules_no_tool_keys_in_server_block(self):
+        servers = [McpServerSpec(name="gh", type="url", url="https://mcp.gh/mcp")]
+        tools = []
+        script = self._script(tools, servers)
+        assert "[mcp_servers.gh]" in script
+        assert "enabled_tools" not in script
+        assert "disabled_tools" not in script
+        assert "enabled = false" not in script
+
+    def test_default_disabled_no_configs_emits_enabled_false(self):
+        servers = [McpServerSpec(name="gh", type="url", url="https://mcp.gh/mcp")]
+        tools = [{
+            "type": "mcp_toolset",
+            "mcp_server_name": "gh",
+            "default_config": {"enabled": False},
+        }]
+        script = self._script(tools, servers)
+        assert "enabled = false" in script
+
+    def test_per_tool_deny_emits_disabled_tools(self):
+        servers = [McpServerSpec(name="gh", type="url", url="https://mcp.gh/mcp")]
+        tools = [{
+            "type": "mcp_toolset",
+            "mcp_server_name": "gh",
+            "configs": [{"name": "create_issue", "enabled": False}],
+        }]
+        script = self._script(tools, servers)
+        assert 'disabled_tools = ["create_issue"]' in script
+        assert "enabled = false" not in script
+
+    def test_default_disabled_with_allow_emits_enabled_tools(self):
+        servers = [McpServerSpec(name="gh", type="url", url="https://mcp.gh/mcp")]
+        tools = [{
+            "type": "mcp_toolset",
+            "mcp_server_name": "gh",
+            "default_config": {"enabled": False},
+            "configs": [{"name": "list_issues", "enabled": True}],
+        }]
+        script = self._script(tools, servers)
+        assert 'enabled_tools = ["list_issues"]' in script
+
+    def test_rules_for_other_server_do_not_leak(self):
+        servers = [McpServerSpec(name="gh", type="url", url="https://mcp.gh/mcp")]
+        tools = [{
+            "type": "mcp_toolset",
+            "mcp_server_name": "linear",  # validated away by view layer, ignored here
+            "default_config": {"enabled": False},
+        }]
+        script = self._script(tools, servers)
+        server_block = script.split("[mcp_servers.gh]")[1].split("MCP_EOF")[0]
+        assert "enabled = false" not in server_block
+
+
+# --- Gemini MCP toolset rules emission ---
+
+
+class TestGeminiMcpToolsetRules:
+    def _config(self, tools, servers):
+        script = build_wrapper_script(
+            RUNTIMES["gemini"], "k", "p", mcp_servers=servers, tools=tools,
+        )
+        # Extract the heredoc body between `<< 'MCP_EOF'\n` and `\nMCP_EOF`
+        start = script.index("cat > ~/.gemini/settings.json << 'MCP_EOF'\n") + len(
+            "cat > ~/.gemini/settings.json << 'MCP_EOF'\n"
+        )
+        end = script.index("\nMCP_EOF\n", start)
+        return json.loads(script[start:end])
+
+    def test_no_rules_no_include_exclude(self):
+        servers = [McpServerSpec(name="gh", type="url", url="https://mcp.gh/mcp")]
+        cfg = self._config([], servers)
+        assert cfg["mcpServers"]["gh"]["httpUrl"] == "https://mcp.gh/mcp"
+        assert "includeTools" not in cfg["mcpServers"]["gh"]
+        assert "excludeTools" not in cfg["mcpServers"]["gh"]
+
+    def test_default_disabled_no_configs_emits_empty_include_tools(self):
+        servers = [McpServerSpec(name="gh", type="url", url="https://mcp.gh/mcp")]
+        tools = [{
+            "type": "mcp_toolset",
+            "mcp_server_name": "gh",
+            "default_config": {"enabled": False},
+        }]
+        cfg = self._config(tools, servers)
+        assert cfg["mcpServers"]["gh"]["includeTools"] == []
+
+    def test_per_tool_deny_emits_exclude_tools(self):
+        servers = [McpServerSpec(name="gh", type="url", url="https://mcp.gh/mcp")]
+        tools = [{
+            "type": "mcp_toolset",
+            "mcp_server_name": "gh",
+            "configs": [{"name": "create_issue", "enabled": False}],
+        }]
+        cfg = self._config(tools, servers)
+        assert cfg["mcpServers"]["gh"]["excludeTools"] == ["create_issue"]
+        assert "includeTools" not in cfg["mcpServers"]["gh"]
+
+    def test_default_disabled_with_allow_emits_include_tools(self):
+        servers = [McpServerSpec(name="gh", type="url", url="https://mcp.gh/mcp")]
+        tools = [{
+            "type": "mcp_toolset",
+            "mcp_server_name": "gh",
+            "default_config": {"enabled": False},
+            "configs": [{"name": "list_issues", "enabled": True}],
+        }]
+        cfg = self._config(tools, servers)
+        assert cfg["mcpServers"]["gh"]["includeTools"] == ["list_issues"]
+
+    def test_rules_coexist_with_trust_and_headers(self):
+        servers = [McpServerSpec(
+            name="gh", type="url", url="https://mcp.gh/mcp",
+            headers={"Authorization": "Bearer x"},
+        )]
+        tools = [{
+            "type": "mcp_toolset",
+            "mcp_server_name": "gh",
+            "configs": [{"name": "create_issue", "enabled": False}],
+        }]
+        cfg = self._config(tools, servers)
+        entry = cfg["mcpServers"]["gh"]
+        assert entry["trust"] is True
+        assert entry["headers"] == {"Authorization": "Bearer x"}
+        assert entry["excludeTools"] == ["create_issue"]
+
+
+# --- Claude MCP settings.json writer ---
+
+
+class TestClaudeMcpToolsetRules:
+    def test_empty_rules_no_settings_file(self):
+        assert _tool_files_claude_mcp({}) == {}
+
+    def test_bare_allow_no_settings_file(self):
+        """Default-allow with no per-tool overrides produces no restrictions."""
+        rules = {"gh": McpToolsetRules(default_enabled=True, per_tool={})}
+        assert _tool_files_claude_mcp(rules) == {}
+
+    def test_whole_server_deny_emits_server_in_deny(self):
+        rules = {"gh": McpToolsetRules(default_enabled=False, per_tool={})}
+        files = _tool_files_claude_mcp(rules)
+        assert CLAUDE_SETTINGS_PATH in files
+        settings = json.loads(files[CLAUDE_SETTINGS_PATH])
+        assert settings == {"permissions": {"deny": [{"tool": "mcp__gh"}]}}
+
+    def test_per_tool_deny_emits_full_tool_name(self):
+        rules = {"gh": McpToolsetRules(
+            default_enabled=True, per_tool={"create_issue": False},
+        )}
+        files = _tool_files_claude_mcp(rules)
+        settings = json.loads(files[CLAUDE_SETTINGS_PATH])
+        assert settings == {
+            "permissions": {"deny": [{"tool": "mcp__gh__create_issue"}]},
+        }
+
+    def test_default_disabled_with_allow_emits_both(self):
+        rules = {"gh": McpToolsetRules(
+            default_enabled=False, per_tool={"list_issues": True},
+        )}
+        files = _tool_files_claude_mcp(rules)
+        settings = json.loads(files[CLAUDE_SETTINGS_PATH])
+        assert settings == {
+            "permissions": {
+                "allow": [{"tool": "mcp__gh__list_issues"}],
+                "deny": [{"tool": "mcp__gh"}],
+            },
+        }
+
+    def test_claude_wrapper_writes_settings_file_when_mcp_rules_active(self):
+        servers = [McpServerSpec(name="gh", type="url", url="https://mcp.gh/mcp")]
+        tools = [{
+            "type": "mcp_toolset",
+            "mcp_server_name": "gh",
+            "default_config": {"enabled": False},
+        }]
+        script = build_wrapper_script(
+            RUNTIMES["claude"], "k", "p", mcp_servers=servers, tools=tools,
+        )
+        assert CLAUDE_SETTINGS_PATH in script
+        assert '"tool": "mcp__gh"' in script
+
+    def test_claude_no_settings_file_when_no_rules(self):
+        servers = [McpServerSpec(name="gh", type="url", url="https://mcp.gh/mcp")]
+        script = build_wrapper_script(
+            RUNTIMES["claude"], "k", "p", mcp_servers=servers, tools=[],
+        )
+        assert CLAUDE_SETTINGS_PATH not in script
+
+
+# --- mcp_toolset validation: new shape checks ---
+
+
+@pytest.mark.django_db
+class TestMcpToolsetValidation:
+    def test_unknown_server_name_rejected(self, client: Client, auth_headers):
+        resp = client.post(
+            "/agents",
+            data=json.dumps({
+                "name": "Bad",
+                "model": "claude-sonnet-4-6",
+                "runtime": "claude",
+                "mcp_servers": [{"name": "gh", "url": "https://mcp.gh/mcp"}],
+                "tools": [{"type": "mcp_toolset", "mcp_server_name": "nope"}],
+            }),
+            content_type="application/json",
+            **auth_headers,
+        )
+        assert resp.status_code == 422
+        assert "nope" in str(resp.json()["detail"])
+
+    def test_known_server_name_accepted(self, client: Client, auth_headers, runtime_key):
+        resp = client.post(
+            "/agents",
+            data=json.dumps({
+                "name": "Good",
+                "model": "claude-sonnet-4-6",
+                "runtime": "claude",
+                "mcp_servers": [{"name": "gh", "url": "https://mcp.gh/mcp"}],
+                "tools": [{"type": "mcp_toolset", "mcp_server_name": "gh"}],
+            }),
+            content_type="application/json",
+            **auth_headers,
+        )
+        assert resp.status_code == 201
+
+    def test_configs_non_list_rejected(self, client: Client, auth_headers):
+        resp = client.post(
+            "/agents",
+            data=json.dumps({
+                "name": "Bad",
+                "model": "claude-sonnet-4-6",
+                "runtime": "claude",
+                "mcp_servers": [{"name": "gh", "url": "https://mcp.gh/mcp"}],
+                "tools": [{
+                    "type": "mcp_toolset", "mcp_server_name": "gh",
+                    "configs": "not-a-list",
+                }],
+            }),
+            content_type="application/json",
+            **auth_headers,
+        )
+        assert resp.status_code == 422
+        assert "configs" in str(resp.json()["detail"])
+
+    def test_configs_entry_name_non_string_rejected(self, client: Client, auth_headers):
+        resp = client.post(
+            "/agents",
+            data=json.dumps({
+                "name": "Bad",
+                "model": "claude-sonnet-4-6",
+                "runtime": "claude",
+                "mcp_servers": [{"name": "gh", "url": "https://mcp.gh/mcp"}],
+                "tools": [{
+                    "type": "mcp_toolset", "mcp_server_name": "gh",
+                    "configs": [{"name": 42}],
+                }],
+            }),
+            content_type="application/json",
+            **auth_headers,
+        )
+        assert resp.status_code == 422
+
+    def test_configs_entry_enabled_non_bool_rejected(self, client: Client, auth_headers):
+        resp = client.post(
+            "/agents",
+            data=json.dumps({
+                "name": "Bad",
+                "model": "claude-sonnet-4-6",
+                "runtime": "claude",
+                "mcp_servers": [{"name": "gh", "url": "https://mcp.gh/mcp"}],
+                "tools": [{
+                    "type": "mcp_toolset", "mcp_server_name": "gh",
+                    "configs": [{"name": "x", "enabled": "yes"}],
+                }],
+            }),
+            content_type="application/json",
+            **auth_headers,
+        )
+        assert resp.status_code == 422
+
+    def test_default_config_non_dict_rejected(self, client: Client, auth_headers):
+        resp = client.post(
+            "/agents",
+            data=json.dumps({
+                "name": "Bad",
+                "model": "claude-sonnet-4-6",
+                "runtime": "claude",
+                "mcp_servers": [{"name": "gh", "url": "https://mcp.gh/mcp"}],
+                "tools": [{
+                    "type": "mcp_toolset", "mcp_server_name": "gh",
+                    "default_config": "on",
+                }],
+            }),
+            content_type="application/json",
+            **auth_headers,
+        )
+        assert resp.status_code == 422
+
+    def test_default_config_enabled_non_bool_rejected(self, client: Client, auth_headers):
+        resp = client.post(
+            "/agents",
+            data=json.dumps({
+                "name": "Bad",
+                "model": "claude-sonnet-4-6",
+                "runtime": "claude",
+                "mcp_servers": [{"name": "gh", "url": "https://mcp.gh/mcp"}],
+                "tools": [{
+                    "type": "mcp_toolset", "mcp_server_name": "gh",
+                    "default_config": {"enabled": "yes"},
+                }],
+            }),
+            content_type="application/json",
+            **auth_headers,
+        )
+        assert resp.status_code == 422
+
+    def test_update_rejects_toolset_for_removed_server(
+        self, client: Client, auth_headers, user, runtime_key,
+    ):
+        agent = Agent.objects.create(
+            user=user, name="Agent", model="claude-sonnet-4-6",
+            runtime="claude",
+            mcp_servers=[{"name": "gh", "url": "https://mcp.gh/mcp"}],
+            tools=[{"type": "mcp_toolset", "mcp_server_name": "gh"}],
+            version=1,
+        )
+        AgentVersion.objects.create(
+            agent=agent, version=1, name=agent.name,
+            model=agent.model, runtime=agent.runtime,
+            tools=agent.tools, mcp_servers=agent.mcp_servers,
+        )
+        resp = client.put(
+            f"/agents/{agent.id}",
+            data=json.dumps({"version": 1, "mcp_servers": []}),
+            content_type="application/json",
+            **auth_headers,
+        )
+        assert resp.status_code == 422
+        assert "gh" in str(resp.json()["detail"])
