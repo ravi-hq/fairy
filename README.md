@@ -7,6 +7,10 @@ Fairy is a Django service that exposes a REST API for creating **agents**
 setup scripts, networking), and **sessions** (a single agent execution with
 streaming output and multi-turn prompts).
 
+Setting an environment's `networking.type` to `"limited"` enforces a DNS-based
+allow-list at session start — domains outside `allowed_hosts` are blocked
+(DNS `REFUSED`) for the lifetime of the session.
+
 ## Setup
 
 ```bash

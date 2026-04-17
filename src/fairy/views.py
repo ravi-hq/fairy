@@ -11,7 +11,7 @@ import re
 from typing import Literal
 
 from pydantic import BaseModel, Field, ValidationError, field_validator
-from sprites import SpritesClient, SpriteError
+from sprites import NetworkPolicy, PolicyRule, SpritesClient, SpriteError
 
 from fairy.auth import require_api_key
 from fairy.models import (
@@ -66,6 +66,20 @@ def _mcp_servers_to_specs(mcp_servers: list[dict]) -> list[McpServerSpec]:
 def _skills_to_specs(skills: list[dict]) -> list[SkillSpec]:
     """Convert agent's skills JSON to SkillSpec list for materialization."""
     return [SkillSpec(name=s["name"], content=s["content"]) for s in skills]
+
+
+def _environment_to_network_policy(env: Environment | None) -> NetworkPolicy | None:
+    """Build a Sprites NetworkPolicy from an Environment's networking fields.
+
+    Returns None for unrestricted environments so the caller can skip the
+    update_network_policy call and rely on the Sprites default (allow-all).
+    """
+    if env is None or env.networking_type != "limited":
+        return None
+    allowed_hosts = (env.networking_config or {}).get("allowed_hosts", [])
+    rules = [PolicyRule(domain=host, action="allow") for host in allowed_hosts]
+    rules.append(PolicyRule(domain="*", action="deny"))
+    return NetworkPolicy(rules=rules)
 
 
 def _resources_to_repo_specs(resources: list) -> list[RepoSpec]:
@@ -216,6 +230,10 @@ def create_session(request):
         return JsonResponse({"detail": f"Failed to create Sprite: {e}"}, status=502)
 
     try:
+        network_policy = _environment_to_network_policy(environment_obj)
+        if network_policy is not None:
+            sprite.update_network_policy(network_policy)
+
         fs = sprite.filesystem()
         repo_specs = _resources_to_repo_specs(req.resources)
 
