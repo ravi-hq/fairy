@@ -1,12 +1,12 @@
 """E2E tests verifying Agent.mcp_servers reaches the runtime.
 
-Uses the Fairy-hosted /test-mcp server (served when DEBUG=True or
-FAIRY_TESTING=1) for a deterministic `signal_tool` the agent can call.
+Spawns the MCP reference server `@modelcontextprotocol/server-everything`
+as a stdio subprocess inside the sprite. No external network MCP host is
+required; npx pulls the package on first run. The `echo` tool is used as
+a deterministic signal the agent actually invoked an MCP tool.
 
 Requirements:
     FAIRY_API_TOKEN   valid API key
-    MCP_TEST_URL      URL of a reachable MCP test server. Defaults to
-                      $FAIRY_API_URL/test-mcp.
 
 Run: `make test-e2e-mcp`.
 """
@@ -14,7 +14,6 @@ Run: `make test-e2e-mcp`.
 from __future__ import annotations
 
 import json
-import os
 
 import pytest
 
@@ -27,20 +26,18 @@ from tests.e2e.conftest import (
 
 pytestmark = [pytest.mark.slow, pytest.mark.mcp_matrix]
 
-MCP_TEST_SERVER_NAME = "testmcp"
-MCP_TEST_TOOL_NAME = "signal_tool"
-MCP_TEST_SIGNAL_PREFIX = "MCP_SIGNAL_"
-MCP_TEST_SIGNAL_TOKEN = "OK"
+MCP_SERVER_NAME = "everything"
+MCP_ECHO_TOOL = "echo"
+MCP_ECHO_SIGNAL = "MCP_ECHO_OK"
 
 RUNTIME_MCP_TOOL_NAMES = {
-    "claude":       f"mcp__{MCP_TEST_SERVER_NAME}__{MCP_TEST_TOOL_NAME}",
-    "claude-oauth": f"mcp__{MCP_TEST_SERVER_NAME}__{MCP_TEST_TOOL_NAME}",
+    "claude":       f"mcp__{MCP_SERVER_NAME}__{MCP_ECHO_TOOL}",
+    "claude-oauth": f"mcp__{MCP_SERVER_NAME}__{MCP_ECHO_TOOL}",
 }
 
 PROMPT_INVOKE = (
-    f"Call the `{MCP_TEST_TOOL_NAME}` tool from the `{MCP_TEST_SERVER_NAME}` "
-    f"MCP server with argument token={MCP_TEST_SIGNAL_TOKEN!r}. Print the tool's "
-    f"exact response."
+    f"Call the `{MCP_ECHO_TOOL}` tool from the `{MCP_SERVER_NAME}` MCP server "
+    f"with argument message={MCP_ECHO_SIGNAL!r}. Print the tool's exact response."
 )
 PROMPT_NO_MCP = (
     "List any MCP tools you have access to. If you have no MCP tools available, "
@@ -79,16 +76,13 @@ def _any_mcp_tool_was_invoked(events: list[dict], runtime: str) -> bool:
     return False
 
 
-def _mcp_server_spec(url: str) -> dict:
-    return {"type": "url", "name": MCP_TEST_SERVER_NAME, "url": url}
-
-
-@pytest.fixture(scope="session")
-def mcp_test_url(fairy_url):
-    override = os.environ.get("MCP_TEST_URL")
-    if override:
-        return override
-    return f"{fairy_url.rstrip('/')}/test-mcp"
+def _everything_server_spec() -> dict:
+    return {
+        "type": "stdio",
+        "name": MCP_SERVER_NAME,
+        "command": "npx",
+        "args": ["-y", "@modelcontextprotocol/server-everything"],
+    }
 
 
 @pytest.fixture(scope="class", params=["claude"])
@@ -99,19 +93,19 @@ def runtime(request, e2e_runtimes):
 
 
 class TestMcpServerToolInvocable:
-    """Server declared → agent invokes the MCP tool."""
+    """Server declared → agent invokes the MCP tool and we see its echo."""
 
     def test_mcp_server_tool_is_invocable(
-        self, api: FairyClient, create_agent, create_session, runtime, mcp_test_url,
+        self, api: FairyClient, create_agent, create_session, runtime,
     ):
         agent = create_agent(
             name=_unique(f"e2e-mcp-allow-{runtime}"),
             model=RUNTIME_MODELS[runtime],
             runtime=runtime,
-            mcp_servers=[_mcp_server_spec(mcp_test_url)],
+            mcp_servers=[_everything_server_spec()],
         )
         session = create_session(
-            agent_id=agent["id"], prompt=PROMPT_INVOKE, timeout=120,
+            agent_id=agent["id"], prompt=PROMPT_INVOKE, timeout=180,
         )
         final, events = api.run_session(session["id"])
         output = stream_all_output(events)
@@ -123,8 +117,8 @@ class TestMcpServerToolInvocable:
             f"Expected MCP tool {RUNTIME_MCP_TOOL_NAMES[runtime]!r} to be invoked.\n"
             f"Output: {output[:500]}"
         )
-        assert MCP_TEST_SIGNAL_PREFIX in output, (
-            f"Expected signal prefix {MCP_TEST_SIGNAL_PREFIX!r} in session output.\n"
+        assert MCP_ECHO_SIGNAL in output, (
+            f"Expected echo signal {MCP_ECHO_SIGNAL!r} in session output.\n"
             f"Output: {output[:500]}"
         )
 

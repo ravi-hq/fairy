@@ -7,8 +7,6 @@ SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "dev-insecure-key-change-in-pro
 
 DEBUG = os.environ.get("DJANGO_DEBUG", "true").lower() == "true"
 
-TESTING = os.environ.get("FAIRY_TESTING", "").lower() in ("1", "true")
-
 ALLOWED_HOSTS = os.environ.get("DJANGO_ALLOWED_HOSTS", "*").split(",")
 
 INSTALLED_APPS = [
