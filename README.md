@@ -3,7 +3,7 @@
 API for running AI coding agents on Sprites.
 
 Fairy is a Django service that exposes a REST API for creating **agents**
-(model + runtime + tools + MCP servers), **environments** (packages, env vars,
+(model + runtime + MCP servers), **environments** (packages, env vars,
 setup scripts, networking), and **sessions** (a single agent execution with
 streaming output and multi-turn prompts).
 
@@ -54,6 +54,16 @@ families:
 
 Full list in `src/fairy/runtimes.py`.
 
+## Tools
+
+Agents do not have a configurable tool allowlist. Each session runs its runtime
+CLI with that CLI's full default tool set — `bash`, `read`, `write`, `edit`,
+`glob`, `grep`, `web_fetch`, `web_search`, etc. Any MCP servers configured on
+the agent are additionally exposed to the runtime. This applies to every
+runtime (`claude`, `claude-oauth`, `codex`, `gemini`).
+
+There is no per-agent way to disable or restrict individual built-in tools.
+
 ## Testing
 
 ### Unit / integration tests
@@ -65,7 +75,7 @@ make test          # runs tests/, excludes tests/e2e
 ### End-to-end tests
 
 The `tests/e2e/` suite hits a running Fairy deployment via HTTP. It covers
-agent CRUD + versioning + archive, tools & MCP server validation,
+agent CRUD + versioning + archive, MCP server validation,
 environment CRUD and session integration (packages installed, env vars
 exported, setup scripts executed), and the full session lifecycle:
 streaming (SSE `start`/`output`/`exit`), termination semantics (409s on

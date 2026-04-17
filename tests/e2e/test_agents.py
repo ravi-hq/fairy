@@ -1,4 +1,4 @@
-"""E2E tests for agent CRUD, versioning, tools, and MCP servers."""
+"""E2E tests for agent CRUD, versioning, and MCP servers."""
 
 import uuid
 
@@ -54,7 +54,7 @@ class TestAgentCRUD:
         )
         assert agent["system"] is None or agent["system"] == ""
         assert agent["skills"] == []
-        assert agent["tools"] == []
+        assert "tools" not in agent
         assert agent["mcp_servers"] == []
         assert agent["metadata"] == {}
 
@@ -246,20 +246,16 @@ class TestAgentArchive:
 
 
 # ---------------------------------------------------------------------------
-# Tools & MCP servers
+# MCP servers
 # ---------------------------------------------------------------------------
 
 
-class TestAgentTools:
-    def test_create_with_tools_and_mcp(self, api, create_agent):
+class TestAgentMcp:
+    def test_create_with_mcp(self, api, create_agent):
         agent = create_agent(
-            name=_unique("e2e-tools"),
+            name=_unique("e2e-mcp"),
             model="claude-sonnet-4-6",
             runtime="claude",
-            tools=[
-                {"type": "agent_toolset_20260401"},
-                {"type": "mcp_toolset", "mcp_server_name": "github"},
-            ],
             mcp_servers=[
                 {
                     "type": "url",
@@ -268,48 +264,9 @@ class TestAgentTools:
                 },
             ],
         )
-        assert len(agent["tools"]) == 2
-        assert agent["tools"][0]["type"] == "agent_toolset_20260401"
+        assert "tools" not in agent
         assert len(agent["mcp_servers"]) == 1
         assert agent["mcp_servers"][0]["name"] == "github"
-
-    def test_create_with_custom_tool(self, api, create_agent):
-        agent = create_agent(
-            name=_unique("e2e-custom"),
-            model="claude-sonnet-4-6",
-            runtime="claude",
-            tools=[
-                {
-                    "type": "custom",
-                    "name": "get_weather",
-                    "description": "Get weather",
-                    "input_schema": {
-                        "type": "object",
-                        "properties": {"location": {"type": "string"}},
-                        "required": ["location"],
-                    },
-                },
-            ],
-        )
-        assert agent["tools"][0]["name"] == "get_weather"
-
-    def test_invalid_tool_type_rejected(self, api):
-        resp = api.create_agent(
-            name=_unique("e2e-badtool"),
-            model="claude-sonnet-4-6",
-            runtime="claude",
-            tools=[{"type": "invalid"}],
-        )
-        assert resp.status_code == 422
-
-    def test_custom_tool_missing_fields_rejected(self, api):
-        resp = api.create_agent(
-            name=_unique("e2e-badcustom"),
-            model="claude-sonnet-4-6",
-            runtime="claude",
-            tools=[{"type": "custom", "name": "foo"}],
-        )
-        assert resp.status_code == 422
 
     def test_mcp_server_missing_name_rejected(self, api):
         resp = api.create_agent(
@@ -345,16 +302,15 @@ class TestAgentTools:
         )
         assert resp.status_code == 422
 
-    def test_update_tools_versioned(self, api, create_agent):
+    def test_update_mcp_versioned(self, api, create_agent):
         agent = create_agent(
-            name=_unique("e2e-toolsver"),
+            name=_unique("e2e-mcpver"),
             model="claude-sonnet-4-6",
             runtime="claude",
         )
         resp = api.update_agent(
             agent["id"],
             version=1,
-            tools=[{"type": "agent_toolset_20260401"}],
             mcp_servers=[{"name": "s1", "url": "https://a.com/mcp"}],
         )
         assert resp.status_code == 200
