@@ -12,3 +12,4 @@ fairy.db-wal
 .gstack/
 .coverage
 .mypy_cache/
+.agent-mcp-config.json
