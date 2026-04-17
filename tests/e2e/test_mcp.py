@@ -40,8 +40,6 @@ pytestmark = [pytest.mark.slow, pytest.mark.mcp_matrix]
 MCP_SERVER_NAME = "everything"
 MCP_ECHO_TOOL = "echo"
 MCP_SERVER_NPM_PKG = "@modelcontextprotocol/server-everything"
-# Binary name created by `npm install -g @modelcontextprotocol/server-everything`.
-MCP_SERVER_BIN = "mcp-server-everything"
 
 
 # Fields whose string values are event metadata, not model text. Same filter
@@ -90,17 +88,17 @@ def _concat_json_strings(stream_output: str) -> str:
 
 
 def _everything_server_spec() -> dict:
-    # Route through `bash -lc` so the subprocess rebuilds PATH from shell
-    # login config. Bare `mcp-server-everything` fails under Claude Code's
-    # `-p` mode (stream shows `status:"failed"` at session init) because it
-    # spawns stdio MCPs with a sanitized env that drops the npm-global bin
-    # path. Codex and gemini don't need this hop — they inherit PATH more
-    # permissively — but the cost is negligible so we apply it uniformly.
+    # `npx` ships alongside node so it's reliably on PATH in every runtime's
+    # stdio subprocess env (the bare `mcp-server-everything` binary isn't —
+    # Claude Code's `-p` mode marks it status:"failed" at init). Because
+    # packages.npm pre-installs the package, npx finds it in global
+    # node_modules and invokes it without a download, killing the startup
+    # race that plagued `npx -y` without the pre-install.
     return {
         "type": "stdio",
         "name": MCP_SERVER_NAME,
-        "command": "bash",
-        "args": ["-lc", f"exec {MCP_SERVER_BIN}"],
+        "command": "npx",
+        "args": ["--yes", MCP_SERVER_NPM_PKG],
     }
 
 
