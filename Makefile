@@ -39,6 +39,11 @@ test-e2e-skills:
 test-e2e-networking:
 	uv run pytest tests/e2e/test_environments.py -v -k "limited_networking_blocks or limited_networking_allows"
 
+# Just the MCP e2e tests. Spawns a real session with a stdio
+# @modelcontextprotocol/server-everything MCP server attached.
+test-e2e-mcp:
+	uv run pytest tests/e2e/test_mcp.py -v -m "mcp_matrix"
+
 # Run everything — unit + e2e. E2E auto-skips if FAIRY_API_TOKEN is unset.
 test-all:
 	uv run pytest tests/ -v
