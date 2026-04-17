@@ -205,9 +205,11 @@ def _codex_top_level_keys(tools: list[dict]) -> list[str]:
 def _build_mcp_codex(
     servers: list[McpServerSpec],
     tools: list[dict] | None = None,
+    rules: dict[str, McpToolsetRules] | None = None,
 ) -> str:
     """Generate Codex config TOML (MCP servers + tool enforcement keys)."""
     tools = tools or []
+    rules = rules or {}
     top_level = _codex_top_level_keys(tools)
 
     if not servers and not top_level:
@@ -221,6 +223,19 @@ def _build_mcp_codex(
             lines.append("")
     for s in servers:
         lines.append(f"[mcp_servers.{s.name}]")
+        server_rules = rules.get(s.name)
+        if server_rules is not None:
+            if not server_rules.default_enabled and not server_rules.per_tool:
+                lines.append("enabled = false")
+            else:
+                allowed = [t for t, e in server_rules.per_tool.items() if e]
+                denied = [t for t, e in server_rules.per_tool.items() if not e]
+                if not server_rules.default_enabled and allowed:
+                    allow_list = ", ".join(f'"{t}"' for t in allowed)
+                    lines.append(f"enabled_tools = [{allow_list}]")
+                if denied:
+                    deny_list = ", ".join(f'"{t}"' for t in denied)
+                    lines.append(f"disabled_tools = [{deny_list}]")
         if s.type == "url":
             lines.append(f'url = "{s.url}"')
             for key, val in s.headers.items():
@@ -272,15 +287,19 @@ def _build_mcp_section(
     runtime_name: str,
     servers: list[McpServerSpec],
     tools: list[dict] | None = None,
+    rules: dict[str, McpToolsetRules] | None = None,
 ) -> str:
     """Build MCP config section for the wrapper script.
 
     Codex folds tool-enforcement keys into the same config.toml it uses for MCP,
     so `tools` is threaded through here. Other runtimes emit tool enforcement via
     the separate `_tool_files_*` path.
+
+    `rules` carries per-server mcp_toolset allow/deny. Codex consumes it inside
+    its MCP config; claude consumes it via `_tool_files_claude_mcp`.
     """
     if runtime_name == "codex":
-        return _build_mcp_codex(servers, tools=tools)
+        return _build_mcp_codex(servers, tools=tools, rules=rules)
     if not servers:
         return ""
     if runtime_name in ("claude", "claude-oauth"):
@@ -537,7 +556,9 @@ def build_wrapper_script(
         setup_section = _build_setup_script_section(environment.setup_script)
 
     mcp_rules = _build_mcp_toolset_rules(tools or [])
-    mcp_section = _build_mcp_section(config.name, mcp_servers or [], tools=tools)
+    mcp_section = _build_mcp_section(
+        config.name, mcp_servers or [], tools=tools, rules=mcp_rules,
+    )
     mcp_flags = _mcp_cmd_flags(config.name, mcp_servers or [])
 
     mcp_names = [s.name for s in (mcp_servers or [])]

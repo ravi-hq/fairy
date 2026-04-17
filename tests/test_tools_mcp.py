@@ -1160,3 +1160,67 @@ class TestMcpToolsetValidation:
         )
         assert resp.status_code == 422
         assert "gh" in str(resp.json()["detail"])
+# --- Codex MCP toolset rules emission ---
+
+
+class TestCodexMcpToolsetRules:
+    def _script(self, tools, servers):
+        return build_wrapper_script(
+            RUNTIMES["codex"], "k", "p", mcp_servers=servers, tools=tools,
+        )
+
+    def test_no_rules_no_tool_keys_in_server_block(self):
+        servers = [McpServerSpec(name="gh", type="url", url="https://mcp.gh/mcp")]
+        tools = []
+        script = self._script(tools, servers)
+        assert "[mcp_servers.gh]" in script
+        assert "enabled_tools" not in script
+        assert "disabled_tools" not in script
+        assert "enabled = false" not in script
+
+    def test_default_disabled_no_configs_emits_enabled_false(self):
+        servers = [McpServerSpec(name="gh", type="url", url="https://mcp.gh/mcp")]
+        tools = [{
+            "type": "mcp_toolset",
+            "mcp_server_name": "gh",
+            "default_config": {"enabled": False},
+        }]
+        script = self._script(tools, servers)
+        assert "enabled = false" in script
+
+    def test_per_tool_deny_emits_disabled_tools(self):
+        servers = [McpServerSpec(name="gh", type="url", url="https://mcp.gh/mcp")]
+        tools = [{
+            "type": "mcp_toolset",
+            "mcp_server_name": "gh",
+            "configs": [{"name": "create_issue", "enabled": False}],
+        }]
+        script = self._script(tools, servers)
+        assert 'disabled_tools = ["create_issue"]' in script
+        assert "enabled = false" not in script
+
+    def test_default_disabled_with_allow_emits_enabled_tools(self):
+        servers = [McpServerSpec(name="gh", type="url", url="https://mcp.gh/mcp")]
+        tools = [{
+            "type": "mcp_toolset",
+            "mcp_server_name": "gh",
+            "default_config": {"enabled": False},
+            "configs": [{"name": "list_issues", "enabled": True}],
+        }]
+        script = self._script(tools, servers)
+        assert 'enabled_tools = ["list_issues"]' in script
+
+    def test_rules_for_other_server_do_not_leak(self):
+        servers = [McpServerSpec(name="gh", type="url", url="https://mcp.gh/mcp")]
+        tools = [{
+            "type": "mcp_toolset",
+            "mcp_server_name": "linear",  # validated away by view layer, ignored here
+            "default_config": {"enabled": False},
+        }]
+        script = self._script(tools, servers)
+        server_block = script.split("[mcp_servers.gh]")[1].split("MCP_EOF")[0]
+        assert "enabled = false" not in server_block
+
+
+# --- Gemini MCP toolset rules emission ---
+
