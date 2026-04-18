@@ -1,0 +1,36 @@
+{% extends "ui/base.html" %}
+{% block title %}Dashboard · Fairy{% endblock %}
+{% block content %}
+  <h1>Dashboard</h1>
+
+  {% if not has_sprites_key %}
+    <div class="warn">
+      You don't have a Sprites API token set yet. Session creation will fail until
+      you <a href="{% url 'ui-sprites-key' %}">add one</a>.
+    </div>
+  {% endif %}
+
+  <section class="counts">
+    <div class="card">
+      <div class="n">{{ counts.agents }}</div>
+      <a href="{% url 'ui-agents' %}">Agents</a>
+    </div>
+    <div class="card">
+      <div class="n">{{ counts.environments }}</div>
+      <a href="{% url 'ui-environments' %}">Environments</a>
+    </div>
+    <div class="card">
+      <div class="n">{{ counts.sessions }}</div>
+      <a href="{% url 'ui-sessions' %}">Sessions</a>
+    </div>
+    <div class="card">
+      <div class="n">{{ counts.api_keys }}</div>
+      <a href="{% url 'ui-api-keys' %}">Active API keys</a>
+    </div>
+  </section>
+
+  <p class="muted">
+    The UI is read-only for agents, environments, and sessions. Use the
+    <a href="/health">API</a> with a bearer token to create and run them.
+  </p>
+{% endblock %}

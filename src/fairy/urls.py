@@ -1,8 +1,9 @@
-from django.urls import path
+from django.urls import include, path
 
 from fairy import views
 
 urlpatterns = [
+    path("ui/", include("fairy.ui.urls")),
     path("health", views.health),
     # Environments
     path("environments", views.environments_list_create),

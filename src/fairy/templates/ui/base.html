@@ -1,0 +1,43 @@
+{% load static %}<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Fairy{% endblock %}</title>
+  <link rel="stylesheet" href="{% static 'ui/styles.css' %}">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="{% url 'ui-dashboard' %}">fairy</a>
+    {% if user.is_authenticated %}
+      <nav>
+        <a href="{% url 'ui-dashboard' %}">Dashboard</a>
+        <a href="{% url 'ui-agents' %}">Agents</a>
+        <a href="{% url 'ui-environments' %}">Environments</a>
+        <a href="{% url 'ui-sessions' %}">Sessions</a>
+        <a href="{% url 'ui-sprites-key' %}">Sprites key</a>
+        <a href="{% url 'ui-api-keys' %}">API keys</a>
+      </nav>
+      <form class="logout" action="{% url 'ui-logout' %}" method="post">
+        {% csrf_token %}
+        <span class="muted">{{ user.username }}</span>
+        <button type="submit" class="linklike">Log out</button>
+      </form>
+    {% else %}
+      <nav>
+        <a href="{% url 'ui-login' %}">Log in</a>
+        <a href="{% url 'ui-register' %}">Register</a>
+      </nav>
+    {% endif %}
+  </header>
+
+  <main>
+    {% if messages %}
+      <ul class="messages">
+        {% for m in messages %}<li class="msg {{ m.tags }}">{{ m }}</li>{% endfor %}
+      </ul>
+    {% endif %}
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

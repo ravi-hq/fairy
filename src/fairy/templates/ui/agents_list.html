@@ -1,0 +1,26 @@
+{% extends "ui/base.html" %}
+{% block title %}Agents · Fairy{% endblock %}
+{% block content %}
+  <h1>Agents</h1>
+  {% if agents %}
+    <table>
+      <thead>
+        <tr><th>Name</th><th>Model</th><th>Runtime</th><th>Version</th><th>Status</th><th>Created</th></tr>
+      </thead>
+      <tbody>
+        {% for a in agents %}
+          <tr>
+            <td><a href="{% url 'ui-agent-detail' a.id %}">{{ a.name }}</a></td>
+            <td>{{ a.model }}</td>
+            <td>{{ a.runtime }}</td>
+            <td>v{{ a.version }}</td>
+            <td>{% if a.archived_at %}<span class="muted">archived</span>{% else %}active{% endif %}</td>
+            <td>{{ a.created_at|date:"Y-m-d H:i" }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="muted">No agents yet. Create one via the API.</p>
+  {% endif %}
+{% endblock %}

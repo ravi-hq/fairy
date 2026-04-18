@@ -1,0 +1,26 @@
+{% extends "ui/base.html" %}
+{% block title %}Sessions · Fairy{% endblock %}
+{% block content %}
+  <h1>Sessions</h1>
+  {% if sessions %}
+    <table>
+      <thead>
+        <tr><th>ID</th><th>Agent</th><th>Runtime</th><th>Status</th><th>Exit</th><th>Created</th></tr>
+      </thead>
+      <tbody>
+        {% for s in sessions %}
+          <tr>
+            <td><a href="{% url 'ui-session-detail' s.id %}"><code>{{ s.id|slice:":8" }}…</code></a></td>
+            <td>{% if s.agent %}{{ s.agent.name }}{% else %}<span class="muted">—</span>{% endif %}</td>
+            <td>{{ s.runtime }}</td>
+            <td>{{ s.status }}</td>
+            <td>{% if s.exit_code is not None %}{{ s.exit_code }}{% else %}<span class="muted">—</span>{% endif %}</td>
+            <td>{{ s.created_at|date:"Y-m-d H:i" }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="muted">No sessions yet. Create one via the API.</p>
+  {% endif %}
+{% endblock %}

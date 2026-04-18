@@ -1,0 +1,37 @@
+{% extends "ui/base.html" %}
+{% block title %}{{ env.name }} · Environment{% endblock %}
+{% block content %}
+  <p><a href="{% url 'ui-environments' %}">← Environments</a></p>
+  <h1>{{ env.name }}</h1>
+  <dl class="kv">
+    <dt>ID</dt><dd><code>{{ env.id }}</code></dd>
+    <dt>Version</dt><dd>v{{ env.version }}</dd>
+    <dt>Networking</dt>
+    <dd>
+      {{ env.networking_type }}
+      {% if env.networking_type == "limited" and env.networking_config.allowed_hosts %}
+        <ul>{% for h in env.networking_config.allowed_hosts %}<li>{{ h }}</li>{% endfor %}</ul>
+      {% endif %}
+    </dd>
+    <dt>Packages</dt>
+    <dd>
+      {% if env.packages %}
+        <ul>
+          {% for mgr, pkgs in env.packages.items %}
+            <li><code>{{ mgr }}</code>: {{ pkgs|join:", " }}</li>
+          {% endfor %}
+        </ul>
+      {% else %}<span class="muted">—</span>{% endif %}
+    </dd>
+    <dt>Setup script</dt><dd><pre>{{ env.setup_script|default:"—" }}</pre></dd>
+    <dt>env_vars</dt>
+    <dd>
+      {% if env.env_vars %}
+        <ul>{% for k in env.env_vars.keys %}<li><code>{{ k }}</code> <span class="muted">(value hidden)</span></li>{% endfor %}</ul>
+      {% else %}<span class="muted">—</span>{% endif %}
+    </dd>
+    <dt>Status</dt><dd>{% if env.archived_at %}archived on {{ env.archived_at|date:"Y-m-d H:i" }}{% else %}active{% endif %}</dd>
+    <dt>Created</dt><dd>{{ env.created_at|date:"Y-m-d H:i" }}</dd>
+    <dt>Updated</dt><dd>{{ env.updated_at|date:"Y-m-d H:i" }}</dd>
+  </dl>
+{% endblock %}

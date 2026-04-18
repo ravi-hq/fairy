@@ -1,0 +1,40 @@
+{% extends "ui/base.html" %}
+{% block title %}Session {{ session.id|slice:":8" }} · Fairy{% endblock %}
+{% block content %}
+  <p><a href="{% url 'ui-sessions' %}">← Sessions</a></p>
+  <h1>Session <code>{{ session.id }}</code></h1>
+  <dl class="kv">
+    <dt>Agent</dt>
+    <dd>
+      {% if session.agent %}
+        <a href="{% url 'ui-agent-detail' session.agent.id %}">{{ session.agent.name }}</a>
+      {% else %}<span class="muted">—</span>{% endif %}
+    </dd>
+    <dt>Environment</dt>
+    <dd>
+      {% if session.environment %}
+        <a href="{% url 'ui-environment-detail' session.environment.id %}">{{ session.environment.name }}</a>
+      {% else %}<span class="muted">—</span>{% endif %}
+    </dd>
+    <dt>Runtime</dt><dd>{{ session.runtime }}</dd>
+    <dt>Status</dt><dd>{{ session.status }}</dd>
+    <dt>Exit code</dt><dd>{% if session.exit_code is not None %}{{ session.exit_code }}{% else %}<span class="muted">—</span>{% endif %}</dd>
+    <dt>Sprite name</dt><dd>{% if session.sprite_name %}<code>{{ session.sprite_name }}</code>{% else %}<span class="muted">—</span>{% endif %}</dd>
+    <dt>Prompt</dt><dd><pre>{{ session.prompt }}</pre></dd>
+    <dt>Resources</dt>
+    <dd>
+      {% if resources %}
+        <ul>{% for r in resources %}<li>{{ r.resource_type }}: <code>{{ r.url }}</code> → <code>{{ r.mount_path }}</code></li>{% endfor %}</ul>
+      {% else %}<span class="muted">—</span>{% endif %}
+    </dd>
+    <dt>Created</dt><dd>{{ session.created_at|date:"Y-m-d H:i" }}</dd>
+    <dt>Updated</dt><dd>{{ session.updated_at|date:"Y-m-d H:i" }}</dd>
+  </dl>
+
+  <h2>Logs</h2>
+  {% if logs %}
+    <pre class="logs">{% for line in logs %}[{{ line.stream }}] {{ line.data }}{% endfor %}</pre>
+  {% else %}
+    <p class="muted">No logs yet.</p>
+  {% endif %}
+{% endblock %}

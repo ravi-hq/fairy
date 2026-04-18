@@ -1,0 +1,49 @@
+{% extends "ui/base.html" %}
+{% block title %}API keys · Fairy{% endblock %}
+{% block content %}
+  <h1>API keys</h1>
+
+  {% if new_raw_key %}
+    <div class="reveal">
+      <p><strong>Copy this key now — it will not be shown again:</strong></p>
+      <code>{{ new_raw_key }}</code>
+    </div>
+  {% endif %}
+
+  <h2>Create key</h2>
+  <form method="post">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button type="submit">Create</button>
+  </form>
+
+  <h2>Existing keys</h2>
+  {% if keys %}
+    <table>
+      <thead>
+        <tr><th>Prefix</th><th>Label</th><th>Active</th><th>Created</th><th>Expires</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for k in keys %}
+          <tr>
+            <td><code>{{ k.key_prefix }}…</code></td>
+            <td>{{ k.name }}</td>
+            <td>{% if k.is_active %}yes{% else %}<span class="muted">revoked</span>{% endif %}</td>
+            <td>{{ k.created_at|date:"Y-m-d H:i" }}</td>
+            <td>{% if k.expires_at %}{{ k.expires_at|date:"Y-m-d H:i" }}{% else %}<span class="muted">—</span>{% endif %}</td>
+            <td>
+              {% if k.is_active %}
+                <form method="post" action="{% url 'ui-api-key-revoke' k.id %}">
+                  {% csrf_token %}
+                  <button type="submit" class="danger">Revoke</button>
+                </form>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="muted">No keys yet.</p>
+  {% endif %}
+{% endblock %}

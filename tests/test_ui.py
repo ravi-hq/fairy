@@ -1,0 +1,213 @@
+import pytest
+from django.contrib.auth.models import User
+from django.test import Client
+
+from fairy.models import (
+    Agent,
+    AgentSession,
+    APIKey,
+    Environment,
+    UserSpritesKey,
+)
+
+
+@pytest.fixture
+def user(db):
+    return User.objects.create_user(username="alice", password="alicepass123!")
+
+
+@pytest.fixture
+def other_user(db):
+    return User.objects.create_user(username="bob", password="bobpass123!")
+
+
+@pytest.fixture
+def logged_in_client(user):
+    c = Client()
+    c.force_login(user)
+    return c
+
+
+@pytest.mark.django_db
+def test_dashboard_requires_login(client: Client):
+    resp = client.get("/ui/")
+    assert resp.status_code == 302
+    assert "/ui/login" in resp.url
+
+
+@pytest.mark.django_db
+def test_register_creates_user_and_logs_in(client: Client):
+    resp = client.post(
+        "/ui/register",
+        data={
+            "username": "charlie",
+            "password1": "supersecret123!",
+            "password2": "supersecret123!",
+            "email": "charlie@example.com",
+        },
+    )
+    assert resp.status_code == 302
+    assert resp.url == "/ui/sprites-key"
+    assert User.objects.filter(username="charlie").exists()
+
+
+@pytest.mark.django_db
+def test_register_mismatched_passwords_rejected(client: Client):
+    resp = client.post(
+        "/ui/register",
+        data={"username": "dave", "password1": "a", "password2": "b"},
+    )
+    assert resp.status_code == 200
+    assert not User.objects.filter(username="dave").exists()
+
+
+@pytest.mark.django_db
+def test_register_redirects_if_authenticated(logged_in_client):
+    resp = logged_in_client.get("/ui/register")
+    assert resp.status_code == 302
+    assert resp.url == "/ui/"
+
+
+@pytest.mark.django_db
+def test_login_logout_flow(client: Client, user):
+    resp = client.post("/ui/login", data={"username": "alice", "password": "alicepass123!"})
+    assert resp.status_code == 302
+    resp = client.get("/ui/")
+    assert resp.status_code == 200
+    assert b"Dashboard" in resp.content
+
+    resp = client.post("/ui/logout")
+    assert resp.status_code == 302
+    resp = client.get("/ui/")
+    assert resp.status_code == 302
+
+
+@pytest.mark.django_db
+def test_dashboard_flags_missing_sprites_key(logged_in_client):
+    resp = logged_in_client.get("/ui/")
+    assert resp.status_code == 200
+    assert b"don't have a Sprites API token" in resp.content
+
+
+@pytest.mark.django_db
+def test_dashboard_hides_warning_when_key_set(logged_in_client, user):
+    usk = UserSpritesKey(user=user)
+    usk.set_api_key("some-token")
+    usk.save()
+    resp = logged_in_client.get("/ui/")
+    assert resp.status_code == 200
+    assert b"don't have a Sprites API token" not in resp.content
+
+
+@pytest.mark.django_db
+def test_sprites_key_create_and_rotate(logged_in_client, user):
+    resp = logged_in_client.post("/ui/sprites-key", data={"api_key": "first-token"})
+    assert resp.status_code == 302
+    usk = UserSpritesKey.objects.get(user=user)
+    assert usk.get_api_key() == "first-token"
+
+    resp = logged_in_client.post("/ui/sprites-key", data={"api_key": "rotated-token"})
+    assert resp.status_code == 302
+    usk.refresh_from_db()
+    assert usk.get_api_key() == "rotated-token"
+    assert UserSpritesKey.objects.filter(user=user).count() == 1
+
+
+@pytest.mark.django_db
+def test_api_key_create_shows_raw_once(logged_in_client, user):
+    resp = logged_in_client.post(
+        "/ui/api-keys", data={"name": "cli", "expires_at": ""}, follow=False
+    )
+    assert resp.status_code == 200
+    assert b"Copy this key now" in resp.content
+    assert APIKey.objects.filter(user=user, is_active=True).count() == 1
+
+
+@pytest.mark.django_db
+def test_api_key_revoke(logged_in_client, user):
+    key, _raw = APIKey.create_key(user, "to-revoke")
+    resp = logged_in_client.post(f"/ui/api-keys/{key.id}/revoke")
+    assert resp.status_code == 302
+    key.refresh_from_db()
+    assert key.is_active is False
+
+
+@pytest.mark.django_db
+def test_api_key_revoke_scoped_to_owner(logged_in_client, other_user):
+    key, _raw = APIKey.create_key(other_user, "not-mine")
+    resp = logged_in_client.post(f"/ui/api-keys/{key.id}/revoke")
+    assert resp.status_code == 404
+    key.refresh_from_db()
+    assert key.is_active is True
+
+
+@pytest.mark.django_db
+def test_agents_list_only_shows_owned(logged_in_client, user, other_user):
+    mine = Agent.objects.create(
+        user=user, name="mine", model="claude-sonnet-4-6", runtime="claude", version=1
+    )
+    theirs = Agent.objects.create(
+        user=other_user, name="theirs", model="claude-sonnet-4-6", runtime="claude", version=1
+    )
+    resp = logged_in_client.get("/ui/agents")
+    assert resp.status_code == 200
+    assert mine.name.encode() in resp.content
+    assert theirs.name.encode() not in resp.content
+
+
+@pytest.mark.django_db
+def test_agent_detail_404_for_other_user(logged_in_client, other_user):
+    theirs = Agent.objects.create(
+        user=other_user, name="theirs", model="claude-sonnet-4-6", runtime="claude", version=1
+    )
+    resp = logged_in_client.get(f"/ui/agents/{theirs.id}")
+    assert resp.status_code == 404
+
+
+@pytest.mark.django_db
+def test_environment_list_and_detail(logged_in_client, user):
+    env = Environment.objects.create(user=user, name="myenv", version=1)
+    resp = logged_in_client.get("/ui/environments")
+    assert resp.status_code == 200
+    assert b"myenv" in resp.content
+
+    resp = logged_in_client.get(f"/ui/environments/{env.id}")
+    assert resp.status_code == 200
+    assert b"myenv" in resp.content
+
+
+@pytest.mark.django_db
+def test_sessions_list_and_detail(logged_in_client, user):
+    session = AgentSession.objects.create(
+        user=user, runtime="claude", prompt="hello world", status="completed", exit_code=0
+    )
+    resp = logged_in_client.get("/ui/sessions")
+    assert resp.status_code == 200
+    assert str(session.id)[:8].encode() in resp.content
+
+    resp = logged_in_client.get(f"/ui/sessions/{session.id}")
+    assert resp.status_code == 200
+    assert b"hello world" in resp.content
+
+
+@pytest.mark.django_db
+def test_session_detail_404_for_other_user(logged_in_client, other_user):
+    theirs = AgentSession.objects.create(
+        user=other_user, runtime="claude", prompt="x", status="completed"
+    )
+    resp = logged_in_client.get(f"/ui/sessions/{theirs.id}")
+    assert resp.status_code == 404
+
+
+@pytest.mark.django_db
+def test_ui_does_not_expose_env_var_values(logged_in_client, user):
+    env = Environment.objects.create(
+        user=user,
+        name="secrets",
+        env_vars={"DATABASE_URL": "postgres://super-secret"},
+        version=1,
+    )
+    resp = logged_in_client.get(f"/ui/environments/{env.id}")
+    assert resp.status_code == 200
+    assert b"DATABASE_URL" in resp.content
+    assert b"super-secret" not in resp.content
