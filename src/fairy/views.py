@@ -22,6 +22,7 @@ from fairy.models import (
     EnvironmentVersion,
     SessionResource,
     UserRuntimeKey,
+    UserSpritesKey,
 )
 from fairy.runtimes import RUNTIMES, AgentModel
 from fairy.sprites_exec import (
@@ -36,11 +37,24 @@ from fairy.stream import run_session_background, stream_session_from_db
 logger = logging.getLogger(__name__)
 
 
-def _get_client() -> SpritesClient:
-    return SpritesClient(
-        token=settings.SPRITES_TOKEN,
-        base_url=settings.SPRITES_BASE_URL,
-    )
+def _get_sprites_key(user) -> str | None:
+    """Look up the user's stored Sprites API token."""
+    try:
+        return user.sprites_key.get_api_key()
+    except UserSpritesKey.DoesNotExist:
+        return None
+
+
+def _get_client(user) -> SpritesClient | None:
+    """Build a SpritesClient using the caller's per-user token."""
+    token = _get_sprites_key(user)
+    if token is None:
+        return None
+    return SpritesClient(token=token, base_url=settings.SPRITES_BASE_URL)
+
+
+def _no_sprites_key_response() -> JsonResponse:
+    return JsonResponse({"detail": "No Sprites API key configured"}, status=400)
 
 
 def _get_runtime_key(user, runtime: str) -> str | None:
@@ -253,7 +267,9 @@ def sessions_list_create(request):
 
     config = RUNTIMES[runtime]
     name = f"{settings.SPRITE_NAME_PREFIX}-{uuid.uuid4().hex[:12]}"
-    client = _get_client()
+    client = _get_client(request.user)
+    if client is None:
+        return _no_sprites_key_response()
 
     try:
         sprite = client.create_sprite(name)
@@ -422,7 +438,9 @@ def send_prompt(request, session_id):
         )
 
     config = RUNTIMES[session.runtime]
-    client = _get_client()
+    client = _get_client(request.user)
+    if client is None:
+        return _no_sprites_key_response()
 
     try:
         sprite = client.get_sprite(session.sprite_name)
@@ -431,12 +449,27 @@ def send_prompt(request, session_id):
 
     try:
         fs = sprite.filesystem()
-        skill_specs = _skills_to_specs(session.agent.skills) if session.agent else []
+        agent_obj = session.agent
+        mcp_specs = _mcp_servers_to_specs(agent_obj.mcp_servers) if agent_obj else []
+        skill_specs = _skills_to_specs(agent_obj.skills) if agent_obj else []
+        # Re-export env_vars each turn (shell exports don't persist across
+        # wrapper-script invocations). Skip packages/setup_script: packages
+        # are already installed on the persistent Sprite FS, and setup_script
+        # may have non-idempotent side effects.
+        env_setup = None
+        if session.environment:
+            env_setup = EnvironmentSetup(
+                packages={},
+                env_vars=session.environment.env_vars,
+                setup_script="",
+            )
         script = build_wrapper_script(
             config,
             api_key,
             req.prompt,
             continue_session=True,
+            environment=env_setup,
+            mcp_servers=mcp_specs,
             skills=skill_specs,
         )
         (fs / "run-agent.sh").write_text(script)
@@ -482,11 +515,18 @@ def terminate_session(request, session_id):
 
     # Delete the Sprite
     if session.sprite_name:
-        client = _get_client()
-        try:
-            client.delete_sprite(session.sprite_name)
-        except SpriteError:
-            logger.warning("Failed to delete Sprite %s", session.sprite_name, exc_info=True)
+        client = _get_client(request.user)
+        if client is None:
+            logger.warning(
+                "Cannot delete Sprite %s: no Sprites key for user %s",
+                session.sprite_name,
+                request.user,
+            )
+        else:
+            try:
+                client.delete_sprite(session.sprite_name)
+            except SpriteError:
+                logger.warning("Failed to delete Sprite %s", session.sprite_name, exc_info=True)
 
     session.status = "terminated"
     session.sprite_name = ""

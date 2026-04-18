@@ -5,7 +5,7 @@ import pytest
 from django.contrib.auth.models import User
 from django.test import Client
 
-from fairy.models import Agent, AgentVersion, APIKey, UserRuntimeKey
+from fairy.models import Agent, AgentVersion, APIKey, UserRuntimeKey, UserSpritesKey
 
 
 @pytest.fixture
@@ -26,7 +26,15 @@ def auth_headers(api_key):
 
 
 @pytest.fixture
-def runtime_key(user):
+def sprites_key(user):
+    usk = UserSpritesKey(user=user)
+    usk.set_api_key("fake-sprites-token")
+    usk.save()
+    return usk
+
+
+@pytest.fixture
+def runtime_key(user, sprites_key):
     urk = UserRuntimeKey(user=user, runtime="claude")
     urk.set_api_key("fake-anthropic-key")
     urk.save()

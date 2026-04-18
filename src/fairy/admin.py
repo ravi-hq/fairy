@@ -14,6 +14,7 @@ from fairy.models import (
     Environment,
     EnvironmentVersion,
     UserRuntimeKey,
+    UserSpritesKey,
 )
 
 
@@ -31,12 +32,23 @@ class UserRuntimeKeyInline(admin.TabularInline):
     readonly_fields = ("created_at", "updated_at")
 
 
+class UserSpritesKeyInline(admin.TabularInline):
+    model = UserSpritesKey
+    extra = 0
+    fields = ("created_at", "updated_at")
+    readonly_fields = ("created_at", "updated_at")
+
+
 admin.site.unregister(User)
 
 
 @admin.register(User)
 class UserAdmin(BaseUserAdmin):
-    inlines = list(BaseUserAdmin.inlines) + [APIKeyInline, UserRuntimeKeyInline]
+    inlines = list(BaseUserAdmin.inlines) + [
+        APIKeyInline,
+        UserRuntimeKeyInline,
+        UserSpritesKeyInline,
+    ]
 
 
 @admin.register(APIKey)
@@ -106,6 +118,42 @@ class UserRuntimeKeyAdmin(admin.ModelAdmin):
         return ("user", "runtime", "api_key", "created_at", "updated_at")
 
 
+class UserSpritesKeyForm(forms.ModelForm):
+    api_key = forms.CharField(
+        widget=forms.PasswordInput(render_value=True),
+        help_text="The Sprites API token. Stored encrypted.",
+    )
+
+    class Meta:
+        model = UserSpritesKey
+        fields = ("user", "api_key")
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.instance.pk:
+            self.fields["api_key"].initial = self.instance.get_api_key()
+
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        instance.set_api_key(self.cleaned_data["api_key"])
+        if commit:
+            instance.save()
+        return instance
+
+
+@admin.register(UserSpritesKey)
+class UserSpritesKeyAdmin(admin.ModelAdmin):
+    form = UserSpritesKeyForm
+    list_display = ("user", "created_at", "updated_at")
+    search_fields = ("user__email",)
+    readonly_fields = ("created_at", "updated_at")
+
+    def get_fields(self, request, obj=None):
+        if obj is None:
+            return ("user", "api_key")
+        return ("user", "api_key", "created_at", "updated_at")
+
+
 class EnvironmentVersionInline(admin.TabularInline):
     model = EnvironmentVersion
     extra = 0
@@ -171,18 +219,32 @@ class AgentSessionAdmin(admin.ModelAdmin):
     def terminate_sessions(self, request, queryset):
         from django.conf import settings
 
-        client = SpritesClient(
-            token=settings.SPRITES_TOKEN,
-            base_url=settings.SPRITES_BASE_URL,
-        )
+        clients: dict[int, SpritesClient] = {}
+
+        def client_for(user) -> SpritesClient | None:
+            if user.pk in clients:
+                return clients[user.pk]
+            try:
+                token = user.sprites_key.get_api_key()
+            except UserSpritesKey.DoesNotExist:
+                clients[user.pk] = None
+                return None
+            client = SpritesClient(token=token, base_url=settings.SPRITES_BASE_URL)
+            clients[user.pk] = client
+            return client
+
         terminated = 0
-        skipped = 0
+        missing_key_users: set[str] = set()
         for session in queryset.exclude(status="terminated"):
             if session.sprite_name:
-                try:
-                    client.delete_sprite(session.sprite_name)
-                except SpriteError:
-                    pass
+                client = client_for(session.user)
+                if client is None:
+                    missing_key_users.add(str(session.user))
+                else:
+                    try:
+                        client.delete_sprite(session.sprite_name)
+                    except SpriteError:
+                        pass
             session.status = "terminated"
             session.sprite_name = ""
             session.save(update_fields=["status", "sprite_name", "updated_at"])
@@ -191,7 +253,14 @@ class AgentSessionAdmin(admin.ModelAdmin):
         msg = f"Terminated {terminated} session(s)."
         if skipped:
             msg += f" Skipped {skipped} already terminated."
-        messages.success(request, msg)
+        if missing_key_users:
+            msg += (
+                f" Sprite cleanup skipped for {len(missing_key_users)} user(s) "
+                f"with no Sprites key: {', '.join(sorted(missing_key_users))}."
+            )
+            messages.warning(request, msg)
+        else:
+            messages.success(request, msg)
 
 
 @admin.register(AgentSessionLog)

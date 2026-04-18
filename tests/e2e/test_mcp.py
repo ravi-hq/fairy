@@ -171,3 +171,76 @@ class TestMcpServerToolInvocable:
         assert signal in reassembled, (
             f"Expected echo signal {signal!r} in reassembled output.\nOutput: {raw[:500]}"
         )
+
+
+class TestMcpPersistsAcrossTurns:
+    """Regression: MCP config must be re-emitted on every /prompt turn.
+
+    Prior to the fix, ``send_prompt`` rebuilt ``run-agent.sh`` without passing
+    ``mcp_servers``. The resulting script neither regenerated ``/tmp/mcp.json``
+    nor appended ``--mcp-config --strict-mcp-config`` to the agent CLI, so MCP
+    tools disappeared on every turn after the first. This test calls the MCP
+    echo tool twice in the same session — once on create, once via
+    ``send_prompt`` — with different signals, and asserts both fire.
+    """
+
+    def test_mcp_tool_invocable_on_second_turn(
+        self,
+        api: FairyClient,
+        create_agent,
+        create_session,
+        create_environment,
+        runtime,
+    ):
+        signal1 = f"MCP-T1-{uuid.uuid4().hex[:12]}"
+        signal2 = f"MCP-T2-{uuid.uuid4().hex[:12]}"
+        env = create_environment(
+            name=_unique(f"e2e-mcp-persist-env-{runtime}"),
+            packages={"npm": [MCP_SERVER_NPM_PKG]},
+        )
+        agent = create_agent(
+            name=_unique(f"e2e-mcp-persist-{runtime}"),
+            model=RUNTIME_MODELS[runtime],
+            runtime=runtime,
+            environment_id=env["id"],
+            mcp_servers=[_everything_server_spec()],
+        )
+
+        turn1 = (
+            f"Call the `{MCP_ECHO_TOOL}` tool from the `{MCP_SERVER_NAME}` "
+            f"MCP server with argument message={signal1!r}. Include the tool's "
+            f"exact response in your reply."
+        )
+        session = create_session(agent_id=agent["id"], prompt=turn1, timeout=300)
+        final1, events1 = api.run_session(session["id"], timeout=300)
+        raw1 = stream_all_output(events1)
+        reassembled1 = _concat_json_strings(raw1)
+        assert final1["status"] == "completed", (
+            f"Turn 1 status={final1['status']} exit={final1.get('exit_code')}\n"
+            f"Output: {raw1[:500]}"
+        )
+        assert signal1 in reassembled1, (
+            f"Turn 1 echo signal {signal1!r} missing.\nOutput: {raw1[:500]}"
+        )
+
+        turn2 = (
+            f"Call the `{MCP_ECHO_TOOL}` tool from the `{MCP_SERVER_NAME}` "
+            f"MCP server again, this time with argument message={signal2!r}. "
+            f"Include the tool's exact response in your reply."
+        )
+        resp = api.send_prompt(session["id"], prompt=turn2, timeout=300)
+        assert resp.status_code == 202, (
+            f"send_prompt rejected: {resp.status_code} {resp.text}"
+        )
+
+        final2, events2 = api.run_session(session["id"], timeout=300)
+        raw2 = stream_all_output(events2)
+        reassembled2 = _concat_json_strings(raw2)
+        assert final2["status"] == "completed", (
+            f"Turn 2 status={final2['status']} exit={final2.get('exit_code')}\n"
+            f"Output: {raw2[:500]}"
+        )
+        assert signal2 in reassembled2, (
+            f"Turn 2 echo signal {signal2!r} missing — MCP config likely not "
+            f"rematerialized on continuation.\nOutput: {raw2[:500]}"
+        )
