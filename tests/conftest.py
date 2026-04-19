@@ -31,10 +31,17 @@ def fake_sprites(mocker):
     mocker.patch("agent_on_demand.session_service.tasks.execute_turn.defer")
     mocker.patch("agent_on_demand.session_service.turn.execute_turn.defer")
 
-    from agent_on_demand.session_service.tasks import provision_session_task
+    from agent_on_demand.session_service.tasks import (
+        destroy_session_task,
+        provision_session_task,
+    )
 
-    def _inline_defer(**kwargs):
+    def _inline_provision(**kwargs):
         provision_session_task(**kwargs)
 
-    mocker.patch.object(provision_session_task, "defer", side_effect=_inline_defer)
+    def _inline_destroy(**kwargs):
+        destroy_session_task(**kwargs)
+
+    mocker.patch.object(provision_session_task, "defer", side_effect=_inline_provision)
+    mocker.patch.object(destroy_session_task, "defer", side_effect=_inline_destroy)
     return fake

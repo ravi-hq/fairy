@@ -450,11 +450,15 @@ def terminate_session(request, session_id):
     if session.status == "terminated":
         return JsonResponse({"detail": "Session is already terminated"}, status=409)
 
-    session_service.destroy_session(request.user, session.sprite_name)
-
+    sprite_name = session.sprite_name
     session.status = "terminated"
     session.sprite_name = ""
     session.save(update_fields=["status", "sprite_name", "updated_at"])
+
+    if sprite_name:
+        session_service.destroy_session_task.defer(
+            user_id=request.user.id, sprite_name=sprite_name
+        )
 
     with posthog.new_context():
         posthog.identify_context(str(request.user.id))
