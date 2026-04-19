@@ -55,8 +55,8 @@ def mock_sprites(mocker):
     mock_sprite.command.return_value.run = mocker.Mock()
     mock_client = mocker.MagicMock()
     mock_client.create_sprite.return_value = mock_sprite
-    mocker.patch("agent_on_demand.views.sessions._get_client", return_value=mock_client)
-    mocker.patch("agent_on_demand.views.sessions.threading.Thread")
+    mocker.patch("agent_on_demand.session_service.get_client", return_value=mock_client)
+    mocker.patch("agent_on_demand.session_service.threading.Thread")
     return mock_sprite, mock_fs
 
 
@@ -534,7 +534,7 @@ class TestSessionMcpIntegration:
         )
         mock_sprite, mock_fs = mock_sprites
         mocker.patch(
-            "agent_on_demand.views.sessions._get_client",
+            "agent_on_demand.session_service.get_client",
             return_value=mocker.MagicMock(get_sprite=mocker.Mock(return_value=mock_sprite)),
         )
         resp = client.post(
@@ -584,7 +584,7 @@ class TestSessionMcpIntegration:
 
         mock_sprite, mock_fs = mock_sprites
         mocker.patch(
-            "agent_on_demand.views.sessions._get_client",
+            "agent_on_demand.session_service.get_client",
             return_value=mocker.MagicMock(get_sprite=mocker.Mock(return_value=mock_sprite)),
         )
         resp = client.post(

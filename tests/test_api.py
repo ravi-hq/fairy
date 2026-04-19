@@ -218,10 +218,10 @@ def test_run_returns_202_with_session_id(client: Client, auth_headers, runtime_k
 
     mock_client = mocker.MagicMock()
     mock_client.create_sprite.return_value = mock_sprite
-    mocker.patch("agent_on_demand.views.sessions._get_client", return_value=mock_client)
+    mocker.patch("agent_on_demand.session_service.get_client", return_value=mock_client)
 
     # Prevent the background thread from actually running
-    mocker.patch("agent_on_demand.views.sessions.threading.Thread")
+    mocker.patch("agent_on_demand.session_service.threading.Thread")
 
     resp = client.post(
         "/sessions",
@@ -381,7 +381,7 @@ def test_stream_session_failed_with_no_exit_code(client: Client, auth_headers, u
 def test_terminate_session(client: Client, auth_headers, user, mocker):
     """Terminate destroys the Sprite but keeps the session record."""
     mock_client = mocker.MagicMock()
-    mocker.patch("agent_on_demand.views.sessions._get_client", return_value=mock_client)
+    mocker.patch("agent_on_demand.session_service.get_client", return_value=mock_client)
 
     session = AgentSession.objects.create(
         user=user, runtime="claude", prompt="test", sprite_name="aod-abc123", status="completed"
@@ -419,8 +419,8 @@ def test_create_session_creates_turn_one(
     mock_fs.__truediv__ = mocker.Mock(return_value=mock_fs)
     mock_client = mocker.MagicMock()
     mock_client.create_sprite.return_value = mock_sprite
-    mocker.patch("agent_on_demand.views.sessions._get_client", return_value=mock_client)
-    mocker.patch("agent_on_demand.views.sessions.threading.Thread")
+    mocker.patch("agent_on_demand.session_service.get_client", return_value=mock_client)
+    mocker.patch("agent_on_demand.session_service.threading.Thread")
 
     resp = client.post(
         "/sessions",
@@ -453,8 +453,8 @@ def test_create_session_generates_runtime_session_id(
     mock_fs.__truediv__ = mocker.Mock(return_value=mock_fs)
     mock_client = mocker.MagicMock()
     mock_client.create_sprite.return_value = mock_sprite
-    mocker.patch("agent_on_demand.views.sessions._get_client", return_value=mock_client)
-    mocker.patch("agent_on_demand.views.sessions.threading.Thread")
+    mocker.patch("agent_on_demand.session_service.get_client", return_value=mock_client)
+    mocker.patch("agent_on_demand.session_service.threading.Thread")
 
     resp = client.post(
         "/sessions",
@@ -485,8 +485,8 @@ def test_create_session_writes_script_once_and_prompt_file(
     mock_fs.__truediv__ = mocker.Mock(return_value=mock_fs)
     mock_client = mocker.MagicMock()
     mock_client.create_sprite.return_value = mock_sprite
-    mocker.patch("agent_on_demand.views.sessions._get_client", return_value=mock_client)
-    mocker.patch("agent_on_demand.views.sessions.threading.Thread")
+    mocker.patch("agent_on_demand.session_service.get_client", return_value=mock_client)
+    mocker.patch("agent_on_demand.session_service.threading.Thread")
 
     resp = client.post(
         "/sessions",
@@ -526,8 +526,8 @@ def test_send_prompt_appends_turn(
     mock_fs.__truediv__ = mocker.Mock(return_value=mock_fs)
     mock_client = mocker.MagicMock()
     mock_client.get_sprite.return_value = mock_sprite
-    mocker.patch("agent_on_demand.views.sessions._get_client", return_value=mock_client)
-    mocker.patch("agent_on_demand.views.sessions.threading.Thread")
+    mocker.patch("agent_on_demand.session_service.get_client", return_value=mock_client)
+    mocker.patch("agent_on_demand.session_service.threading.Thread")
 
     resp = client.post(
         f"/sessions/{session.id}/prompt",
@@ -571,7 +571,7 @@ def test_send_prompt_invokes_continue_mode(
     mock_fs.__truediv__ = mocker.Mock(return_value=mock_fs)
     mock_client = mocker.MagicMock()
     mock_client.get_sprite.return_value = mock_sprite
-    mocker.patch("agent_on_demand.views.sessions._get_client", return_value=mock_client)
+    mocker.patch("agent_on_demand.session_service.get_client", return_value=mock_client)
 
     # Capture the run_session_background invocation without running it.
     captured = {}
@@ -580,7 +580,7 @@ def test_send_prompt_invokes_continue_mode(
         captured["args"] = args
         return mocker.MagicMock()
 
-    mocker.patch("agent_on_demand.views.sessions.threading.Thread", side_effect=fake_thread)
+    mocker.patch("agent_on_demand.session_service.threading.Thread", side_effect=fake_thread)
 
     resp = client.post(
         f"/sessions/{session.id}/prompt",
