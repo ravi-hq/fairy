@@ -211,7 +211,7 @@ class TestSessionSkillsIntegration:
         writes = _last_sprite_writes(fake_sprites)
         assert writes["/home/sprite/.claude/skills/sh/SKILL.md"] == content
 
-    def test_continue_session_only_writes_prompt_file(
+    def test_continue_session_touches_no_filesystem(
         self, client: Client, auth_headers, runtime_key, user, fake_sprites
     ):
         from agent_on_demand.models import AgentSession
@@ -240,8 +240,7 @@ class TestSessionSkillsIntegration:
         )
         assert resp.status_code == 202
         sprite = fake_sprites.sprites["sprite-xyz"]
-        assert len(sprite.writes) == 1
-        assert sprite.writes[0].path == "/tmp/aod-prompt.txt"
+        assert sprite.writes == []
 
 
 # --- Validator edges (HTTP layer, unchanged) ---

@@ -17,7 +17,7 @@ from sprites import NetworkPolicy, PolicyRule, Sprite, SpriteError
 from agent_on_demand.models import Environment
 
 from .client import best_effort_delete, require_client
-from .dispatcher import ENV_FILE_PATH, PROMPT_FILE_PATH, RUN_SCRIPT_PATH, render_dispatcher_script
+from .dispatcher import ENV_FILE_PATH, RUN_SCRIPT_PATH, render_dispatcher_script
 from .errors import ProvisionError
 from .specs import McpServerSpec, RepoSpec, SessionSpec, SkillSpec
 
@@ -308,12 +308,3 @@ def _write_run_script(sprite: Sprite, spec: SessionSpec) -> None:
         sprite.command("chmod", "+x", RUN_SCRIPT_PATH).run()
     except SpriteError as e:
         raise ProvisionError(f"Failed to write run script: {e}", stage="run_script") from e
-
-
-def _write_prompt(sprite: Sprite, prompt: str) -> None:
-    """Write the per-turn prompt into an existing Sprite's filesystem."""
-    try:
-        fs = sprite.filesystem()
-        (fs / PROMPT_FILE_PATH.lstrip("/")).write_text(prompt)
-    except SpriteError as e:
-        raise ProvisionError(f"Failed to prepare Sprite: {e}", stage="prompt") from e

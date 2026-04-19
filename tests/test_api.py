@@ -445,12 +445,12 @@ def test_create_session_generates_runtime_session_id(
 
 
 @pytest.mark.django_db
-def test_create_session_writes_script_once_and_prompt_file(
+def test_create_session_writes_script_and_env_file(
     client: Client, auth_headers, runtime_key, agent, fake_sprites
 ):
-    """The dispatcher script is written once during provision, plus the env
-    file and (via run_turn) the prompt file. /prompt does not rewrite the
-    script."""
+    """The dispatcher script and env file are written during provision. The
+    prompt is piped through stdin at turn time — no prompt file is ever
+    written to the Sprite filesystem."""
     resp = client.post(
         "/sessions",
         data=json.dumps({"agent_id": str(agent.id), "prompt": "hello"}),
@@ -462,7 +462,7 @@ def test_create_session_writes_script_once_and_prompt_file(
     writes = fake_sprites.last_sprite().write_map()
     assert "/run-agent.sh" in writes
     assert "/tmp/aod-env" in writes
-    assert writes["/tmp/aod-prompt.txt"] == "hello"
+    assert "/tmp/aod-prompt.txt" not in writes
     assert writes["/run-agent.sh"].startswith("#!/bin/bash")
 
 
@@ -497,10 +497,10 @@ def test_send_prompt_appends_turn(
     assert turns[1].prompt == "second"
     assert turns[1].status == "pending"
 
+    # /prompt is fire-and-forget: no filesystem writes on the Sprite — the
+    # prompt streams over stdin once the background thread starts.
     sprite = fake_sprites.sprites["sprite-xyz"]
-    assert len(sprite.writes) == 1
-    assert sprite.writes[0].path == "/tmp/aod-prompt.txt"
-    assert sprite.writes[0].text == "second"
+    assert sprite.writes == []
 
 
 @pytest.mark.django_db
@@ -543,9 +543,10 @@ def test_send_prompt_invokes_continue_mode(
     )
     assert resp.status_code == 202
 
-    # run_session_background(session, turn, sprite, mode, timeout)
-    _session, _turn, _sprite, mode, _timeout = captured["args"]
+    # run_session_background(session, turn, sprite, prompt, mode, timeout)
+    _session, _turn, _sprite, prompt, mode, _timeout = captured["args"]
     assert mode == "continue"
+    assert prompt == "second"
     assert _turn.turn_number == 2
 
 
@@ -645,12 +646,16 @@ def test_run_session_background_persists_int_exit_code_on_exec_error(user, mocke
     mock_cmd.run.side_effect = ExecError("exit status 1", exit_code=1)
     mock_sprite.command.return_value = mock_cmd
 
-    run_session_background(session, turn, mock_sprite, "run", timeout=10.0)
+    run_session_background(session, turn, mock_sprite, "hello", "run", timeout=10.0)
 
     session.refresh_from_db()
     assert session.status == "failed"
     assert session.exit_code == 1
     assert isinstance(session.exit_code, int)
+
+    # Prompt was fed to the dispatcher via stdin — not argv, not env, not a file.
+    assert mock_cmd.stdin is not None
+    assert mock_cmd.stdin.read() == b"hello"
 
     turn.refresh_from_db()
     assert turn.status == "failed"

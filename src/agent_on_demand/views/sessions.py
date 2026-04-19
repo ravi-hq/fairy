@@ -297,11 +297,7 @@ def _create_session(request):
                 sr.set_token(resource.authorization_token)
             sr.save()
 
-    try:
-        session_service.run_turn(session, turn, sprite, effective_prompt, "run", float(req.timeout))
-    except session_service.ProvisionError as e:
-        logger.warning("run_turn failed at stage=%s: %s", e.stage, e)
-        return JsonResponse({"detail": str(e)}, status=502)
+    session_service.run_turn(session, turn, sprite, effective_prompt, "run", float(req.timeout))
 
     return JsonResponse(
         {
@@ -420,11 +416,7 @@ def send_prompt(request, session_id):
     except AgentSession.DoesNotExist:
         return JsonResponse({"detail": "Session not found"}, status=404)
 
-    try:
-        session_service.run_turn(session, turn, sprite, req.prompt, "continue", float(req.timeout))
-    except session_service.ProvisionError as e:
-        logger.warning("run_turn failed at stage=%s: %s", e.stage, e)
-        return JsonResponse({"detail": str(e)}, status=502)
+    session_service.run_turn(session, turn, sprite, req.prompt, "continue", float(req.timeout))
 
     return JsonResponse(
         {

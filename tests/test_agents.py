@@ -357,7 +357,17 @@ def test_list_versions(client: Client, auth_headers, agent):
 
 
 @pytest.mark.django_db
-def test_create_session_with_agent(client: Client, auth_headers, agent, runtime_key, fake_sprites):
+def test_create_session_with_agent(
+    client: Client, auth_headers, agent, runtime_key, fake_sprites, mocker
+):
+    captured = {}
+
+    def fake_thread(target, args, daemon):
+        captured["args"] = args
+        return mocker.MagicMock()
+
+    mocker.patch("agent_on_demand.session_service.turn.threading.Thread", side_effect=fake_thread)
+
     resp = client.post(
         "/sessions",
         data=json.dumps({"agent_id": str(agent.id), "prompt": "Fix the bug"}),
@@ -366,10 +376,11 @@ def test_create_session_with_agent(client: Client, auth_headers, agent, runtime_
     )
     assert resp.status_code == 202
 
-    # System prompt is prepended to the user prompt and written to /tmp/aod-prompt.txt.
-    written_prompt = fake_sprites.last_sprite().write_map()["/tmp/aod-prompt.txt"]
-    assert "You are a helpful assistant." in written_prompt
-    assert "Fix the bug" in written_prompt
+    # System prompt is prepended to the user prompt; the combined string is
+    # passed to run_session_background for streaming over stdin.
+    _, _, _, effective_prompt, _, _ = captured["args"]
+    assert "You are a helpful assistant." in effective_prompt
+    assert "Fix the bug" in effective_prompt
 
 
 @pytest.mark.django_db
