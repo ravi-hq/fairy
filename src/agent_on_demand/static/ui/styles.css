@@ -103,6 +103,52 @@ input[type="datetime-local"], textarea {
   border-radius: 4px;
   font: inherit;
 }
+.helptext {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+  max-width: 420px;
+}
+.errorlist {
+  list-style: none;
+  padding: 0;
+  margin: 0.25rem 0;
+  color: var(--danger);
+  font-size: 0.9rem;
+}
+
+.auth-card {
+  max-width: 460px;
+  margin: 2rem auto;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 1.75rem 2rem;
+}
+.auth-card h1 { margin: 0 0 0.5rem; font-size: 1.5rem; }
+.auth-card .lede { margin: 0 0 1.25rem; color: var(--muted); font-size: 0.95rem; }
+.auth-card form p { margin: 0.9rem 0; }
+.auth-card label {
+  display: block;
+  margin-bottom: 0.35rem;
+  font-weight: 500;
+  font-size: 0.9rem;
+}
+.auth-card input[type="text"],
+.auth-card input[type="password"],
+.auth-card input[type="email"] { max-width: 100%; }
+.auth-card button[type="submit"] {
+  margin-top: 0.5rem;
+  width: 100%;
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+  font-weight: 500;
+  padding: 0.55rem 1rem;
+}
+.auth-card button[type="submit"]:hover { background: #1f5891; border-color: #1f5891; }
+.auth-footer { margin: 1.25rem 0 0; text-align: center; font-size: 0.9rem; }
 button {
   padding: 0.45rem 0.9rem;
   border: 1px solid var(--border);

@@ -1,15 +1,17 @@
 {% extends "ui/base.html" %}
 {% block title %}Register · Fairy{% endblock %}
 {% block content %}
-  <h1>Create your account</h1>
-  <p class="muted">
-    Choose a username and password, and paste a Sprites API token. We'll
-    provision an Agent on Demand API key for you on the next page.
-  </p>
-  <form method="post">
-    {% csrf_token %}
-    {{ form.as_p }}
-    <button type="submit">Create account</button>
-  </form>
-  <p class="muted">Already registered? <a href="{% url 'ui-login' %}">Log in</a>.</p>
+  <div class="auth-card">
+    <h1>Create your account</h1>
+    <p class="lede">
+      Choose a username and password, and paste a Sprites API token. We'll
+      provision an Agent on Demand API key for you on the next page.
+    </p>
+    <form method="post">
+      {% csrf_token %}
+      {{ form.as_p }}
+      <button type="submit">Create account</button>
+    </form>
+    <p class="auth-footer muted">Already registered? <a href="{% url 'ui-login' %}">Log in</a>.</p>
+  </div>
 {% endblock %}
