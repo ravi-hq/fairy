@@ -177,11 +177,11 @@ class TestMcpPersistsAcrossTurns:
     """Regression: MCP config must be re-emitted on every /prompt turn.
 
     Prior to the fix, ``send_prompt`` rebuilt ``run-agent.sh`` without passing
-    ``mcp_servers``. The resulting script neither regenerated ``/tmp/mcp.json``
-    nor appended ``--mcp-config --strict-mcp-config`` to the agent CLI, so MCP
-    tools disappeared on every turn after the first. This test calls the MCP
-    echo tool twice in the same session — once on create, once via
-    ``send_prompt`` — with different signals, and asserts both fire.
+    ``mcp_servers``. The resulting script never wrote the per-runtime MCP
+    config file (e.g. ``~/.claude.json``), so MCP tools disappeared on every
+    turn after the first. This test calls the MCP echo tool twice in the same
+    session — once on create, once via ``send_prompt`` — with different
+    signals, and asserts both fire.
     """
 
     def test_mcp_tool_invocable_on_second_turn(

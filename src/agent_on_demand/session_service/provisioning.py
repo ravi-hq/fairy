@@ -234,7 +234,7 @@ def _write_mcp_claude(sprite: Sprite, servers: list[McpServerSpec]) -> None:
                 entry["env"] = s.env
             config[s.name] = entry
     fs = sprite.filesystem()
-    (fs / "tmp/mcp.json").write_text(json.dumps({"mcpServers": config}, indent=2))
+    (fs / "home/sprite/.claude.json").write_text(json.dumps({"mcpServers": config}, indent=2))
 
 
 def _write_mcp_codex(sprite: Sprite, servers: list[McpServerSpec]) -> None:
@@ -301,7 +301,7 @@ def _write_skills(sprite: Sprite, runtime_name: str, skills: list[SkillSpec]) ->
 
 
 def _write_run_script(sprite: Sprite, spec: SessionSpec) -> None:
-    script = render_dispatcher_script(spec.runtime, has_mcp=bool(spec.mcp_servers))
+    script = render_dispatcher_script(spec.runtime)
     try:
         fs = sprite.filesystem()
         (fs / RUN_SCRIPT_PATH.lstrip("/")).write_text(script)

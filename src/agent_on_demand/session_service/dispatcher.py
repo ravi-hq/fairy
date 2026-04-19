@@ -1,4 +1,4 @@
-"""Render the tiny /run-agent.sh dispatcher and compute per-runtime MCP CLI flags."""
+"""Render the tiny /run-agent.sh dispatcher."""
 
 from __future__ import annotations
 
@@ -12,16 +12,7 @@ RUN_SCRIPT_PATH = "/run-agent.sh"
 _TEMPLATE_PATH = Path(__file__).parent / "run_agent.sh.tmpl"
 
 
-def mcp_cmd_flags(runtime_name: str, has_mcp: bool) -> str:
-    """Return extra CLI flags needed for MCP (only Claude needs explicit flags)."""
-    if not has_mcp:
-        return ""
-    if runtime_name in ("claude", "claude-oauth"):
-        return " --mcp-config /tmp/mcp.json --strict-mcp-config"
-    return ""
-
-
-def render_dispatcher_script(runtime: RuntimeConfig, *, has_mcp: bool) -> str:
+def render_dispatcher_script(runtime: RuntimeConfig) -> str:
     """Render the tiny per-turn dispatcher script.
 
     The dispatcher does no setup work — all provisioning happens inline during
@@ -29,10 +20,9 @@ def render_dispatcher_script(runtime: RuntimeConfig, *, has_mcp: bool) -> str:
     and execs the runtime CLI with the right continuation flags.
     """
     template = _TEMPLATE_PATH.read_text()
-    flags = mcp_cmd_flags(runtime.name, has_mcp)
     replacements = {
-        "@@RUN_CMD@@": f"{runtime.cmd}{flags}",
-        "@@CONTINUE_CMD@@": f"{runtime.continue_cmd}{flags}",
+        "@@RUN_CMD@@": runtime.cmd,
+        "@@CONTINUE_CMD@@": runtime.continue_cmd,
     }
     for token, value in replacements.items():
         template = template.replace(token, value)

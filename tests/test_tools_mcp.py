@@ -47,12 +47,12 @@ def runtime_key(user, sprites_key):
 
 
 def _mcp_json(sprite) -> dict:
-    return json.loads(sprite.write_map()["/tmp/mcp.json"])
+    return json.loads(sprite.write_map()["/home/sprite/.claude.json"])
 
 
 @pytest.mark.django_db
 class TestSessionMcpIntegration:
-    def test_claude_mcp_url_server_writes_json_and_flags(
+    def test_claude_mcp_url_server_writes_json(
         self, client: Client, auth_headers, runtime_key, user, fake_sprites
     ):
         agent = Agent.objects.create(
@@ -77,10 +77,9 @@ class TestSessionMcpIntegration:
         assert cfg == {
             "mcpServers": {"github": {"type": "http", "url": "https://mcp.github.com/mcp"}}
         }
-        # The dispatcher script picks up --mcp-config flags
         run_script = sprite.write_map()["/run-agent.sh"]
-        assert "--mcp-config /tmp/mcp.json" in run_script
-        assert "--strict-mcp-config" in run_script
+        assert "--mcp-config" not in run_script
+        assert "--strict-mcp-config" not in run_script
 
     def test_claude_mcp_with_headers(
         self, client: Client, auth_headers, runtime_key, user, fake_sprites
@@ -166,7 +165,7 @@ class TestSessionMcpIntegration:
         toml = sprite.write_map()["/home/sprite/.codex/config.toml"]
         assert "[mcp_servers.github]" in toml
         assert 'url = "https://mcp.github.com/mcp"' in toml
-        # Codex does NOT get --mcp-config CLI flags
+        # MCP is auto-discovered from ~/.codex/config.toml — no CLI flags.
         run_script = sprite.write_map()["/run-agent.sh"]
         assert "--mcp-config" not in run_script
 
@@ -248,7 +247,7 @@ class TestSessionMcpIntegration:
         )
         assert resp.status_code == 202
         writes = fake_sprites.last_sprite().write_map()
-        assert "/tmp/mcp.json" not in writes
+        assert "/home/sprite/.claude.json" not in writes
         run_script = writes["/run-agent.sh"]
         assert "--mcp-config" not in run_script
 
