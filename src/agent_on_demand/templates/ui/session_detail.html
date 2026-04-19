@@ -1,5 +1,5 @@
 {% extends "ui/base.html" %}
-{% block title %}Session {{ session.id|slice:":8" }} · Fairy{% endblock %}
+{% block title %}Session {{ session.id|slice:":8" }} · Agent on Demand{% endblock %}
 {% block content %}
   <p><a href="{% url 'ui-sessions' %}">← Sessions</a></p>
   <h1>Session <code>{{ session.id }}</code></h1>

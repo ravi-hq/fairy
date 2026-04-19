@@ -3,12 +3,12 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}Fairy{% endblock %}</title>
+  <title>{% block title %}Agent on Demand{% endblock %}</title>
   <link rel="stylesheet" href="{% static 'ui/styles.css' %}">
 </head>
 <body>
   <header class="topbar">
-    <a class="brand" href="{% url 'ui-dashboard' %}">fairy</a>
+    <a class="brand" href="{% url 'landing' %}">Agent on Demand</a>
     {% if user.is_authenticated %}
       <nav>
         <a href="{% url 'ui-dashboard' %}">Dashboard</a>
