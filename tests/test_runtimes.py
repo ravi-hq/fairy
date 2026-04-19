@@ -70,3 +70,25 @@ def test_claude_runtime_uses_session_id_and_resume():
 def test_each_runtime_has_unique_env_var():
     env_vars = [r.env_var for r in RUNTIMES.values()]
     assert len(env_vars) == len(set(env_vars))
+
+
+def test_wrapper_script_emits_structured_failure_marker():
+    """Any bash command that fails under `set -e` triggers the ERR trap,
+    which writes a single AOD_STAGE_FAILED line to stderr identifying the
+    failing command. This is the operator's structured handle on "which
+    step blew up" — without it, debugging means grepping raw stderr."""
+    config = RUNTIMES["claude"]
+    script = build_wrapper_script(config, "sk-test")
+    assert "trap '__aod_on_err" in script
+    assert "AOD_STAGE_FAILED" in script
+    # -E is what makes the ERR trap fire inside functions/subshells too.
+    assert "set -Eeuo pipefail" in script
+
+
+def test_wrapper_script_cleans_credentials_on_exit():
+    """The EXIT trap unconditionally clears /tmp/.git-credentials so a crash
+    mid-clone doesn't leave a GitHub token on the Sprite filesystem."""
+    config = RUNTIMES["claude"]
+    script = build_wrapper_script(config, "sk-test")
+    assert "trap __aod_cleanup EXIT" in script
+    assert "rm -f /tmp/.git-credentials" in script
