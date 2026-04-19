@@ -10,6 +10,7 @@ from django.utils import timezone
 from sprites import ExecError, Sprite
 
 from agent_on_demand.models import AgentSession, AgentSessionLog, SessionTurn
+from agent_on_demand.runtimes import RuntimeConfig
 
 logger = logging.getLogger(__name__)
 
@@ -48,18 +49,35 @@ class TaggingQueueWriter(io.RawIOBase):
         return len(data)
 
 
+def _build_turn_command(runtime: RuntimeConfig, mode: str) -> str:
+    """Render the per-turn `bash -c` script.
+
+    Per turn we (1) source /tmp/aod-env to expose the runtime API key,
+    AOD_SESSION_ID, and any Environment.env_vars; (2) slurp stdin into
+    $PROMPT so the runtime CLI can reference it via `-p "$PROMPT"`; (3)
+    exec the mode-appropriate runtime CLI. The string contains no secrets
+    (the API key sources at runtime from the env file) so it's safe to
+    appear in Sprites server-side WS URL logs.
+    """
+    runtime_cmd = runtime.cmd if mode == "run" else runtime.continue_cmd
+    return f"set -a; source /tmp/aod-env; set +a; PROMPT=$(cat); export PROMPT; exec {runtime_cmd}"
+
+
 def run_session_background(
     session: AgentSession,
     turn: SessionTurn,
     sprite: Sprite,
+    runtime: RuntimeConfig,
+    prompt: str,
     mode: str,
     timeout: float,
 ):
     """Run one turn of an agent session in a background thread.
 
-    `mode` is "run" for turn 1 and "continue" for subsequent turns. Logs are
-    tagged with the turn so consumers can replay per-turn. The session's
-    status tracks the latest turn for backward-compat.
+    `mode` is "run" for turn 1 and "continue" for subsequent turns. The prompt
+    streams over the Sprites WS stdin frame; the runtime-CLI invocation is
+    assembled inline per turn (no on-Sprite dispatcher script). Logs are
+    tagged with the turn so consumers can replay per-turn.
     """
     output_q: queue.Queue = queue.Queue(maxsize=4096)
     db_buffer: list[AgentSessionLog] = []
@@ -72,7 +90,14 @@ def run_session_background(
 
     def _run_command():
         try:
-            cmd = sprite.command("bash", "/run-agent.sh", mode, timeout=timeout)
+            cmd = sprite.command(
+                "bash",
+                "-c",
+                _build_turn_command(runtime, mode),
+                cwd="/home/sprite",
+                timeout=timeout,
+            )
+            cmd.stdin = io.BytesIO(prompt.encode("utf-8"))
             cmd.stdout = TaggingQueueWriter(output_q, "stdout")
             cmd.stderr = TaggingQueueWriter(output_q, "stderr")
             cmd.run()
@@ -175,9 +200,7 @@ def stream_session_from_db(session_id: str) -> Generator[str, None, None]:
             last_id = chunk["id"]
             turn_id = chunk["turn_id"]
             if turn_id is not None and turn_id != last_turn_id:
-                yield json.dumps(
-                    {"type": "turn_start", "turn": chunk["turn__turn_number"]}
-                )
+                yield json.dumps({"type": "turn_start", "turn": chunk["turn__turn_number"]})
                 last_turn_id = turn_id
             yield json.dumps(
                 {

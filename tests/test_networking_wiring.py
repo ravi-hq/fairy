@@ -59,22 +59,6 @@ def agent(user):
     )
 
 
-@pytest.fixture
-def mock_sprites(mocker):
-    mock_sprite = mocker.MagicMock()
-    mock_fs = mocker.MagicMock()
-    mock_sprite.filesystem.return_value = mock_fs
-    mock_fs.__truediv__ = mocker.Mock(return_value=mock_fs)
-    mock_fs.write_text = mocker.Mock()
-    mock_sprite.command.return_value.run = mocker.Mock()
-
-    mock_client = mocker.MagicMock()
-    mock_client.create_sprite.return_value = mock_sprite
-    mocker.patch("agent_on_demand.session_service.get_client", return_value=mock_client)
-    mocker.patch("agent_on_demand.session_service.threading.Thread")
-    return mock_client, mock_sprite
-
-
 def _make_env(user, *, networking_type="unrestricted", allowed_hosts=None):
     networking_config = {"allowed_hosts": allowed_hosts} if allowed_hosts is not None else {}
     env = Environment.objects.create(
@@ -99,9 +83,8 @@ def _make_env(user, *, networking_type="unrestricted", allowed_hosts=None):
 
 class TestSessionNetworkingIntegration:
     def test_limited_networking_applies_policy_to_sprite(
-        self, client: Client, auth_headers, runtime_key, user, agent, mock_sprites
+        self, client: Client, auth_headers, runtime_key, user, agent, fake_sprites
     ):
-        _, mock_sprite = mock_sprites
         env = _make_env(
             user, networking_type="limited", allowed_hosts=["api.anthropic.com", "*.github.com"]
         )
@@ -120,8 +103,9 @@ class TestSessionNetworkingIntegration:
         )
         assert resp.status_code == 202
 
-        assert mock_sprite.update_network_policy.call_count == 1
-        policy = mock_sprite.update_network_policy.call_args[0][0]
+        sprite = fake_sprites.last_sprite()
+        assert len(sprite.policies) == 1
+        policy = sprite.policies[0]
         assert isinstance(policy, NetworkPolicy)
         assert policy.rules == [
             PolicyRule(domain="api.anthropic.com", action="allow"),
@@ -130,9 +114,8 @@ class TestSessionNetworkingIntegration:
         ]
 
     def test_unrestricted_networking_skips_policy_call(
-        self, client: Client, auth_headers, runtime_key, user, agent, mock_sprites
+        self, client: Client, auth_headers, runtime_key, user, agent, fake_sprites
     ):
-        _, mock_sprite = mock_sprites
         env = _make_env(user, networking_type="unrestricted")
 
         resp = client.post(
@@ -148,13 +131,11 @@ class TestSessionNetworkingIntegration:
             **auth_headers,
         )
         assert resp.status_code == 202
-        assert mock_sprite.update_network_policy.call_count == 0
+        assert fake_sprites.last_sprite().policies == []
 
     def test_session_without_environment_skips_policy_call(
-        self, client: Client, auth_headers, runtime_key, agent, mock_sprites
+        self, client: Client, auth_headers, runtime_key, agent, fake_sprites
     ):
-        _, mock_sprite = mock_sprites
-
         resp = client.post(
             "/sessions",
             data=json.dumps({"agent_id": str(agent.id), "prompt": "hello"}),
@@ -162,14 +143,24 @@ class TestSessionNetworkingIntegration:
             **auth_headers,
         )
         assert resp.status_code == 202
-        assert mock_sprite.update_network_policy.call_count == 0
+        assert fake_sprites.last_sprite().policies == []
 
     def test_policy_apply_failure_cleans_up_sprite(
-        self, client: Client, auth_headers, runtime_key, user, agent, mock_sprites
+        self, client: Client, auth_headers, runtime_key, user, agent, fake_sprites, mocker
     ):
-        mock_client, mock_sprite = mock_sprites
-        mock_sprite.update_network_policy.side_effect = SpriteError("policy rejected")
+        """update_network_policy failing mid-provision tears the Sprite back down."""
         env = _make_env(user, networking_type="limited", allowed_hosts=["api.anthropic.com"])
+
+        # Arrange: the next Sprite created by the service will raise on
+        # update_network_policy. We do this by wrapping create_sprite.
+        original_create = fake_sprites.create_sprite
+
+        def wrapped(name):
+            sprite = original_create(name)
+            sprite.raise_on("update_network_policy", SpriteError("policy rejected"))
+            return sprite
+
+        mocker.patch.object(fake_sprites, "create_sprite", side_effect=wrapped)
 
         resp = client.post(
             "/sessions",
@@ -185,12 +176,11 @@ class TestSessionNetworkingIntegration:
         )
         assert resp.status_code == 502
         assert "Failed to prepare Sprite" in resp.json()["detail"]
-        assert mock_client.delete_sprite.called
+        assert fake_sprites.deleted  # cleanup ran
 
     def test_limited_with_empty_allowed_hosts_denies_all(
-        self, client: Client, auth_headers, runtime_key, user, agent, mock_sprites
+        self, client: Client, auth_headers, runtime_key, user, agent, fake_sprites
     ):
-        _, mock_sprite = mock_sprites
         env = _make_env(user, networking_type="limited", allowed_hosts=[])
 
         resp = client.post(
@@ -207,6 +197,6 @@ class TestSessionNetworkingIntegration:
         )
         assert resp.status_code == 202
 
-        assert mock_sprite.update_network_policy.call_count == 1
-        policy = mock_sprite.update_network_policy.call_args[0][0]
-        assert policy.rules == [PolicyRule(domain="*", action="deny")]
+        sprite = fake_sprites.last_sprite()
+        assert len(sprite.policies) == 1
+        assert sprite.policies[0].rules == [PolicyRule(domain="*", action="deny")]

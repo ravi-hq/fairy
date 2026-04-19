@@ -15,8 +15,6 @@ from agent_on_demand.models import (
     UserRuntimeKey,
     UserSpritesKey,
 )
-from agent_on_demand.runtimes import RUNTIMES
-from agent_on_demand.sprites_exec import EnvironmentSetup, build_wrapper_script
 
 
 # --- Fixtures ---
@@ -90,128 +88,225 @@ def agent(user):
     )
 
 
-@pytest.fixture
-def mock_sprites(mocker):
-    """Mock the Sprites client so create_session doesn't hit a real API."""
-    mock_sprite = mocker.MagicMock()
-    mock_fs = mocker.MagicMock()
-    mock_sprite.filesystem.return_value = mock_fs
-    mock_fs.__truediv__ = mocker.Mock(return_value=mock_fs)
-    mock_fs.write_text = mocker.Mock()
-    mock_sprite.command.return_value.run = mocker.Mock()
-
-    mock_client = mocker.MagicMock()
-    mock_client.create_sprite.return_value = mock_sprite
-    mocker.patch("agent_on_demand.session_service.get_client", return_value=mock_client)
-    mocker.patch("agent_on_demand.session_service.threading.Thread")
-    return mock_sprite, mock_fs
+# --- Provisioning stage tests (via recording fake) ---
 
 
-# --- Wrapper script tests ---
+def _index_of(cmds: list[str], needle: str) -> int:
+    for i, c in enumerate(cmds):
+        if needle in c:
+            return i
+    raise AssertionError(f"{needle!r} not found in commands: {cmds}")
 
 
-class TestWrapperScriptWithEnvironment:
-    def test_packages_in_correct_order(self):
-        config = RUNTIMES["claude"]
-        env = EnvironmentSetup(
+@pytest.mark.django_db
+class TestProvisioningStages:
+    def test_packages_install_in_canonical_order(
+        self, client: Client, auth_headers, runtime_key, user, agent, fake_sprites
+    ):
+        env = Environment.objects.create(
+            user=user,
+            name="multi-pkg",
             packages={"pip": ["pandas"], "apt": ["ffmpeg"], "npm": ["express"]},
-            env_vars={},
-            setup_script="",
+            version=1,
         )
-        script = build_wrapper_script(config, "sk-test", environment=env)
-        apt_pos = script.index("apt-get")
-        npm_pos = script.index("npm install")
-        pip_pos = script.index("pip install")
-        assert apt_pos < npm_pos < pip_pos
+        resp = client.post(
+            "/sessions",
+            data=json.dumps(
+                {
+                    "agent_id": str(agent.id),
+                    "prompt": "hi",
+                    "environment_id": str(env.id),
+                }
+            ),
+            content_type="application/json",
+            **auth_headers,
+        )
+        assert resp.status_code == 202
+        cmds = fake_sprites.last_sprite().command_strings()
+        # Order: apt → npm → pip (alphabetical across PACKAGE_MANAGER_ORDER)
+        apt_i = _index_of(cmds, "apt-get install")
+        npm_i = _index_of(cmds, "npm install --global")
+        pip_i = _index_of(cmds, "pip install")
+        assert apt_i < npm_i < pip_i
 
-    def test_env_vars_exported(self):
-        config = RUNTIMES["claude"]
-        env = EnvironmentSetup(
-            packages={},
+    def test_env_vars_written_to_env_file(
+        self, client: Client, auth_headers, runtime_key, user, agent, fake_sprites
+    ):
+        env = Environment.objects.create(
+            user=user,
+            name="vars",
             env_vars={"DATABASE_URL": "postgres://localhost/db", "DEBUG": "1"},
-            setup_script="",
+            version=1,
         )
-        script = build_wrapper_script(config, "sk-test", environment=env)
-        assert "export DATABASE_URL=" in script
-        assert "export DEBUG=" in script
+        resp = client.post(
+            "/sessions",
+            data=json.dumps(
+                {
+                    "agent_id": str(agent.id),
+                    "prompt": "hi",
+                    "environment_id": str(env.id),
+                }
+            ),
+            content_type="application/json",
+            **auth_headers,
+        )
+        assert resp.status_code == 202
+        env_file = fake_sprites.last_sprite().write_map()["/tmp/aod-env"]
+        # API key is first, then alphabetical env vars
+        assert "ANTHROPIC_API_KEY=" in env_file
+        assert "DATABASE_URL=" in env_file
+        assert "DEBUG=" in env_file
 
-    def test_setup_script_present(self):
-        config = RUNTIMES["claude"]
-        env = EnvironmentSetup(
-            packages={},
-            env_vars={},
+    def test_env_file_chmod_600(
+        self, client: Client, auth_headers, runtime_key, user, agent, fake_sprites
+    ):
+        resp = client.post(
+            "/sessions",
+            data=json.dumps({"agent_id": str(agent.id), "prompt": "hi"}),
+            content_type="application/json",
+            **auth_headers,
+        )
+        assert resp.status_code == 202
+        cmds = fake_sprites.last_sprite().command_strings()
+        assert "chmod 600 /tmp/aod-env" in cmds
+
+    def test_user_setup_script_runs_once(
+        self, client: Client, auth_headers, runtime_key, user, agent, fake_sprites
+    ):
+        env = Environment.objects.create(
+            user=user,
+            name="setup",
             setup_script="createdb myapp\necho done",
+            version=1,
         )
-        script = build_wrapper_script(config, "sk-test", environment=env)
-        assert "createdb myapp" in script
-        assert "echo done" in script
+        resp = client.post(
+            "/sessions",
+            data=json.dumps(
+                {
+                    "agent_id": str(agent.id),
+                    "prompt": "hi",
+                    "environment_id": str(env.id),
+                }
+            ),
+            content_type="application/json",
+            **auth_headers,
+        )
+        assert resp.status_code == 202
+        cmds = fake_sprites.last_sprite().command_strings()
+        setup_cmds = [c for c in cmds if "createdb myapp" in c]
+        assert len(setup_cmds) == 1
 
-    def test_section_order(self):
-        """env vars → packages → clone → setup script → exec."""
-        config = RUNTIMES["claude"]
-        from agent_on_demand.sprites_exec import RepoSpec
-
-        env = EnvironmentSetup(
+    def test_stage_order_env_then_packages_then_clone_then_setup(
+        self, client: Client, auth_headers, runtime_key, user, agent, fake_sprites
+    ):
+        env = Environment.objects.create(
+            user=user,
+            name="full",
             packages={"pip": ["pandas"]},
             env_vars={"KEY": "val"},
             setup_script="echo setup",
+            version=1,
         )
-        repo = RepoSpec(url="https://github.com/org/repo", mount_path="/workspace/repo")
-        script = build_wrapper_script(config, "sk-test", repos=[repo], environment=env)
-        env_pos = script.index("export KEY=")
-        pkg_pos = script.index("pip install")
-        clone_pos = script.index("git clone")
-        setup_pos = script.index("echo setup")
-        exec_pos = script.index("exec ")
-        assert env_pos < pkg_pos < clone_pos < setup_pos < exec_pos
+        resp = client.post(
+            "/sessions",
+            data=json.dumps(
+                {
+                    "agent_id": str(agent.id),
+                    "prompt": "hi",
+                    "environment_id": str(env.id),
+                    "resources": [
+                        {"type": "github_repository", "url": "https://github.com/org/repo"}
+                    ],
+                }
+            ),
+            content_type="application/json",
+            **auth_headers,
+        )
+        assert resp.status_code == 202
+        cmds = fake_sprites.last_sprite().command_strings()
+        chmod_env_i = _index_of(cmds, "chmod 600 /tmp/aod-env")
+        pip_i = _index_of(cmds, "pip install")
+        clone_i = _index_of(cmds, "git clone")
+        setup_i = _index_of(cmds, "echo setup")
+        assert chmod_env_i < pip_i < clone_i < setup_i
 
-    def test_no_environment_backward_compat(self):
-        config = RUNTIMES["claude"]
-        script = build_wrapper_script(config, "sk-test")
-        assert "pip install" not in script
-        assert "apt-get" not in script
-        assert "# Custom setup" not in script
+    def test_empty_environment_no_package_commands(
+        self, client: Client, auth_headers, runtime_key, user, agent, fake_sprites
+    ):
+        env = Environment.objects.create(
+            user=user, name="empty", packages={}, env_vars={}, setup_script="", version=1
+        )
+        resp = client.post(
+            "/sessions",
+            data=json.dumps(
+                {
+                    "agent_id": str(agent.id),
+                    "prompt": "hi",
+                    "environment_id": str(env.id),
+                }
+            ),
+            content_type="application/json",
+            **auth_headers,
+        )
+        assert resp.status_code == 202
+        cmds = fake_sprites.last_sprite().command_strings()
+        assert not any("pip install" in c for c in cmds)
+        assert not any("apt-get install" in c for c in cmds)
 
-    def test_empty_environment(self):
-        config = RUNTIMES["claude"]
-        env = EnvironmentSetup(packages={}, env_vars={}, setup_script="")
-        script = build_wrapper_script(config, "sk-test", environment=env)
-        assert "pip install" not in script
-        assert "# Custom setup" not in script
-
-    def test_cargo_packages(self):
-        config = RUNTIMES["claude"]
-        env = EnvironmentSetup(
+    def test_cargo_packages_each_get_own_command(
+        self, client: Client, auth_headers, runtime_key, user, agent, fake_sprites
+    ):
+        env = Environment.objects.create(
+            user=user,
+            name="cargo",
             packages={"cargo": ["ripgrep@14.0.0", "fd-find"]},
-            env_vars={},
-            setup_script="",
+            version=1,
         )
-        script = build_wrapper_script(config, "sk-test", environment=env)
-        assert "cargo install" in script
-        assert script.count("cargo install") == 2
-
-    def test_gem_packages(self):
-        config = RUNTIMES["claude"]
-        env = EnvironmentSetup(
-            packages={"gem": ["rails", "bundler"]},
-            env_vars={},
-            setup_script="",
+        resp = client.post(
+            "/sessions",
+            data=json.dumps(
+                {
+                    "agent_id": str(agent.id),
+                    "prompt": "hi",
+                    "environment_id": str(env.id),
+                }
+            ),
+            content_type="application/json",
+            **auth_headers,
         )
-        script = build_wrapper_script(config, "sk-test", environment=env)
-        assert "gem install rails bundler" in script
+        assert resp.status_code == 202
+        cmds = fake_sprites.last_sprite().command_strings()
+        cargo_cmds = [c for c in cmds if "cargo install" in c]
+        assert len(cargo_cmds) == 2
 
-    def test_go_packages(self):
-        config = RUNTIMES["claude"]
-        env = EnvironmentSetup(
-            packages={"go": ["golang.org/x/tools/cmd/goimports@latest"]},
-            env_vars={},
-            setup_script="",
+    def test_gem_and_go_packages(
+        self, client: Client, auth_headers, runtime_key, user, agent, fake_sprites
+    ):
+        env = Environment.objects.create(
+            user=user,
+            name="misc",
+            packages={"gem": ["rails"], "go": ["golang.org/x/tools/cmd/goimports@latest"]},
+            version=1,
         )
-        script = build_wrapper_script(config, "sk-test", environment=env)
-        assert "go install" in script
+        resp = client.post(
+            "/sessions",
+            data=json.dumps(
+                {
+                    "agent_id": str(agent.id),
+                    "prompt": "hi",
+                    "environment_id": str(env.id),
+                }
+            ),
+            content_type="application/json",
+            **auth_headers,
+        )
+        assert resp.status_code == 202
+        cmds = fake_sprites.last_sprite().command_strings()
+        assert any("gem install rails" in c for c in cmds)
+        assert any("go install" in c for c in cmds)
 
 
-# --- Environment CRUD tests ---
+# --- Environment CRUD tests (HTTP layer, unchanged) ---
 
 
 @pytest.mark.django_db
@@ -240,10 +335,8 @@ class TestCreateEnvironment:
         assert data["version"] == 1
         assert data["type"] == "environment"
         assert data["archived_at"] is None
-        # env_vars must NOT be in response
         assert "env_vars" not in data
 
-        # Version record was created
         assert EnvironmentVersion.objects.filter(environment_id=data["id"], version=1).exists()
 
     def test_create_minimal(self, client: Client, auth_headers):
@@ -497,7 +590,6 @@ class TestEnvironmentLifecycle:
 @pytest.mark.django_db
 class TestEnvironmentVersions:
     def test_list_versions(self, client: Client, auth_headers, environment):
-        # Update to create version 2
         environment.packages = {"pip": ["requests"]}
         environment.version = 2
         environment.save()
@@ -526,9 +618,8 @@ class TestEnvironmentVersions:
 @pytest.mark.django_db
 class TestSessionEnvironmentIntegration:
     def test_create_session_with_environment(
-        self, client: Client, auth_headers, runtime_key, environment, agent, mock_sprites
+        self, client: Client, auth_headers, runtime_key, environment, agent, fake_sprites
     ):
-        _, mock_fs = mock_sprites
         resp = client.post(
             "/sessions",
             data=json.dumps(
@@ -544,16 +635,15 @@ class TestSessionEnvironmentIntegration:
         assert resp.status_code == 202
         data = resp.json()
         assert data["environment_id"] == str(environment.id)
-
-        # Verify wrapper script includes environment setup
-        written_script = mock_fs.write_text.call_args_list[0][0][0]
-        assert "apt-get" in written_script
-        assert "pip install" in written_script
-        assert "DATABASE_URL" in written_script
-        assert "echo 'ready'" in written_script
+        sprite = fake_sprites.last_sprite()
+        cmds = sprite.command_strings()
+        assert any("apt-get install" in c for c in cmds)
+        assert any("pip install" in c for c in cmds)
+        assert any("echo 'ready'" in c for c in cmds)
+        assert "DATABASE_URL=" in sprite.write_map()["/tmp/aod-env"]
 
     def test_create_session_inherits_agent_environment(
-        self, client: Client, auth_headers, runtime_key, environment, user, mock_sprites
+        self, client: Client, auth_headers, runtime_key, environment, user, fake_sprites
     ):
         agent = Agent.objects.create(
             user=user,
@@ -563,7 +653,6 @@ class TestSessionEnvironmentIntegration:
             environment=environment,
             version=1,
         )
-        _, mock_fs = mock_sprites
         resp = client.post(
             "/sessions",
             data=json.dumps({"agent_id": str(agent.id), "prompt": "hello"}),
@@ -573,12 +662,11 @@ class TestSessionEnvironmentIntegration:
         assert resp.status_code == 202
         data = resp.json()
         assert data["environment_id"] == str(environment.id)
-
-        written_script = mock_fs.write_text.call_args_list[0][0][0]
-        assert "pip install" in written_script
+        cmds = fake_sprites.last_sprite().command_strings()
+        assert any("pip install" in c for c in cmds)
 
     def test_explicit_environment_overrides_agent(
-        self, client: Client, auth_headers, runtime_key, environment, user, mock_sprites
+        self, client: Client, auth_headers, runtime_key, environment, user, fake_sprites
     ):
         other_env = Environment.objects.create(
             user=user,
@@ -594,7 +682,6 @@ class TestSessionEnvironmentIntegration:
             environment=environment,
             version=1,
         )
-        _, mock_fs = mock_sprites
         resp = client.post(
             "/sessions",
             data=json.dumps(
@@ -610,11 +697,9 @@ class TestSessionEnvironmentIntegration:
         assert resp.status_code == 202
         data = resp.json()
         assert data["environment_id"] == str(other_env.id)
-
-        written_script = mock_fs.write_text.call_args_list[0][0][0]
-        assert "npm install" in written_script
-        # Should NOT have the original environment's pip packages
-        assert "pandas" not in written_script
+        cmds = fake_sprites.last_sprite().command_strings()
+        assert any("npm install --global express" in c for c in cmds)
+        assert not any("pandas" in c for c in cmds)
 
     def test_create_session_with_archived_environment_rejected(
         self, client: Client, auth_headers, runtime_key, environment, agent
@@ -673,7 +758,7 @@ class TestSessionEnvironmentIntegration:
         assert resp.json()["environment_id"] == str(environment.id)
 
     def test_session_without_environment(
-        self, client: Client, auth_headers, runtime_key, agent, mock_sprites
+        self, client: Client, auth_headers, runtime_key, agent, fake_sprites
     ):
         resp = client.post(
             "/sessions",

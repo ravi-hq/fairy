@@ -5,8 +5,6 @@ from django.contrib.auth.models import User
 from django.test import Client
 
 from agent_on_demand.models import Agent, AgentVersion, APIKey, UserRuntimeKey, UserSpritesKey
-from agent_on_demand.runtimes import RUNTIMES
-from agent_on_demand.sprites_exec import McpServerSpec, build_wrapper_script
 
 
 # --- Fixtures ---
@@ -45,132 +43,268 @@ def runtime_key(user, sprites_key):
     return urk
 
 
-@pytest.fixture
-def mock_sprites(mocker):
-    mock_sprite = mocker.MagicMock()
-    mock_fs = mocker.MagicMock()
-    mock_sprite.filesystem.return_value = mock_fs
-    mock_fs.__truediv__ = mocker.Mock(return_value=mock_fs)
-    mock_fs.write_text = mocker.Mock()
-    mock_sprite.command.return_value.run = mocker.Mock()
-    mock_client = mocker.MagicMock()
-    mock_client.create_sprite.return_value = mock_sprite
-    mocker.patch("agent_on_demand.session_service.get_client", return_value=mock_client)
-    mocker.patch("agent_on_demand.session_service.threading.Thread")
-    return mock_sprite, mock_fs
+# --- Session + MCP integration (via recording fake) ---
 
 
-# --- Wrapper script MCP tests ---
+def _mcp_json(sprite) -> dict:
+    return json.loads(sprite.write_map()["/home/sprite/.claude.json"])
 
 
-class TestWrapperScriptMcp:
-    def test_claude_mcp_config(self):
-        config = RUNTIMES["claude"]
-        servers = [
-            McpServerSpec(name="github", type="url", url="https://mcp.github.com/mcp"),
-        ]
-        script = build_wrapper_script(config, "sk-test", mcp_servers=servers)
-        assert "/tmp/mcp.json" in script
-        assert '"mcpServers"' in script
-        assert '"github"' in script
-        assert "https://mcp.github.com/mcp" in script
-        assert "--mcp-config /tmp/mcp.json" in script
-        assert "--strict-mcp-config" in script
+@pytest.mark.django_db
+class TestSessionMcpIntegration:
+    def test_claude_mcp_url_server_writes_json(
+        self, client: Client, auth_headers, runtime_key, user, fake_sprites
+    ):
+        agent = Agent.objects.create(
+            user=user,
+            name="MCP Agent",
+            model="claude-sonnet-4-6",
+            runtime="claude",
+            version=1,
+            mcp_servers=[
+                {"type": "url", "name": "github", "url": "https://mcp.github.com/mcp"},
+            ],
+        )
+        resp = client.post(
+            "/sessions",
+            data=json.dumps({"agent_id": str(agent.id), "prompt": "hello"}),
+            content_type="application/json",
+            **auth_headers,
+        )
+        assert resp.status_code == 202
+        sprite = fake_sprites.last_sprite()
+        cfg = _mcp_json(sprite)
+        assert cfg == {
+            "mcpServers": {"github": {"type": "http", "url": "https://mcp.github.com/mcp"}}
+        }
 
-    def test_claude_mcp_with_headers(self):
-        config = RUNTIMES["claude"]
-        servers = [
-            McpServerSpec(
-                name="private",
-                type="url",
-                url="https://mcp.example.com/mcp",
-                headers={"Authorization": "Bearer ${TOKEN}"},
-            ),
-        ]
-        script = build_wrapper_script(config, "sk-test", mcp_servers=servers)
-        assert "Authorization" in script
-        assert "Bearer ${TOKEN}" in script
+    def test_claude_mcp_with_headers(
+        self, client: Client, auth_headers, runtime_key, user, fake_sprites
+    ):
+        agent = Agent.objects.create(
+            user=user,
+            name="Auth Agent",
+            model="claude-sonnet-4-6",
+            runtime="claude",
+            version=1,
+            mcp_servers=[
+                {
+                    "type": "url",
+                    "name": "private",
+                    "url": "https://mcp.example.com/mcp",
+                    "headers": {"Authorization": "Bearer ${SECRET}"},
+                },
+            ],
+        )
+        resp = client.post(
+            "/sessions",
+            data=json.dumps({"agent_id": str(agent.id), "prompt": "hello"}),
+            content_type="application/json",
+            **auth_headers,
+        )
+        assert resp.status_code == 202
+        cfg = _mcp_json(fake_sprites.last_sprite())
+        assert cfg["mcpServers"]["private"]["headers"] == {"Authorization": "Bearer ${SECRET}"}
 
-    def test_claude_stdio_mcp(self):
-        config = RUNTIMES["claude"]
-        servers = [
-            McpServerSpec(
-                name="local",
-                type="stdio",
-                command="npx",
-                args=["-y", "@some/mcp-server"],
-                env={"API_KEY": "val"},
-            ),
-        ]
-        script = build_wrapper_script(config, "sk-test", mcp_servers=servers)
-        assert '"stdio"' in script
-        assert '"npx"' in script
-        assert "@some/mcp-server" in script
+    def test_claude_stdio_mcp(self, client: Client, auth_headers, runtime_key, user, fake_sprites):
+        agent = Agent.objects.create(
+            user=user,
+            name="Local MCP",
+            model="claude-sonnet-4-6",
+            runtime="claude",
+            version=1,
+            mcp_servers=[
+                {
+                    "type": "stdio",
+                    "name": "local",
+                    "command": "npx",
+                    "args": ["-y", "@some/mcp-server"],
+                    "env": {"API_KEY": "val"},
+                },
+            ],
+        )
+        resp = client.post(
+            "/sessions",
+            data=json.dumps({"agent_id": str(agent.id), "prompt": "hello"}),
+            content_type="application/json",
+            **auth_headers,
+        )
+        assert resp.status_code == 202
+        cfg = _mcp_json(fake_sprites.last_sprite())
+        assert cfg["mcpServers"]["local"]["type"] == "stdio"
+        assert cfg["mcpServers"]["local"]["command"] == "npx"
+        assert cfg["mcpServers"]["local"]["args"] == ["-y", "@some/mcp-server"]
 
-    def test_codex_mcp_config(self):
-        config = RUNTIMES["codex"]
-        servers = [
-            McpServerSpec(name="github", type="url", url="https://mcp.github.com/mcp"),
-        ]
-        script = build_wrapper_script(config, "sk-test", mcp_servers=servers)
-        assert "~/.codex/config.toml" in script
-        assert "[mcp_servers.github]" in script
-        assert 'url = "https://mcp.github.com/mcp"' in script
-        # Codex doesn't need extra CLI flags
-        assert "--mcp-config" not in script
+    def test_codex_mcp_writes_toml(
+        self, client: Client, auth_headers, user, sprites_key, fake_sprites
+    ):
+        urk = UserRuntimeKey(user=user, runtime="codex")
+        urk.set_api_key("k")
+        urk.save()
+        agent = Agent.objects.create(
+            user=user,
+            name="Codex Agent",
+            model="gpt-4.1",
+            runtime="codex",
+            version=1,
+            mcp_servers=[
+                {"type": "url", "name": "github", "url": "https://mcp.github.com/mcp"},
+            ],
+        )
+        resp = client.post(
+            "/sessions",
+            data=json.dumps({"agent_id": str(agent.id), "prompt": "hello"}),
+            content_type="application/json",
+            **auth_headers,
+        )
+        assert resp.status_code == 202
+        sprite = fake_sprites.last_sprite()
+        toml = sprite.write_map()["/home/sprite/.codex/config.toml"]
+        assert "[mcp_servers.github]" in toml
+        assert 'url = "https://mcp.github.com/mcp"' in toml
 
-    def test_codex_mcp_bearer_token_env_var(self):
-        config = RUNTIMES["codex"]
-        servers = [
-            McpServerSpec(
-                name="api",
-                type="url",
-                url="https://mcp.example.com/mcp",
-                headers={"Authorization": "Bearer ${MY_TOKEN}"},
-            ),
-        ]
-        script = build_wrapper_script(config, "sk-test", mcp_servers=servers)
-        assert 'bearer_token_env_var = "MY_TOKEN"' in script
+    def test_codex_mcp_bearer_token_env_var(
+        self, client: Client, auth_headers, user, sprites_key, fake_sprites
+    ):
+        urk = UserRuntimeKey(user=user, runtime="codex")
+        urk.set_api_key("k")
+        urk.save()
+        agent = Agent.objects.create(
+            user=user,
+            name="Codex Auth",
+            model="gpt-4.1",
+            runtime="codex",
+            version=1,
+            mcp_servers=[
+                {
+                    "type": "url",
+                    "name": "api",
+                    "url": "https://mcp.example.com/mcp",
+                    "headers": {"Authorization": "Bearer ${MY_TOKEN}"},
+                },
+            ],
+        )
+        resp = client.post(
+            "/sessions",
+            data=json.dumps({"agent_id": str(agent.id), "prompt": "hello"}),
+            content_type="application/json",
+            **auth_headers,
+        )
+        assert resp.status_code == 202
+        toml = fake_sprites.last_sprite().write_map()["/home/sprite/.codex/config.toml"]
+        assert 'bearer_token_env_var = "MY_TOKEN"' in toml
 
-    def test_gemini_mcp_config(self):
-        config = RUNTIMES["gemini"]
-        servers = [
-            McpServerSpec(name="github", type="url", url="https://mcp.github.com/mcp"),
-        ]
-        script = build_wrapper_script(config, "sk-test", mcp_servers=servers)
-        assert "~/.gemini/settings.json" in script
-        assert '"httpUrl"' in script
-        assert "https://mcp.github.com/mcp" in script
-        assert '"trust": true' in script
+    def test_gemini_mcp_writes_settings_json(
+        self, client: Client, auth_headers, user, sprites_key, fake_sprites
+    ):
+        urk = UserRuntimeKey(user=user, runtime="gemini")
+        urk.set_api_key("k")
+        urk.save()
+        agent = Agent.objects.create(
+            user=user,
+            name="Gemini Agent",
+            model="gemini-2.5-pro",
+            runtime="gemini",
+            version=1,
+            mcp_servers=[
+                {"type": "url", "name": "github", "url": "https://mcp.github.com/mcp"},
+            ],
+        )
+        resp = client.post(
+            "/sessions",
+            data=json.dumps({"agent_id": str(agent.id), "prompt": "hello"}),
+            content_type="application/json",
+            **auth_headers,
+        )
+        assert resp.status_code == 202
+        settings = json.loads(
+            fake_sprites.last_sprite().write_map()["/home/sprite/.gemini/settings.json"]
+        )
+        assert settings["mcpServers"]["github"]["httpUrl"] == "https://mcp.github.com/mcp"
+        assert settings["mcpServers"]["github"]["trust"] is True
 
-    def test_no_mcp_backward_compat(self):
-        config = RUNTIMES["claude"]
-        script = build_wrapper_script(config, "sk-test")
-        assert "--mcp-config" not in script
-        assert "mcp.json" not in script
+    def test_agent_without_mcp_writes_no_config(
+        self, client: Client, auth_headers, runtime_key, user, fake_sprites
+    ):
+        agent = Agent.objects.create(
+            user=user,
+            name="Plain Agent",
+            model="claude-sonnet-4-6",
+            runtime="claude",
+            version=1,
+        )
+        resp = client.post(
+            "/sessions",
+            data=json.dumps({"agent_id": str(agent.id), "prompt": "hello"}),
+            content_type="application/json",
+            **auth_headers,
+        )
+        assert resp.status_code == 202
+        writes = fake_sprites.last_sprite().write_map()
+        assert "/home/sprite/.claude.json" not in writes
 
-    def test_multiple_mcp_servers(self):
-        config = RUNTIMES["claude"]
-        servers = [
-            McpServerSpec(name="github", type="url", url="https://mcp.github.com/mcp"),
-            McpServerSpec(name="slack", type="url", url="https://mcp.slack.com/mcp"),
-        ]
-        script = build_wrapper_script(config, "sk-test", mcp_servers=servers)
-        assert '"github"' in script
-        assert '"slack"' in script
+    def test_multiple_mcp_servers(
+        self, client: Client, auth_headers, runtime_key, user, fake_sprites
+    ):
+        agent = Agent.objects.create(
+            user=user,
+            name="Multi MCP",
+            model="claude-sonnet-4-6",
+            runtime="claude",
+            version=1,
+            mcp_servers=[
+                {"type": "url", "name": "github", "url": "https://mcp.github.com/mcp"},
+                {"type": "url", "name": "slack", "url": "https://mcp.slack.com/mcp"},
+            ],
+        )
+        resp = client.post(
+            "/sessions",
+            data=json.dumps({"agent_id": str(agent.id), "prompt": "hello"}),
+            content_type="application/json",
+            **auth_headers,
+        )
+        assert resp.status_code == 202
+        cfg = _mcp_json(fake_sprites.last_sprite())
+        assert set(cfg["mcpServers"].keys()) == {"github", "slack"}
 
-    def test_mcp_section_before_exec(self):
-        config = RUNTIMES["claude"]
-        servers = [
-            McpServerSpec(name="test", type="url", url="https://mcp.example.com/mcp"),
-        ]
-        script = build_wrapper_script(config, "sk-test", mcp_servers=servers)
-        mcp_pos = script.index("MCP_EOF")
-        exec_pos = script.index("exec ")
-        assert mcp_pos < exec_pos
+    def test_continue_session_touches_no_filesystem(
+        self, client: Client, auth_headers, runtime_key, user, fake_sprites
+    ):
+        """Follow-up /prompt is fire-and-forget: no filesystem writes on the
+        Sprite. The prompt streams over stdin when the background thread runs
+        the dispatcher in `continue` mode."""
+        from agent_on_demand.models import AgentSession
+
+        agent = Agent.objects.create(
+            user=user,
+            name="MCP Agent",
+            model="claude-sonnet-4-6",
+            runtime="claude",
+            version=1,
+            mcp_servers=[
+                {"type": "url", "name": "github", "url": "https://mcp.github.com/mcp"},
+            ],
+        )
+        session = AgentSession.objects.create(
+            user=user,
+            agent=agent,
+            runtime="claude",
+            prompt="first",
+            sprite_name="sprite-xyz",
+            status="completed",
+        )
+        resp = client.post(
+            f"/sessions/{session.id}/prompt",
+            data=json.dumps({"prompt": "follow-up"}),
+            content_type="application/json",
+            **auth_headers,
+        )
+        assert resp.status_code == 202
+        sprite = fake_sprites.sprites["sprite-xyz"]
+        assert sprite.writes == []
 
 
-# --- Agent CRUD with mcp_servers ---
+# --- Agent CRUD with mcp_servers (HTTP layer only, unchanged) ---
 
 
 @pytest.mark.django_db
@@ -220,7 +354,6 @@ class TestCreateAgentWithMcp:
         assert "tools" not in data
 
     def test_tools_field_ignored_on_create(self, client: Client, auth_headers):
-        """`tools` is no longer accepted — Pydantic silently drops unknown fields."""
         resp = client.post(
             "/agents",
             data=json.dumps(
@@ -416,189 +549,3 @@ class TestUpdateAgentMcp:
         assert len(versions) == 2
         assert versions[0]["mcp_servers"] == [{"name": "s1", "url": "https://a.com/mcp"}]
         assert versions[1]["mcp_servers"] == []
-
-
-# --- Session + MCP integration ---
-
-
-@pytest.mark.django_db
-class TestSessionMcpIntegration:
-    def test_session_with_agent_mcp_servers(
-        self, client: Client, auth_headers, runtime_key, user, mock_sprites
-    ):
-        agent = Agent.objects.create(
-            user=user,
-            name="MCP Agent",
-            model="claude-sonnet-4-6",
-            runtime="claude",
-            version=1,
-            mcp_servers=[
-                {"type": "url", "name": "github", "url": "https://mcp.github.com/mcp"},
-            ],
-        )
-        _, mock_fs = mock_sprites
-        resp = client.post(
-            "/sessions",
-            data=json.dumps({"agent_id": str(agent.id), "prompt": "hello"}),
-            content_type="application/json",
-            **auth_headers,
-        )
-        assert resp.status_code == 202
-
-        written_script = mock_fs.write_text.call_args_list[0][0][0]
-        assert "--mcp-config" in written_script
-        assert "github" in written_script
-        assert "mcp.github.com" in written_script
-
-    def test_session_agent_without_mcp_no_config(
-        self, client: Client, auth_headers, runtime_key, user, mock_sprites
-    ):
-        agent = Agent.objects.create(
-            user=user,
-            name="Plain Agent",
-            model="claude-sonnet-4-6",
-            runtime="claude",
-            version=1,
-        )
-        _, mock_fs = mock_sprites
-        resp = client.post(
-            "/sessions",
-            data=json.dumps({"agent_id": str(agent.id), "prompt": "hello"}),
-            content_type="application/json",
-            **auth_headers,
-        )
-        assert resp.status_code == 202
-
-        written_script = mock_fs.write_text.call_args_list[0][0][0]
-        assert "--mcp-config" not in written_script
-
-    def test_session_mcp_with_headers_in_config(
-        self, client: Client, auth_headers, runtime_key, user, mock_sprites
-    ):
-        agent = Agent.objects.create(
-            user=user,
-            name="Auth Agent",
-            model="claude-sonnet-4-6",
-            runtime="claude",
-            version=1,
-            mcp_servers=[
-                {
-                    "type": "url",
-                    "name": "private",
-                    "url": "https://mcp.example.com/mcp",
-                    "headers": {"Authorization": "Bearer ${SECRET}"},
-                },
-            ],
-        )
-        _, mock_fs = mock_sprites
-        resp = client.post(
-            "/sessions",
-            data=json.dumps({"agent_id": str(agent.id), "prompt": "hello"}),
-            content_type="application/json",
-            **auth_headers,
-        )
-        assert resp.status_code == 202
-
-        written_script = mock_fs.write_text.call_args_list[0][0][0]
-        assert "Authorization" in written_script
-        assert "Bearer ${SECRET}" in written_script
-
-    def test_continue_session_only_writes_prompt_file(
-        self, client: Client, auth_headers, runtime_key, user, mocker, mock_sprites
-    ):
-        """Follow-up /prompt is a minimal operation: it updates the prompt
-        file on the Sprite and invokes the existing wrapper script in
-        `continue` mode. The script itself, baked at session-create time,
-        already carries MCP config, env_vars, and skills — rebuilding would
-        let mid-session agent edits leak into a running session.
-        """
-        from agent_on_demand.models import AgentSession
-
-        agent = Agent.objects.create(
-            user=user,
-            name="MCP Agent",
-            model="claude-sonnet-4-6",
-            runtime="claude",
-            version=1,
-            mcp_servers=[
-                {"type": "url", "name": "github", "url": "https://mcp.github.com/mcp"},
-            ],
-        )
-        session = AgentSession.objects.create(
-            user=user,
-            agent=agent,
-            runtime="claude",
-            prompt="first",
-            sprite_name="sprite-xyz",
-            status="completed",
-        )
-        mock_sprite, mock_fs = mock_sprites
-        mocker.patch(
-            "agent_on_demand.session_service.get_client",
-            return_value=mocker.MagicMock(get_sprite=mocker.Mock(return_value=mock_sprite)),
-        )
-        resp = client.post(
-            f"/sessions/{session.id}/prompt",
-            data=json.dumps({"prompt": "follow-up"}),
-            content_type="application/json",
-            **auth_headers,
-        )
-        assert resp.status_code == 202
-
-        # Only one filesystem write per prompt: the prompt file.
-        assert mock_fs.write_text.call_count == 1
-        written = mock_fs.write_text.call_args_list[0][0][0]
-        assert written == "follow-up"
-
-    def test_continue_session_config_snapshotted_at_create_time(
-        self, client: Client, auth_headers, runtime_key, user, mocker, mock_sprites
-    ):
-        """Editing agent.mcp_servers after session creation must NOT affect an
-        in-flight multi-turn session. The script is immutable post-create."""
-        from agent_on_demand.models import AgentSession
-
-        agent = Agent.objects.create(
-            user=user,
-            name="MCP Agent",
-            model="claude-sonnet-4-6",
-            runtime="claude",
-            version=1,
-            mcp_servers=[
-                {"type": "url", "name": "original", "url": "https://mcp.original.com/mcp"},
-            ],
-        )
-        session = AgentSession.objects.create(
-            user=user,
-            agent=agent,
-            runtime="claude",
-            prompt="first",
-            sprite_name="sprite-xyz",
-            status="completed",
-        )
-        # Mid-session agent update: should NOT propagate to the running session.
-        agent.mcp_servers = [
-            {"type": "url", "name": "changed", "url": "https://mcp.changed.com/mcp"},
-        ]
-        agent.version += 1
-        agent.save()
-
-        mock_sprite, mock_fs = mock_sprites
-        mocker.patch(
-            "agent_on_demand.session_service.get_client",
-            return_value=mocker.MagicMock(get_sprite=mocker.Mock(return_value=mock_sprite)),
-        )
-        resp = client.post(
-            f"/sessions/{session.id}/prompt",
-            data=json.dumps({"prompt": "follow-up"}),
-            content_type="application/json",
-            **auth_headers,
-        )
-        assert resp.status_code == 202
-
-        # /prompt writes ONLY the prompt file — no new script is emitted with
-        # the updated MCP config.
-        assert mock_fs.write_text.call_count == 1
-        written = mock_fs.write_text.call_args_list[0][0][0]
-        assert written == "follow-up"
-        assert "mcp.changed.com" not in written
-        assert "mcp.original.com" not in written

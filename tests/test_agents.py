@@ -357,18 +357,16 @@ def test_list_versions(client: Client, auth_headers, agent):
 
 
 @pytest.mark.django_db
-def test_create_session_with_agent(client: Client, auth_headers, agent, runtime_key, mocker):
-    mock_sprite = mocker.MagicMock()
-    mock_fs = mocker.MagicMock()
-    mock_sprite.filesystem.return_value = mock_fs
-    mock_fs.__truediv__ = mocker.Mock(return_value=mock_fs)
-    mock_fs.write_text = mocker.Mock()
-    mock_sprite.command.return_value.run = mocker.Mock()
+def test_create_session_with_agent(
+    client: Client, auth_headers, agent, runtime_key, fake_sprites, mocker
+):
+    captured = {}
 
-    mock_client = mocker.MagicMock()
-    mock_client.create_sprite.return_value = mock_sprite
-    mocker.patch("agent_on_demand.session_service.get_client", return_value=mock_client)
-    mocker.patch("agent_on_demand.session_service.threading.Thread")
+    def fake_thread(target, args, daemon):
+        captured["args"] = args
+        return mocker.MagicMock()
+
+    mocker.patch("agent_on_demand.session_service.turn.threading.Thread", side_effect=fake_thread)
 
     resp = client.post(
         "/sessions",
@@ -378,29 +376,17 @@ def test_create_session_with_agent(client: Client, auth_headers, agent, runtime_
     )
     assert resp.status_code == 202
 
-    # System prompt is prepended to the user prompt, written to the prompt
-    # file on the Sprite. Call 0 is the script; call 1 is the prompt file.
-    written_prompt = mock_fs.write_text.call_args_list[1][0][0]
-    assert "You are a helpful assistant." in written_prompt
-    assert "Fix the bug" in written_prompt
+    # System prompt is prepended to the user prompt; the combined string is
+    # passed to run_session_background for streaming over stdin.
+    _, _, _, _runtime, effective_prompt, _, _ = captured["args"]
+    assert "You are a helpful assistant." in effective_prompt
+    assert "Fix the bug" in effective_prompt
 
 
 @pytest.mark.django_db
 def test_create_session_with_agent_inherits_runtime(
-    client: Client, auth_headers, agent, runtime_key, mocker
+    client: Client, auth_headers, agent, runtime_key, fake_sprites
 ):
-    mock_sprite = mocker.MagicMock()
-    mock_fs = mocker.MagicMock()
-    mock_sprite.filesystem.return_value = mock_fs
-    mock_fs.__truediv__ = mocker.Mock(return_value=mock_fs)
-    mock_fs.write_text = mocker.Mock()
-    mock_sprite.command.return_value.run = mocker.Mock()
-
-    mock_client = mocker.MagicMock()
-    mock_client.create_sprite.return_value = mock_sprite
-    mocker.patch("agent_on_demand.session_service.get_client", return_value=mock_client)
-    mocker.patch("agent_on_demand.session_service.threading.Thread")
-
     # No runtime specified — should inherit from agent
     resp = client.post(
         "/sessions",
