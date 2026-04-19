@@ -120,6 +120,7 @@ def init_posthog() -> None:
         return
     api_key = os.environ.get("POSTHOG_API_KEY")
     if not api_key:
+        logger.warning("POSTHOG_API_KEY not set — PostHog events disabled")
         return
     import posthog
 
@@ -139,6 +140,11 @@ def init_posthog() -> None:
         return
 
     _posthog_initialized = True
+    logger.warning(
+        "PostHog initialized host=%s key_suffix=…%s",
+        posthog.host,
+        api_key[-4:],
+    )
 
 
 def distinct_id_for_user(user) -> str:
