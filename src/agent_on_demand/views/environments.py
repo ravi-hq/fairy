@@ -1,5 +1,6 @@
 import json
 
+import posthog
 from django.http import JsonResponse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
@@ -9,7 +10,6 @@ from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from agent_on_demand.auth import require_api_key
 from agent_on_demand.models import Environment, EnvironmentVersion
-from agent_on_demand.observability import track
 
 
 def _env_safe_props(env: Environment) -> dict:
@@ -172,7 +172,9 @@ def environments_list_create(request):
         )
         _snapshot_environment_version(env)
 
-        track("environment.created", user=request.user, properties=_env_safe_props(env))
+        with posthog.new_context():
+            posthog.identify_context(str(request.user.id))
+            posthog.capture("environment.created", properties=_env_safe_props(env))
 
         return JsonResponse(_serialize_environment(env), status=201)
 
@@ -246,11 +248,12 @@ def environment_detail(request, environment_id):
             env.version += 1
             env.save()
             _snapshot_environment_version(env)
-            track(
-                "environment.updated",
-                user=request.user,
-                properties={**_env_safe_props(env), "version": env.version},
-            )
+            with posthog.new_context():
+                posthog.identify_context(str(request.user.id))
+                posthog.capture(
+                    "environment.updated",
+                    properties={**_env_safe_props(env), "version": env.version},
+                )
 
         return JsonResponse(_serialize_environment(env))
 
@@ -273,11 +276,12 @@ def environment_archive(request, environment_id):
     env.archived_at = timezone.now()
     env.save(update_fields=["archived_at", "updated_at"])
 
-    track(
-        "environment.archived",
-        user=request.user,
-        properties={"environment_id": str(env.id)},
-    )
+    with posthog.new_context():
+        posthog.identify_context(str(request.user.id))
+        posthog.capture(
+            "environment.archived",
+            properties={"environment_id": str(env.id)},
+        )
 
     return JsonResponse(_serialize_environment(env))
 
@@ -303,7 +307,9 @@ def environment_delete(request, environment_id):
     env_id_str = str(env.id)
     env.delete()
 
-    track("environment.deleted", user=request.user, properties={"environment_id": env_id_str})
+    with posthog.new_context():
+        posthog.identify_context(str(request.user.id))
+        posthog.capture("environment.deleted", properties={"environment_id": env_id_str})
 
     return JsonResponse({"detail": "Environment deleted"}, status=200)
 

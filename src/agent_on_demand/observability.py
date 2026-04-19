@@ -1,30 +1,22 @@
-"""OpenTelemetry → Honeycomb (traces + logs) and PostHog (product events).
+"""OpenTelemetry → Honeycomb (traces + logs).
 
-Both subsystems are no-ops when their API keys are unset, so unit tests and
-local dev without credentials behave identically to today. Honeycomb routes
-each `service.name` into its own dataset by default, so the web service emits
-to one dataset and the worker to another by setting `OTEL_SERVICE_NAME`.
-
-Event-property safety: callers must pass only counts, lengths, IDs, and other
-non-sensitive metadata. Never raw prompt text, env-var values, or repo URLs.
-This module does not enforce that — it's the caller's responsibility.
+No-op when HONEYCOMB_API_KEY is unset, so unit tests and local dev without
+credentials behave identically to today. Honeycomb routes each `service.name`
+into its own dataset by default, so the web service emits to one dataset and
+the worker to another by setting `OTEL_SERVICE_NAME`.
 """
 
 from __future__ import annotations
 
-import hashlib
 import logging
 import os
-from typing import Any
 
 logger = logging.getLogger(__name__)
 
 HONEYCOMB_OTLP_ENDPOINT = "https://api.honeycomb.io"
-DEFAULT_POSTHOG_HOST = "https://us.i.posthog.com"
 TRACER_NAME = "agent_on_demand"
 
 _otel_initialized = False
-_posthog_initialized = False
 
 
 def init_otel(service_name: str | None = None) -> None:
@@ -124,73 +116,3 @@ def get_tracer():
     from opentelemetry import trace
 
     return trace.get_tracer(TRACER_NAME)
-
-
-def init_posthog() -> None:
-    """Configure the PostHog client. Idempotent. No-op if POSTHOG_API_KEY unset."""
-    global _posthog_initialized
-    if _posthog_initialized:
-        return
-    api_key = os.environ.get("POSTHOG_API_KEY")
-    if not api_key:
-        logger.warning("POSTHOG_API_KEY not set — PostHog events disabled")
-        return
-    import posthog
-
-    # `posthog.project_api_key` exists as a module attr in v7 but is unused
-    # by `setup()`, which still reads `posthog.api_key`. Setting the wrong
-    # one makes every `capture()` call raise ValueError at first invocation.
-    posthog.api_key = api_key
-    posthog.host = os.environ.get("POSTHOG_HOST", DEFAULT_POSTHOG_HOST)
-
-    # Build the singleton client now, not lazily on first capture, so a bad
-    # config (missing/invalid key, bad host) fails at process boot instead
-    # of silently dropping the first N events.
-    try:
-        posthog.setup()
-    except Exception:
-        logger.exception("posthog.setup() failed — events will not be captured")
-        return
-
-    _posthog_initialized = True
-    logger.warning(
-        "PostHog initialized host=%s key_suffix=…%s",
-        posthog.host,
-        api_key[-4:],
-    )
-
-
-def distinct_id_for_user(user) -> str:
-    """Stable per-user identifier. Hashes user.id so PostHog never sees the
-    raw db PK."""
-    return hashlib.sha256(f"aod-user:{user.id}".encode()).hexdigest()[:32]
-
-
-def track(
-    event: str,
-    user=None,
-    properties: dict[str, Any] | None = None,
-) -> None:
-    """Capture a product-analytics event. No-op when PostHog isn't configured.
-
-    Properties MUST contain only non-sensitive metadata (counts, lengths, IDs,
-    runtime, model, status). Callers are responsible — see module docstring.
-    """
-    logger.warning("track called for event=%s", event) 
-    if not _posthog_initialized:
-        logger.warning("PostHog not initialized — dropping event=%s", event)
-        return
-    import posthog
-    logger.warning("posthog should get this event event=%s", event) 
-
-    distinct = distinct_id_for_user(user) if user is not None else "aod-system"
-    logger.warning("posthog.capture should get this event event=%s distinct_id=%s properties=%s", event, distinct, properties)
-    try:
-        # posthog-python 7.x: capture(event, **kwargs) — distinct_id is a kwarg.
-        # The old `capture(distinct, event, props)` positional form raises
-        # TypeError because **kwargs doesn't accept positional args.
-        posthog.capture(event, distinct_id=distinct, properties=properties or {})
-    except Exception:
-        # Surface at error so a bad signature/config is visible in logs;
-        # we still swallow so a PostHog outage doesn't take the API down.
-        logger.exception("posthog.capture failed for event=%s", event)
