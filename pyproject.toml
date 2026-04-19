@@ -3,6 +3,8 @@ name = "fairy"
 version = "0.1.0"
 description = "API for running AI coding agents on Sprites"
 requires-python = ">=3.11"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 dependencies = [
     "django>=5.1",
     "django-cors-headers>=4.0",

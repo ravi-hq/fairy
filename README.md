@@ -137,3 +137,7 @@ tests/
   test_*.py        Unit + integration tests (Django test client)
   e2e/             End-to-end tests against a running deployment
 ```
+
+## License
+
+Apache License 2.0. See [LICENSE](LICENSE).
