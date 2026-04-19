@@ -81,6 +81,12 @@ def run_session_background(
             # ExecError.exit_code is a method (not a @property like Sprite.exit_code)
             result_holder.append(("exit", e.exit_code()))
         except Exception as e:
+            # Non-exit errors (network drop, Sprites SDK bugs, etc.) would
+            # otherwise be invisible — surface the traceback so an operator
+            # investigating a "Session failed" event has something to look at.
+            logger.exception(
+                "session %s turn %s background thread raised", session.id, turn.turn_number
+            )
             result_holder.append(("error", str(e)))
         finally:
             output_q.put(_SENTINEL)

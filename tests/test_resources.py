@@ -95,7 +95,10 @@ class TestBuildCloneSection:
         script = build_wrapper_script(config, "sk-test", repos=[repo])
         assert "git clone --depth=1 --quiet" in script
         assert "/workspace/repo" in script
-        assert ".git-credentials" not in script  # no token = no credentials file
+        # no token = no credentials file written (the EXIT trap references the
+        # path unconditionally for cleanup, so check for the write operation)
+        assert "cat > /tmp/.git-credentials" not in script
+        assert "credential.helper 'store" not in script
 
     def test_single_private_repo_with_token(self):
         config = RUNTIMES["claude"]

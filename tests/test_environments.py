@@ -198,7 +198,7 @@ class TestWrapperScriptWithEnvironment:
             setup_script="",
         )
         script = build_wrapper_script(config, "sk-test", environment=env)
-        assert "gem install --silent" in script
+        assert "gem install rails bundler" in script
 
     def test_go_packages(self):
         config = RUNTIMES["claude"]

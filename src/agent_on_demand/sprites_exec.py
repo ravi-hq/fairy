@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import shlex
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from agent_on_demand.runtimes import RuntimeConfig
 
@@ -64,7 +65,13 @@ def _build_env_vars_section(env_vars: dict[str, str]) -> str:
 
 
 def _build_packages_section(packages: dict[str, list[str]]) -> str:
-    """Build package installation commands in alphabetical manager order."""
+    """Build package installation commands in alphabetical manager order.
+
+    Install output is deliberately NOT silenced — when a package install fails
+    with `set -e`, the trailing stderr is the operator's only diagnostic.
+    `apt-get update` keeps `-qq` because its normal output is noise, not signal;
+    errors there still propagate via exit code.
+    """
     if not packages:
         return ""
     lines = ["# Install packages"]
@@ -74,16 +81,16 @@ def _build_packages_section(packages: dict[str, list[str]]) -> str:
             continue
         quoted = " ".join(shlex.quote(p) for p in pkgs)
         if manager == "apt":
-            lines.append(f"apt-get update -qq && apt-get install -y -qq {quoted}")
+            lines.append(f"apt-get update -qq && apt-get install -y {quoted}")
         elif manager == "pip":
-            lines.append(f"pip install --quiet {quoted}")
+            lines.append(f"pip install {quoted}")
         elif manager == "npm":
-            lines.append(f"npm install --global --silent {quoted}")
+            lines.append(f"npm install --global {quoted}")
         elif manager == "cargo":
             for pkg in pkgs:
                 lines.append(f"cargo install {shlex.quote(pkg)}")
         elif manager == "gem":
-            lines.append(f"gem install --silent {quoted}")
+            lines.append(f"gem install {quoted}")
         elif manager == "go":
             for pkg in pkgs:
                 lines.append(f"go install {shlex.quote(pkg)}")
@@ -103,13 +110,12 @@ def _build_clone_section(repos: list[RepoSpec]) -> str:
 
     lines = ["# Clone GitHub repositories"]
 
-    # Set up git credential helper so tokens don't appear in process args
+    # Credentials file is unlinked by the EXIT trap, so we don't repeat the rm here.
     cred_lines: list[str] = []
     for repo in repos:
         if repo.token:
             cred_lines.append(f"https://{repo.token}:x-oauth-basic@github.com")
     if cred_lines:
-        # Write credentials file and configure git to use it
         lines.append("cat > /tmp/.git-credentials << 'CREDENTIALS_EOF'")
         for line in cred_lines:
             lines.append(line)
@@ -120,11 +126,6 @@ def _build_clone_section(repos: list[RepoSpec]) -> str:
         mount = shlex.quote(repo.mount_path)
         url = shlex.quote(repo.url)
         lines.append(f"git clone --depth=1 --quiet {url} {mount}")
-
-    # Clean up credentials after all clones complete
-    if cred_lines:
-        lines.append("rm -f /tmp/.git-credentials")
-        lines.append("git config --global --unset credential.helper")
 
     return "\n".join(lines)
 
@@ -256,13 +257,7 @@ def _build_skills_section(runtime_name: str, skills: list[SkillSpec]) -> str:
 PROMPT_FILE_PATH = "/tmp/aod-prompt.txt"
 INIT_SENTINEL_PATH = "/tmp/aod-initialized"
 
-
-def _indent(block: str, spaces: int = 4) -> str:
-    """Indent every non-empty line of `block` for embedding inside a bash if-block."""
-    if not block:
-        return ""
-    pad = " " * spaces
-    return "\n".join(pad + line if line else line for line in block.splitlines())
+_TEMPLATE_PATH = Path(__file__).parent / "run_agent.sh.tmpl"
 
 
 def build_wrapper_script(
@@ -277,26 +272,38 @@ def build_wrapper_script(
 ) -> str:
     """Build a mode-dispatching shell script for a session.
 
-    The script is written ONCE at session-create time. Invoked as:
+    Contract with ``session_service``:
 
-        bash /run-agent.sh run       # first turn
-        bash /run-agent.sh continue  # subsequent turns
+    * The script is uploaded to ``/run-agent.sh`` once at session-create time
+      and never re-uploaded.
+    * Before every invocation, the caller writes the per-turn prompt to
+      ``{PROMPT_FILE_PATH}``.
+    * Invocation form: ``bash /run-agent.sh <mode>`` where ``<mode>`` is
+      ``run`` on turn 1 and ``continue`` on subsequent turns.
+    * Non-idempotent setup (packages, clone, user setup_script, git init) is
+      gated behind ``{INIT_SENTINEL_PATH}`` so it runs exactly once — safe
+      if ``continue`` is invoked first or ``run`` is re-invoked.
+    * MCP config and skill files are rewritten on every invocation; they're
+      idempotent and runtimes read them at startup.
+    * On any failure, the trap ``ERR`` handler writes a single
+      ``AOD_STAGE_FAILED: ...`` marker to stderr identifying the failing
+      command, then the script exits non-zero.
+    * On exit (success or failure), the trap ``EXIT`` handler clears
+      ``/tmp/.git-credentials`` and unsets the git credential helper.
 
-    Per-turn state (the prompt) is read from {PROMPT_FILE_PATH}, which the
-    caller writes before each invocation. Non-idempotent setup (package
-    install, repo clone, user setup_script, git init) is gated behind a
-    sentinel so it only runs once — safe even if mode=continue is invoked
-    first for any reason, or if run is re-invoked after completion.
+    The wrapper exists instead of invoking the runtime CLI directly because:
 
-    MCP config and skill files are written every run because they're
-    idempotent and runtimes read them at startup.
-
-    Uses a wrapper script instead of passing env= on the exec call because:
-    1. env= replaces the entire environment (no PATH -> binary not found)
-    2. env= appears in WebSocket URL query params (API key in server logs)
+    1. ``env=`` on the Sprites command replaces the entire environment (so
+       ``PATH`` is empty and the runtime binary can't be found).
+    2. ``env=`` leaks into the WebSocket URL query string, which lands API
+       keys in server-side logs.
     """
-    clone_section = _build_clone_section(repos or [])
+    template = _TEMPLATE_PATH.read_text()
 
+    api_key_export = f"export {config.env_var}={shlex.quote(api_key)}"
+    session_id_export = (
+        f"export AOD_SESSION_ID={shlex.quote(runtime_session_id)}" if runtime_session_id else ""
+    )
     env_vars_section = ""
     packages_section = ""
     setup_section = ""
@@ -305,64 +312,37 @@ def build_wrapper_script(
         packages_section = _build_packages_section(environment.packages)
         setup_section = _build_setup_script_section(environment.setup_script)
 
+    clone_section = _build_clone_section(repos or [])
     mcp_section = _build_mcp_section(config.name, mcp_servers or [])
     mcp_flags = _mcp_cmd_flags(config.name, mcp_servers or [])
     skills_section = _build_skills_section(config.name, skills or [])
 
     first_run_body = "\n\n".join(
-        s
-        for s in (
-            packages_section,
-            clone_section,
-            setup_section,
-        )
-        if s
-    )
-    first_run_block = _indent(first_run_body) if first_run_body else "    :"
-
-    session_id_export = (
-        f"export AOD_SESSION_ID={shlex.quote(runtime_session_id)}" if runtime_session_id else ""
+        s for s in (packages_section, clone_section, setup_section) if s
     )
 
-    return f"""#!/bin/bash
-set -euo pipefail
+    replacements = {
+        "@@API_KEY_EXPORT@@": api_key_export,
+        "@@SESSION_ID_EXPORT@@": session_id_export,
+        "@@ENV_VARS_BLOCK@@": env_vars_section,
+        "@@PROMPT_FILE_PATH@@": shlex.quote(PROMPT_FILE_PATH),
+        "@@PROMPT_FILE_PATH_RAW@@": PROMPT_FILE_PATH,
+        "@@INIT_SENTINEL_PATH@@": shlex.quote(INIT_SENTINEL_PATH),
+        "@@FIRST_RUN_BODY@@": first_run_body,
+        "@@MCP_SECTION@@": mcp_section,
+        "@@SKILLS_SECTION@@": skills_section,
+        "@@RUN_CMD@@": f"{config.cmd}{mcp_flags}",
+        "@@CONTINUE_CMD@@": f"{config.continue_cmd}{mcp_flags}",
+    }
+    for token, value in replacements.items():
+        template = template.replace(token, value)
 
-# Baked at session-create time
-export {config.env_var}={shlex.quote(api_key)}
-{session_id_export}
-{env_vars_section}
-
-MODE="${{1:-run}}"
-if [ ! -f {shlex.quote(PROMPT_FILE_PATH)} ]; then
-    echo "missing prompt file: {PROMPT_FILE_PATH}" >&2
-    exit 2
-fi
-PROMPT=$(cat {shlex.quote(PROMPT_FILE_PATH)})
-export PROMPT
-
-cd /home/sprite
-mkdir -p .gemini
-
-# One-time setup, gated on a sentinel so it's safe regardless of mode or retries
-if [ ! -f {shlex.quote(INIT_SENTINEL_PATH)} ]; then
-    if [ ! -d .git ]; then
-        git init -q
-        git add -A 2>/dev/null || true
-        git commit -q -m "init" --allow-empty 2>/dev/null || true
-    fi
-
-{first_run_block}
-
-    touch {shlex.quote(INIT_SENTINEL_PATH)}
-fi
-
-{mcp_section}
-
-{skills_section}
-
-case "$MODE" in
-    run)      exec {config.cmd}{mcp_flags} ;;
-    continue) exec {config.continue_cmd}{mcp_flags} ;;
-    *)        echo "unknown mode: $MODE" >&2; exit 2 ;;
-esac
-"""
+    # Collapse the blank lines left behind by empty sections so the rendered
+    # script is readable. At most one blank line between sections.
+    lines = template.splitlines()
+    collapsed: list[str] = []
+    for line in lines:
+        if line == "" and collapsed and collapsed[-1] == "":
+            continue
+        collapsed.append(line)
+    return "\n".join(collapsed) + "\n"
