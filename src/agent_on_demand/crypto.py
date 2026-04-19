@@ -6,8 +6,8 @@ from django.conf import settings
 
 
 def _get_fernet() -> Fernet:
-    """Derive a Fernet key from Django's SECRET_KEY."""
-    key = hashlib.sha256(settings.SECRET_KEY.encode()).digest()
+    material = getattr(settings, "FIELD_ENCRYPTION_KEY", None) or settings.SECRET_KEY
+    key = hashlib.sha256(material.encode()).digest()
     return Fernet(base64.urlsafe_b64encode(key))
 
 

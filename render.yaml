@@ -24,6 +24,8 @@ projects:
                   property: connectionString
               - key: DJANGO_SECRET_KEY
                 generateValue: true
+              - key: FIELD_ENCRYPTION_KEY
+                generateValue: true
               - key: DJANGO_DEBUG
                 value: "false"
               - key: DJANGO_ALLOWED_HOSTS

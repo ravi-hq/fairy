@@ -22,7 +22,8 @@ sourced from `src/config/settings.py`:
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `DJANGO_SECRET_KEY` | Yes (prod) | `dev-insecure-key-change-in-prod` | Django secret key — **change this in production** |
+| `DJANGO_SECRET_KEY` | Yes (prod) | `dev-insecure-key-change-in-prod` | Django secret key for session signing — safe to rotate |
+| `FIELD_ENCRYPTION_KEY` | Yes (prod) | Falls back to `DJANGO_SECRET_KEY` | KEK for encrypted `UserSpritesKey` / `UserRuntimeKey` rows — **durable; rotating requires a re-encrypt migration** |
 | `DJANGO_DEBUG` | No | `true` | Set to `false` in production |
 | `DJANGO_ALLOWED_HOSTS` | No | `*` | Comma-separated list of allowed host headers |
 | `DATABASE_URL` | No | SQLite file in project root | Database DSN parsed by `dj-database-url` (e.g. `postgres://user:pass@host:5432/aod`) |
@@ -34,6 +35,7 @@ A minimal production `.env`:
 
 ```bash
 DJANGO_SECRET_KEY=your-long-random-secret-key
+FIELD_ENCRYPTION_KEY=your-separate-long-random-key
 DJANGO_DEBUG=false
 DJANGO_ALLOWED_HOSTS=aod.example.com
 ```
