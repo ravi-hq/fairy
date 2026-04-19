@@ -4,6 +4,7 @@ import re
 import uuid
 from typing import Literal
 
+import posthog
 from django.conf import settings
 from django.db import transaction
 from django.db.models import Max
@@ -23,7 +24,6 @@ from agent_on_demand.models import (
     SessionTurn,
     UserRuntimeKey,
 )
-from agent_on_demand.observability import track
 from agent_on_demand.runtimes import RUNTIMES
 from agent_on_demand.session_service import (
     McpServerSpec,
@@ -300,23 +300,24 @@ def _create_session(request):
 
     session_service.run_turn(session, turn, sprite, effective_prompt, "run", float(req.timeout))
 
-    track(
-        "session.created",
-        user=request.user,
-        properties={
-            "session_id": str(session.id),
-            "agent_id": str(agent_obj.id),
-            "environment_id": str(environment_obj.id) if environment_obj else None,
-            "runtime": runtime,
-            "model": agent_obj.model,
-            "prompt_length": len(req.prompt),
-            "repo_count": len(req.resources),
-            "mcp_server_count": len(agent_obj.mcp_servers or []),
-            "skill_count": len(agent_obj.skills or []),
-            "env_var_count": len((environment_obj.env_vars or {})) if environment_obj else 0,
-            "timeout": req.timeout,
-        },
-    )
+    with posthog.new_context():
+        posthog.identify_context(str(request.user.id))
+        posthog.capture(
+            "session.created",
+            properties={
+                "session_id": str(session.id),
+                "agent_id": str(agent_obj.id),
+                "environment_id": str(environment_obj.id) if environment_obj else None,
+                "runtime": runtime,
+                "model": agent_obj.model,
+                "prompt_length": len(req.prompt),
+                "repo_count": len(req.resources),
+                "mcp_server_count": len(agent_obj.mcp_servers or []),
+                "skill_count": len(agent_obj.skills or []),
+                "env_var_count": len((environment_obj.env_vars or {})) if environment_obj else 0,
+                "timeout": req.timeout,
+            },
+        )
 
     return JsonResponse(
         {
@@ -451,16 +452,17 @@ def send_prompt(request, session_id):
 
     session_service.run_turn(session, turn, sprite, req.prompt, "continue", float(req.timeout))
 
-    track(
-        "session.prompt_sent",
-        user=request.user,
-        properties={
-            "session_id": str(session.id),
-            "turn_number": turn.turn_number,
-            "prompt_length": len(req.prompt),
-            "timeout": req.timeout,
-        },
-    )
+    with posthog.new_context():
+        posthog.identify_context(str(request.user.id))
+        posthog.capture(
+            "session.prompt_sent",
+            properties={
+                "session_id": str(session.id),
+                "turn_number": turn.turn_number,
+                "prompt_length": len(req.prompt),
+                "timeout": req.timeout,
+            },
+        )
 
     return JsonResponse(
         {
@@ -505,11 +507,12 @@ def terminate_session(request, session_id):
     session.sprite_name = ""
     session.save(update_fields=["status", "sprite_name", "updated_at"])
 
-    track(
-        "session.terminated",
-        user=request.user,
-        properties={"session_id": str(session.id)},
-    )
+    with posthog.new_context():
+        posthog.identify_context(str(request.user.id))
+        posthog.capture(
+            "session.terminated",
+            properties={"session_id": str(session.id)},
+        )
 
     return JsonResponse(
         {
@@ -537,10 +540,11 @@ def delete_session(request, session_id):
     session_id_str = str(session.id)
     session.delete()  # pre_delete signal handles Sprite cleanup
 
-    track(
-        "session.deleted",
-        user=request.user,
-        properties={"session_id": session_id_str},
-    )
+    with posthog.new_context():
+        posthog.identify_context(str(request.user.id))
+        posthog.capture(
+            "session.deleted",
+            properties={"session_id": session_id_str},
+        )
 
     return JsonResponse({"detail": "Session deleted"}, status=200)

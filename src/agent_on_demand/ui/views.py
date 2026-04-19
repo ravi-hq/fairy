@@ -1,3 +1,4 @@
+import posthog
 from django.contrib import messages
 from django.contrib.auth import login
 from django.contrib.auth.decorators import login_required
@@ -13,7 +14,6 @@ from agent_on_demand.models import (
     Environment,
     UserSpritesKey,
 )
-from agent_on_demand.observability import track
 from agent_on_demand.ui.forms import APIKeyCreateForm, RegisterForm, SpritesKeyForm
 
 
@@ -39,7 +39,9 @@ def register(request):
             login(request, user)
             request.session["onboarding_raw_key"] = raw_key
 
-            track("user.registered", user=user)
+            with posthog.new_context():
+                posthog.identify_context(str(user.id))
+                posthog.capture("user.registered")
 
             return redirect("ui-welcome")
     else:

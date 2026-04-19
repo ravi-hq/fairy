@@ -1,8 +1,11 @@
 """PostHog event firing + sensitive-data leak guards.
 
-These tests do NOT touch the network — they patch `posthog.capture` and force
-`_posthog_initialized=True` so `track()` calls reach the mock. The init
-helpers themselves are validated as no-ops when their env vars are unset.
+These tests do NOT touch the network — they patch `posthog.client.Client.capture`
+so every `posthog.capture()` call reaches the spy through the SDK's normal
+module-level proxy chain (`_proxy → setup → default_client.capture`).
+
+Mocking `posthog.capture` directly would bypass `setup()`, hiding misconfigured
+init bugs in production. Mocking the Client method exercises everything.
 """
 
 from __future__ import annotations
@@ -10,6 +13,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+import posthog
 import pytest
 from django.contrib.auth.models import User
 from django.test import Client
@@ -48,18 +52,9 @@ def runtime_keys(user):
 
 @pytest.fixture
 def captured_events(monkeypatch, mocker):
-    """Set POSTHOG_API_KEY, run the real `init_posthog()`, then mock at the
-    Client level so the entire posthog module-level proxy chain
-    (`_proxy → setup → default_client.capture`) executes for real.
-
-    Mocking `posthog.capture` directly (the previous approach) bypasses
-    `setup()`, so a misconfigured init silently passes the test suite while
-    failing in production. Mocking the Client method exercises everything.
-    """
-    import posthog
-
-    monkeypatch.setenv("POSTHOG_API_KEY", "phc_test_key_for_unit_tests")
-    monkeypatch.setattr(observability, "_posthog_initialized", False)
+    """Patch Client.capture so real proxy init runs but no network calls fire."""
+    monkeypatch.setattr(posthog, "api_key", "phc_test_key_for_unit_tests")
+    monkeypatch.setattr(posthog, "disabled", False)
     monkeypatch.setattr(posthog, "default_client", None)
 
     events: list[dict[str, Any]] = []
@@ -69,9 +64,6 @@ def captured_events(monkeypatch, mocker):
         return "fake-uuid"
 
     mocker.patch("posthog.client.Client.capture", autospec=False, side_effect=_client_capture)
-
-    observability.init_posthog()
-    assert observability._posthog_initialized, "init_posthog() must succeed for these tests"
     return events
 
 
@@ -81,41 +73,11 @@ def _all_property_strings(events: list[dict[str, Any]]) -> str:
     return json.dumps(events, default=str)
 
 
-# --- init helpers no-op when env unset ---
-
-
 def test_init_otel_noop_without_api_key(monkeypatch):
     monkeypatch.delenv("HONEYCOMB_API_KEY", raising=False)
     monkeypatch.setattr(observability, "_otel_initialized", False)
     observability.init_otel()
     assert observability._otel_initialized is False
-
-
-def test_init_posthog_noop_without_api_key(monkeypatch):
-    monkeypatch.delenv("POSTHOG_API_KEY", raising=False)
-    monkeypatch.setattr(observability, "_posthog_initialized", False)
-    observability.init_posthog()
-    assert observability._posthog_initialized is False
-
-
-def test_track_noop_when_posthog_uninitialized(monkeypatch, mocker):
-    monkeypatch.setattr(observability, "_posthog_initialized", False)
-    spy = mocker.patch("posthog.capture")
-    observability.track("anything", user=None, properties={"x": 1})
-    spy.assert_not_called()
-
-
-def test_distinct_id_is_stable_and_hashed(user):
-    a = observability.distinct_id_for_user(user)
-    b = observability.distinct_id_for_user(user)
-    assert a == b
-    assert len(a) == 32
-    # Hex-only — never the raw username or any other identifying field
-    assert all(c in "0123456789abcdef" for c in a)
-    assert user.username not in a
-
-
-# --- agent.created event + leak guard ---
 
 
 @pytest.mark.django_db
@@ -155,9 +117,6 @@ def test_agent_created_event_fires_with_safe_props(client: Client, auth_headers,
     assert "SKILL_BODY" not in blob
 
 
-# --- environment.created event + leak guard ---
-
-
 @pytest.mark.django_db
 def test_environment_created_event_excludes_secret_values(
     client: Client, auth_headers, captured_events
@@ -193,14 +152,10 @@ def test_environment_created_event_excludes_secret_values(
     assert "PLEASE_DO_NOT_LEAK_SETUP_SCRIPT_BODY" not in blob
 
 
-# --- session.created event + leak guard (prompt + repo URL must not appear) ---
-
-
 @pytest.mark.django_db
 def test_session_created_event_excludes_prompt_and_repo_url(
     client: Client, auth_headers, runtime_keys, fake_sprites, captured_events
 ):
-    # Create env + agent
     env_resp = client.post(
         "/environments",
         data=json.dumps(
@@ -229,7 +184,6 @@ def test_session_created_event_excludes_prompt_and_repo_url(
     )
     agent_id = agent_resp.json()["id"]
 
-    # Drop pre-session events so the assertion blob is just the session ones
     captured_events.clear()
 
     resp = client.post(

@@ -21,13 +21,14 @@ import logging
 import queue
 import threading
 
+import posthog
 from django.db import close_old_connections
 from django.utils import timezone
 from procrastinate.contrib.django import app as procrastinate_app
 from sprites import ExecError
 
 from agent_on_demand.models import AgentSession, AgentSessionLog, SessionTurn
-from agent_on_demand.observability import get_tracer, track
+from agent_on_demand.observability import get_tracer
 from agent_on_demand.runtimes import RUNTIMES, RuntimeConfig
 
 from .provisioning import resume_session
@@ -238,15 +239,16 @@ def _execute_turn_body(
         span.set_attribute("aod.exit_code", exit_code)
     span.set_attribute("aod.duration_seconds", duration_seconds)
 
-    track(
-        f"session.{final_status}",
-        user=session.user,
-        properties={
-            "session_id": str(session.id),
-            "turn_number": turn.turn_number,
-            "runtime": session.runtime,
-            "exit_code": exit_code,
-            "duration_seconds": duration_seconds,
-            "mode": mode,
-        },
-    )
+    with posthog.new_context():
+        posthog.identify_context(str(session.user_id))
+        posthog.capture(
+            f"session.{final_status}",
+            properties={
+                "session_id": str(session.id),
+                "turn_number": turn.turn_number,
+                "runtime": session.runtime,
+                "exit_code": exit_code,
+                "duration_seconds": duration_seconds,
+                "mode": mode,
+            },
+        )
