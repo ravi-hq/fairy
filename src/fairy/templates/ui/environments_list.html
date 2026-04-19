@@ -1,0 +1,25 @@
+{% extends "ui/base.html" %}
+{% block title %}Environments · Fairy{% endblock %}
+{% block content %}
+  <h1>Environments</h1>
+  {% if envs %}
+    <table>
+      <thead>
+        <tr><th>Name</th><th>Networking</th><th>Version</th><th>Status</th><th>Created</th></tr>
+      </thead>
+      <tbody>
+        {% for e in envs %}
+          <tr>
+            <td><a href="{% url 'ui-environment-detail' e.id %}">{{ e.name }}</a></td>
+            <td>{{ e.networking_type }}</td>
+            <td>v{{ e.version }}</td>
+            <td>{% if e.archived_at %}<span class="muted">archived</span>{% else %}active{% endif %}</td>
+            <td>{{ e.created_at|date:"Y-m-d H:i" }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="muted">No environments yet. Create one via the API.</p>
+  {% endif %}
+{% endblock %}

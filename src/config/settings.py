@@ -24,6 +24,7 @@ MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
+    "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
 ]
@@ -64,8 +65,12 @@ USE_TZ = True
 
 STATIC_URL = "static/"
 
+# UI (session-cookie auth; API uses bearer tokens and is @csrf_exempt)
+LOGIN_URL = "/ui/login"
+LOGIN_REDIRECT_URL = "/ui/"
+LOGOUT_REDIRECT_URL = "/ui/login"
+
 # Sprites config
-SPRITES_TOKEN = os.environ.get("SPRITES_TOKEN", "")
 SPRITES_BASE_URL = os.environ.get("SPRITES_BASE_URL", "https://api.sprites.dev")
 SPRITE_NAME_PREFIX = os.environ.get("SPRITE_NAME_PREFIX", "fairy")
 DEFAULT_TIMEOUT = int(os.environ.get("DEFAULT_TIMEOUT", "600"))

@@ -1,0 +1,11 @@
+{% extends "ui/base.html" %}
+{% block title %}Register · Fairy{% endblock %}
+{% block content %}
+  <h1>Create an account</h1>
+  <form method="post">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button type="submit">Create account</button>
+  </form>
+  <p class="muted">Already registered? <a href="{% url 'ui-login' %}">Log in</a>.</p>
+{% endblock %}

@@ -1,10 +1,12 @@
 """E2E tests for session lifecycle, streaming, termination, and multi-turn."""
 
 import time
+import uuid
 
 import pytest
 
 from tests.e2e.conftest import RUNTIME_MODELS, _unique, stream_all_output
+from tests.e2e.test_mcp import _concat_json_strings
 
 # Every test in this module spawns a real agent session — bucket them under
 # @slow so `make test-e2e-fast` actually skips them.
@@ -252,6 +254,55 @@ class TestMultiTurn:
         output = stream_all_output(events)
         assert "FAIRY_TURN1_DATA" in output, (
             f"Turn 1 data not found in turn 2 output. Output: {output[:500]}"
+        )
+
+    def test_multi_turn_preserves_conversation_memory(
+        self, api, create_agent, create_session, runtime
+    ):
+        """Second turn must see first turn's conversation via the agent CLI's
+        --continue/--resume flag — not the filesystem.
+
+        ``test_multi_turn_preserves_state`` above already covers Sprite FS
+        persistence. This test isolates runtime session history: turn 1
+        tells the agent an in-context token and forbids disk writes; turn 2
+        asks for the token back while forbidding tool use. If the runtime
+        correctly resumes its session jsonl, the token appears in turn 2's
+        reply; if it doesn't, the agent has no way to know the token.
+        """
+        token = f"FAIRY_MEMORY_{uuid.uuid4().hex[:12]}"
+        agent = create_agent(
+            name=_unique(f"e2e-memory-{runtime}"),
+            model=RUNTIME_MODELS[runtime],
+            runtime=runtime,
+        )
+        turn1 = (
+            f"Remember this token exactly: {token}. Do not write it to any "
+            f"file or run any command. Just acknowledge that you will "
+            f"remember it for our next exchange."
+        )
+        session = create_session(agent_id=agent["id"], prompt=turn1, timeout=120)
+        final1, _ = api.run_session(session["id"])
+        assert final1["status"] == "completed", (
+            f"Turn 1 failed: status={final1['status']} exit={final1.get('exit_code')}"
+        )
+
+        turn2 = (
+            "Without reading any file or running any command, print only the "
+            "exact token I asked you to remember in my previous message."
+        )
+        resp = api.send_prompt(session["id"], prompt=turn2, timeout=120)
+        assert resp.status_code == 202
+
+        final2, events2 = api.run_session(session["id"])
+        assert final2["status"] == "completed", (
+            f"Turn 2 failed: status={final2['status']} exit={final2.get('exit_code')}"
+        )
+
+        raw = stream_all_output(events2)
+        reassembled = _concat_json_strings(raw)
+        assert token in reassembled, (
+            f"Turn 2 could not recall token {token!r} — runtime session "
+            f"history not preserved across /prompt.\nOutput: {raw[:500]}"
         )
 
     def test_send_prompt_while_running_rejected(self, api, create_agent, create_session, runtime):

@@ -1,0 +1,16 @@
+{% extends "ui/base.html" %}
+{% block title %}Sprites key · Fairy{% endblock %}
+{% block content %}
+  <h1>Sprites API token</h1>
+  <p class="muted">
+    Status:
+    {% if has_existing %}<strong>configured</strong>. Submitting a new value replaces it.
+    {% else %}<strong>not configured</strong>. Required before creating sessions.
+    {% endif %}
+  </p>
+  <form method="post">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button type="submit">Save</button>
+  </form>
+{% endblock %}

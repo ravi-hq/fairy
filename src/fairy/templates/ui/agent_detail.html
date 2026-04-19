@@ -1,0 +1,35 @@
+{% extends "ui/base.html" %}
+{% block title %}{{ agent.name }} · Agent{% endblock %}
+{% block content %}
+  <p><a href="{% url 'ui-agents' %}">← Agents</a></p>
+  <h1>{{ agent.name }}</h1>
+  <dl class="kv">
+    <dt>ID</dt><dd><code>{{ agent.id }}</code></dd>
+    <dt>Version</dt><dd>v{{ agent.version }}</dd>
+    <dt>Model</dt><dd>{{ agent.model }}</dd>
+    <dt>Runtime</dt><dd>{{ agent.runtime }}</dd>
+    <dt>Environment</dt>
+    <dd>
+      {% if agent.environment %}
+        <a href="{% url 'ui-environment-detail' agent.environment.id %}">{{ agent.environment.name }}</a>
+      {% else %}<span class="muted">—</span>{% endif %}
+    </dd>
+    <dt>Description</dt><dd>{{ agent.description|default:"—"|linebreaksbr }}</dd>
+    <dt>System prompt</dt><dd><pre>{{ agent.system|default:"—" }}</pre></dd>
+    <dt>Skills</dt>
+    <dd>
+      {% if agent.skills %}
+        <ul>{% for s in agent.skills %}<li>{{ s.name }}</li>{% endfor %}</ul>
+      {% else %}<span class="muted">—</span>{% endif %}
+    </dd>
+    <dt>MCP servers</dt>
+    <dd>
+      {% if agent.mcp_servers %}
+        <ul>{% for m in agent.mcp_servers %}<li>{{ m.name }} ({{ m.type|default:"url" }})</li>{% endfor %}</ul>
+      {% else %}<span class="muted">—</span>{% endif %}
+    </dd>
+    <dt>Status</dt><dd>{% if agent.archived_at %}archived on {{ agent.archived_at|date:"Y-m-d H:i" }}{% else %}active{% endif %}</dd>
+    <dt>Created</dt><dd>{{ agent.created_at|date:"Y-m-d H:i" }}</dd>
+    <dt>Updated</dt><dd>{{ agent.updated_at|date:"Y-m-d H:i" }}</dd>
+  </dl>
+{% endblock %}

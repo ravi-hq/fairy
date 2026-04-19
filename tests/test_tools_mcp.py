@@ -4,7 +4,7 @@ import pytest
 from django.contrib.auth.models import User
 from django.test import Client
 
-from fairy.models import Agent, AgentVersion, APIKey, UserRuntimeKey
+from fairy.models import Agent, AgentVersion, APIKey, UserRuntimeKey, UserSpritesKey
 from fairy.runtimes import RUNTIMES
 from fairy.sprites_exec import McpServerSpec, build_wrapper_script
 
@@ -30,7 +30,15 @@ def auth_headers(api_key):
 
 
 @pytest.fixture
-def runtime_key(user):
+def sprites_key(user):
+    usk = UserSpritesKey(user=user)
+    usk.set_api_key("fake-sprites-token")
+    usk.save()
+    return usk
+
+
+@pytest.fixture
+def runtime_key(user, sprites_key):
     urk = UserRuntimeKey(user=user, runtime="claude")
     urk.set_api_key("fake-anthropic-key")
     urk.save()
@@ -494,3 +502,145 @@ class TestSessionMcpIntegration:
         written_script = mock_fs.write_text.call_args[0][0]
         assert "Authorization" in written_script
         assert "Bearer ${SECRET}" in written_script
+
+    def test_continue_session_rematerializes_mcp(
+        self, client: Client, auth_headers, runtime_key, user, mocker, mock_sprites
+    ):
+        """Follow-up /prompt must re-emit MCP config and --mcp-config flag.
+
+        Regression: subsequent turns were being built without mcp_servers, so
+        /tmp/mcp.json was not regenerated and the claude CLI was invoked
+        without --mcp-config --strict-mcp-config — dropping MCP tools on
+        every turn past the first.
+        """
+        from fairy.models import AgentSession
+
+        agent = Agent.objects.create(
+            user=user,
+            name="MCP Agent",
+            model="claude-sonnet-4-6",
+            runtime="claude",
+            version=1,
+            mcp_servers=[
+                {"type": "url", "name": "github", "url": "https://mcp.github.com/mcp"},
+            ],
+        )
+        session = AgentSession.objects.create(
+            user=user,
+            agent=agent,
+            runtime="claude",
+            prompt="first",
+            sprite_name="sprite-xyz",
+            status="completed",
+        )
+        mock_sprite, mock_fs = mock_sprites
+        mocker.patch(
+            "fairy.views._get_client",
+            return_value=mocker.MagicMock(get_sprite=mocker.Mock(return_value=mock_sprite)),
+        )
+        resp = client.post(
+            f"/sessions/{session.id}/prompt",
+            data=json.dumps({"prompt": "follow-up"}),
+            content_type="application/json",
+            **auth_headers,
+        )
+        assert resp.status_code == 202
+
+        written_script = mock_fs.write_text.call_args[0][0]
+        assert "--mcp-config /tmp/mcp.json --strict-mcp-config" in written_script
+        assert "github" in written_script
+        assert "mcp.github.com" in written_script
+        assert "--continue" in written_script
+
+    def test_continue_session_reexports_env_vars(
+        self, client: Client, auth_headers, runtime_key, user, mocker, mock_sprites
+    ):
+        """Follow-up /prompt must re-export the environment's env_vars.
+
+        Shell exports don't survive a fresh wrapper-script invocation, so
+        each turn needs the env_vars section regenerated.
+        """
+        from fairy.models import AgentSession, Environment
+
+        env = Environment.objects.create(
+            user=user,
+            name="with-vars",
+            env_vars={"SECRET_TOKEN": "xyz123"},
+        )
+        agent = Agent.objects.create(
+            user=user,
+            name="Agent",
+            model="claude-sonnet-4-6",
+            runtime="claude",
+            version=1,
+        )
+        session = AgentSession.objects.create(
+            user=user,
+            agent=agent,
+            environment=env,
+            runtime="claude",
+            prompt="first",
+            sprite_name="sprite-xyz",
+            status="completed",
+        )
+        mock_sprite, mock_fs = mock_sprites
+        mocker.patch(
+            "fairy.views._get_client",
+            return_value=mocker.MagicMock(get_sprite=mocker.Mock(return_value=mock_sprite)),
+        )
+        resp = client.post(
+            f"/sessions/{session.id}/prompt",
+            data=json.dumps({"prompt": "follow-up"}),
+            content_type="application/json",
+            **auth_headers,
+        )
+        assert resp.status_code == 202
+
+        written_script = mock_fs.write_text.call_args[0][0]
+        assert "export SECRET_TOKEN=xyz123" in written_script
+
+    def test_continue_session_skips_packages_and_setup_script(
+        self, client: Client, auth_headers, runtime_key, user, mocker, mock_sprites
+    ):
+        """Packages are already installed on the persistent Sprite FS, and
+        setup_script may be non-idempotent. Continuation must skip both."""
+        from fairy.models import AgentSession, Environment
+
+        env = Environment.objects.create(
+            user=user,
+            name="with-setup",
+            packages={"apt": ["ripgrep"]},
+            setup_script="echo seeding-db",
+        )
+        agent = Agent.objects.create(
+            user=user,
+            name="Agent",
+            model="claude-sonnet-4-6",
+            runtime="claude",
+            version=1,
+        )
+        session = AgentSession.objects.create(
+            user=user,
+            agent=agent,
+            environment=env,
+            runtime="claude",
+            prompt="first",
+            sprite_name="sprite-xyz",
+            status="completed",
+        )
+        mock_sprite, mock_fs = mock_sprites
+        mocker.patch(
+            "fairy.views._get_client",
+            return_value=mocker.MagicMock(get_sprite=mocker.Mock(return_value=mock_sprite)),
+        )
+        resp = client.post(
+            f"/sessions/{session.id}/prompt",
+            data=json.dumps({"prompt": "follow-up"}),
+            content_type="application/json",
+            **auth_headers,
+        )
+        assert resp.status_code == 202
+
+        written_script = mock_fs.write_text.call_args[0][0]
+        assert "ripgrep" not in written_script
+        assert "seeding-db" not in written_script

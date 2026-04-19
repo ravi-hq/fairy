@@ -5,7 +5,14 @@ import pytest
 from django.contrib.auth.models import User
 from django.test import Client
 
-from fairy.models import Agent, APIKey, AgentSession, AgentSessionLog, UserRuntimeKey
+from fairy.models import (
+    Agent,
+    APIKey,
+    AgentSession,
+    AgentSessionLog,
+    UserRuntimeKey,
+    UserSpritesKey,
+)
 
 
 @pytest.fixture
@@ -28,8 +35,30 @@ def auth_headers(api_key):
 
 
 @pytest.fixture
-def runtime_key(user):
-    """Create a UserRuntimeKey for the claude runtime."""
+def sprites_key(user):
+    """Create a UserSpritesKey so session creation passes the Sprites-key check."""
+    usk = UserSpritesKey(user=user)
+    usk.set_api_key("fake-sprites-token")
+    usk.save()
+    return usk
+
+
+@pytest.fixture
+def runtime_key(user, sprites_key):
+    """Create a UserRuntimeKey for the claude runtime.
+
+    Depends on `sprites_key` so tests that exercise session create/prompt also
+    have the per-user Sprites token configured.
+    """
+    urk = UserRuntimeKey(user=user, runtime="claude")
+    urk.set_api_key("fake-anthropic-key")
+    urk.save()
+    return urk
+
+
+@pytest.fixture
+def runtime_key_without_sprites(user):
+    """Runtime key configured, but no UserSpritesKey — for negative tests."""
     urk = UserRuntimeKey(user=user, runtime="claude")
     urk.set_api_key("fake-anthropic-key")
     urk.save()
@@ -139,6 +168,19 @@ def test_run_no_runtime_key(client: Client, auth_headers, agent):
     )
     assert resp.status_code == 400
     assert "No API key configured" in resp.json()["detail"]
+
+
+@pytest.mark.django_db
+def test_run_no_sprites_key(client: Client, auth_headers, runtime_key_without_sprites, agent):
+    """Runtime key is set but no UserSpritesKey — session create must 400."""
+    resp = client.post(
+        "/sessions",
+        data=json.dumps({"agent_id": str(agent.id), "prompt": "hello"}),
+        content_type="application/json",
+        **auth_headers,
+    )
+    assert resp.status_code == 400
+    assert "No Sprites API key configured" in resp.json()["detail"]
 
 
 @pytest.mark.django_db
