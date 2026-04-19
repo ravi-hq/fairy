@@ -24,6 +24,7 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "corsheaders",
+    "procrastinate.contrib.django",
     "agent_on_demand.apps.AgentOnDemandConfig",
 ]
 
@@ -66,6 +67,13 @@ DATABASES = {
         conn_max_age=600,
     )
 }
+
+# Procrastinate requires Postgres. On non-Postgres backends (local SQLite dev,
+# pytest on SQLite), skip its migrations so `manage.py migrate` doesn't blow up
+# on CREATE EXTENSION statements. Unit tests override the app connector with
+# InMemoryConnector and don't need the schema.
+if "postgresql" not in DATABASES["default"].get("ENGINE", ""):
+    MIGRATION_MODULES = {"procrastinate": None}
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 

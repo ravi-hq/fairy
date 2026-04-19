@@ -360,13 +360,7 @@ def test_list_versions(client: Client, auth_headers, agent):
 def test_create_session_with_agent(
     client: Client, auth_headers, agent, runtime_key, fake_sprites, mocker
 ):
-    captured = {}
-
-    def fake_thread(target, args, daemon):
-        captured["args"] = args
-        return mocker.MagicMock()
-
-    mocker.patch("agent_on_demand.session_service.turn.threading.Thread", side_effect=fake_thread)
+    defer_mock = mocker.patch("agent_on_demand.session_service.turn.execute_turn.defer")
 
     resp = client.post(
         "/sessions",
@@ -377,8 +371,8 @@ def test_create_session_with_agent(
     assert resp.status_code == 202
 
     # System prompt is prepended to the user prompt; the combined string is
-    # passed to run_session_background for streaming over stdin.
-    _, _, _, _runtime, effective_prompt, _, _ = captured["args"]
+    # passed to the execute_turn task as `prompt`.
+    effective_prompt = defer_mock.call_args.kwargs["prompt"]
     assert "You are a helpful assistant." in effective_prompt
     assert "Fix the bug" in effective_prompt
 

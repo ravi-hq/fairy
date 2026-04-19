@@ -27,6 +27,19 @@ Run the dev server on `:8777`:
 make dev
 ```
 
+Session execution runs on a separate **worker** process (Procrastinate,
+Postgres-backed broker). The web server only accepts requests and enqueues
+work. To run an agent turn locally you need the worker too:
+
+```bash
+make worker
+```
+
+Procrastinate requires Postgres. For local dev against SQLite, the web server
+runs but sessions will stay `pending` forever because the worker can't attach
+to a SQLite broker. Point `DATABASE_URL` at a local Postgres to execute
+sessions end-to-end.
+
 ## API surface
 
 All endpoints live under the root path. See `src/agent_on_demand/urls.py` for
@@ -132,7 +145,8 @@ make fmt
 ```
 src/
   config/            Django project (settings, root urls, wsgi)
-  agent_on_demand/   App: models, views, auth, runtimes, sprites_exec, stream
+  agent_on_demand/   App: models, views, auth, runtimes, stream (SSE replay)
+    session_service/ Sprites orchestration + the execute_turn Procrastinate task
 tests/
   test_*.py          Unit + integration tests (Django test client)
   e2e/               End-to-end tests against a running deployment

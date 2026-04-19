@@ -39,3 +39,34 @@ projects:
                 value: aod.ravi.id,agent-on-demand-api.onrender.com
               - key: PYTHON_VERSION
                 value: "3.11.9"
+
+          - type: worker
+            name: agent-on-demand-worker
+            runtime: python
+            plan: starter
+            buildCommand: pip install uv && uv sync
+            startCommand: >-
+              uv run procrastinate
+              --app=agent_on_demand.session_service.tasks.procrastinate_app
+              worker
+            envVars:
+              - key: DATABASE_URL
+                fromDatabase:
+                  name: agent-on-demand-db
+                  property: connectionString
+              - key: DJANGO_SECRET_KEY
+                fromService:
+                  name: agent-on-demand-api
+                  type: web
+                  envVarKey: DJANGO_SECRET_KEY
+              - key: FIELD_ENCRYPTION_KEY
+                fromService:
+                  name: agent-on-demand-api
+                  type: web
+                  envVarKey: FIELD_ENCRYPTION_KEY
+              - key: DJANGO_DEBUG
+                value: "false"
+              - key: DJANGO_ALLOWED_HOSTS
+                value: aod.ravi.id,agent-on-demand-api.onrender.com
+              - key: PYTHON_VERSION
+                value: "3.11.9"
