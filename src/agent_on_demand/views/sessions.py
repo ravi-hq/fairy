@@ -534,5 +534,13 @@ def delete_session(request, session_id):
     if session.status == "running":
         return JsonResponse({"detail": "Cannot delete a running session"}, status=409)
 
+    session_id_str = str(session.id)
     session.delete()  # pre_delete signal handles Sprite cleanup
+
+    track(
+        "session.deleted",
+        user=request.user,
+        properties={"session_id": session_id_str},
+    )
+
     return JsonResponse({"detail": "Session deleted"}, status=200)

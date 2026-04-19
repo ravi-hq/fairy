@@ -300,7 +300,11 @@ def environment_delete(request, environment_id):
             status=409,
         )
 
+    env_id_str = str(env.id)
     env.delete()
+
+    track("environment.deleted", user=request.user, properties={"environment_id": env_id_str})
+
     return JsonResponse({"detail": "Environment deleted"}, status=200)
 
 

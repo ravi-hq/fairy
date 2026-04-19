@@ -13,6 +13,7 @@ from agent_on_demand.models import (
     Environment,
     UserSpritesKey,
 )
+from agent_on_demand.observability import track
 from agent_on_demand.ui.forms import APIKeyCreateForm, RegisterForm, SpritesKeyForm
 
 
@@ -37,6 +38,9 @@ def register(request):
 
             login(request, user)
             request.session["onboarding_raw_key"] = raw_key
+
+            track("user.registered", user=user)
+
             return redirect("ui-welcome")
     else:
         form = RegisterForm()
