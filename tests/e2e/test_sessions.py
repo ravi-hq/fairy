@@ -1,5 +1,6 @@
 """E2E tests for session lifecycle, streaming, termination, and multi-turn."""
 
+import json
 import time
 import uuid
 
@@ -331,3 +332,96 @@ class TestMultiTurn:
         if status == "running":
             resp = api.send_prompt(session["id"], prompt="interrupt")
             assert resp.status_code == 409
+
+
+# ---------------------------------------------------------------------------
+# SSE reconnect via Last-Event-ID
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.slow
+def test_sse_reconnect_via_last_event_id(api, create_agent, create_session):
+    """Reconnect with Last-Event-ID → no duplicate events replayed."""
+    runtime = "claude"
+    agent = create_agent(
+        name=_unique(f"e2e-reconnect-{runtime}"),
+        model=RUNTIME_MODELS[runtime],
+        runtime=runtime,
+    )
+    session = create_session(
+        agent_id=agent["id"],
+        prompt="Print the numbers 1 through 20, one per line.",
+        timeout=120,
+    )
+
+    # First connection: consume a few events then disconnect
+    first_events = []
+    last_seen_id = 0
+
+    resp = api.stream_session_raw(session["id"])
+    resp.raise_for_status()
+    deadline = time.time() + 60
+    try:
+        for line in resp.iter_lines(decode_unicode=True):
+            if time.time() > deadline:
+                break
+            if line.startswith("id: "):
+                last_seen_id = int(line[4:].strip())
+            elif line.startswith("data: "):
+                try:
+                    event = json.loads(line[6:])
+                except json.JSONDecodeError:
+                    continue
+                first_events.append(event)
+                # Stop after seeing a few output events
+                output_count = sum(1 for e in first_events if e.get("type") == "output")
+                if output_count >= 3:
+                    break
+    finally:
+        resp.close()
+
+    # We need at least one id to test reconnection
+    if last_seen_id == 0:
+        pytest.skip("No id: fields received in first stream — cannot test reconnect")
+
+    # Second connection: reconnect with Last-Event-ID
+    second_events = []
+    reconnect_headers = {
+        "Last-Event-ID": str(last_seen_id),
+        "Authorization": api.http.headers["Authorization"],
+    }
+    import requests
+
+    base_url = api.base_url
+    resp2 = requests.get(
+        f"{base_url}/sessions/{session['id']}/stream",
+        headers=reconnect_headers,
+        stream=True,
+        timeout=60,
+    )
+    resp2.raise_for_status()
+    deadline2 = time.time() + 120
+    try:
+        for line in resp2.iter_lines(decode_unicode=True):
+            if time.time() > deadline2:
+                break
+            if not line or line.startswith(":"):
+                continue
+            if line.startswith("data: "):
+                try:
+                    event = json.loads(line[6:])
+                except json.JSONDecodeError:
+                    continue
+                second_events.append(event)
+                if event.get("type") in ("exit", "error", "terminated"):
+                    break
+    finally:
+        resp2.close()
+
+    # Assert no duplicate events: no event in second stream has id <= last_seen_id
+    for event in second_events:
+        eid = event.get("id")
+        if eid is not None and event.get("type") not in ("start",):
+            assert eid > last_seen_id, (
+                f"Reconnect replayed event with id={eid} which is <= last_seen_id={last_seen_id}"
+            )
