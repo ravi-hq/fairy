@@ -21,6 +21,7 @@ from agent_on_demand.models import (
     Environment,
     SessionResource,
     SessionTurn,
+    UserRuntimeKey,
 )
 from agent_on_demand.runtimes import RUNTIMES
 from agent_on_demand.session_service import (
@@ -30,7 +31,6 @@ from agent_on_demand.session_service import (
     SkillSpec,
 )
 from agent_on_demand.stream import stream_session_from_db
-from agent_on_demand.views._shared import _get_runtime_key
 
 logger = logging.getLogger(__name__)
 
@@ -232,7 +232,7 @@ def _create_session(request):
             status=400,
         )
 
-    api_key = _get_runtime_key(request.user, runtime)
+    api_key = UserRuntimeKey.get_key_for(request.user, runtime)
     if api_key is None:
         return JsonResponse(
             {"detail": f"No API key configured for runtime: {runtime}"},
