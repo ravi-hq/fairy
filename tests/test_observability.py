@@ -47,21 +47,31 @@ def runtime_keys(user):
 
 
 @pytest.fixture
-def captured_events(mocker):
-    """Force PostHog to look initialized + capture every track() call.
+def captured_events(monkeypatch, mocker):
+    """Set POSTHOG_API_KEY, run the real `init_posthog()`, then mock at the
+    Client level so the entire posthog module-level proxy chain
+    (`_proxy → setup → default_client.capture`) executes for real.
 
-    The fake `_capture` mirrors the real posthog-python 7.x signature
-    `capture(event, *, distinct_id=None, properties=None, ...)`. Using
-    keyword-only kwargs here means a regression to the old positional form
-    in `track()` will raise TypeError instead of silently doing nothing.
+    Mocking `posthog.capture` directly (the previous approach) bypasses
+    `setup()`, so a misconfigured init silently passes the test suite while
+    failing in production. Mocking the Client method exercises everything.
     """
-    mocker.patch.object(observability, "_posthog_initialized", True)
+    import posthog
+
+    monkeypatch.setenv("POSTHOG_API_KEY", "phc_test_key_for_unit_tests")
+    monkeypatch.setattr(observability, "_posthog_initialized", False)
+    monkeypatch.setattr(posthog, "default_client", None)
+
     events: list[dict[str, Any]] = []
 
-    def _capture(event, *, distinct_id=None, properties=None, **_kwargs):
+    def _client_capture(event, *, distinct_id=None, properties=None, **_kwargs):
         events.append({"distinct_id": distinct_id, "event": event, "properties": properties})
+        return "fake-uuid"
 
-    mocker.patch("posthog.capture", side_effect=_capture)
+    mocker.patch("posthog.client.Client.capture", autospec=False, side_effect=_client_capture)
+
+    observability.init_posthog()
+    assert observability._posthog_initialized, "init_posthog() must succeed for these tests"
     return events
 
 
