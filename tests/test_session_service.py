@@ -45,11 +45,10 @@ def _spec(**overrides) -> SessionSpec:
 
 
 class TestProvisionSessionOrder:
-    def test_env_file_chmod_then_run_script_chmod(self, user, fake_sprites):
+    def test_env_file_is_chmod_600(self, user, fake_sprites):
         provision_session(user, _spec())
         sprite = fake_sprites.last_sprite()
-        cmds = sprite.command_strings()
-        assert cmds.index("chmod 600 /tmp/aod-env") < cmds.index("chmod +x /run-agent.sh")
+        assert "chmod 600 /tmp/aod-env" in sprite.command_strings()
 
     def test_env_file_contains_api_key_and_session_id(self, user, fake_sprites):
         provision_session(user, _spec())
@@ -59,14 +58,12 @@ class TestProvisionSessionOrder:
         assert "ANTHROPIC_API_KEY=sk-xxx" in env_file
         assert "AOD_SESSION_ID=11111111-2222-3333-4444-555555555555" in env_file
 
-    def test_dispatcher_script_is_written_last_among_content(self, user, fake_sprites):
+    def test_no_run_agent_script_is_written(self, user, fake_sprites):
+        """The per-turn runtime-CLI invocation is assembled inline in
+        `run_session_background`; nothing is written to /run-agent.sh."""
         provision_session(user, _spec())
         writes = fake_sprites.last_sprite().writes
-        paths = [w.path for w in writes]
-        assert "/run-agent.sh" in paths
-        # /run-agent.sh should be the last write, since it's written after all
-        # other setup content has been materialized.
-        assert paths[-1] == "/run-agent.sh"
+        assert all(w.path != "/run-agent.sh" for w in writes)
 
 
 class TestProvisionSessionFailureHandling:

@@ -17,9 +17,10 @@ from sprites import NetworkPolicy, PolicyRule, Sprite, SpriteError
 from agent_on_demand.models import Environment
 
 from .client import best_effort_delete, require_client
-from .dispatcher import ENV_FILE_PATH, RUN_SCRIPT_PATH, render_dispatcher_script
 from .errors import ProvisionError
 from .specs import McpServerSpec, RepoSpec, SessionSpec, SkillSpec
+
+ENV_FILE_PATH = "/tmp/aod-env"
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +54,6 @@ def provision_session(user, spec: SessionSpec) -> Sprite:
         _run_user_setup(sprite, spec.environment)
         _write_mcp_config(sprite, spec.runtime.name, spec.mcp_servers)
         _write_skills(sprite, spec.runtime.name, spec.skills)
-        _write_run_script(sprite, spec)
     except ProvisionError:
         best_effort_delete(client, spec.name)
         raise
@@ -298,13 +298,3 @@ def _write_skills(sprite: Sprite, runtime_name: str, skills: list[SkillSpec]) ->
             (fs / f"{dir_path.lstrip('/')}/SKILL.md").write_text(s.content)
     except SpriteError as e:
         raise ProvisionError(f"Failed to write skills: {e}", stage="skills") from e
-
-
-def _write_run_script(sprite: Sprite, spec: SessionSpec) -> None:
-    script = render_dispatcher_script(spec.runtime)
-    try:
-        fs = sprite.filesystem()
-        (fs / RUN_SCRIPT_PATH.lstrip("/")).write_text(script)
-        sprite.command("chmod", "+x", RUN_SCRIPT_PATH).run()
-    except SpriteError as e:
-        raise ProvisionError(f"Failed to write run script: {e}", stage="run_script") from e
