@@ -48,11 +48,17 @@ def runtime_keys(user):
 
 @pytest.fixture
 def captured_events(mocker):
-    """Force PostHog to look initialized + capture every track() call."""
+    """Force PostHog to look initialized + capture every track() call.
+
+    The fake `_capture` mirrors the real posthog-python 7.x signature
+    `capture(event, *, distinct_id=None, properties=None, ...)`. Using
+    keyword-only kwargs here means a regression to the old positional form
+    in `track()` will raise TypeError instead of silently doing nothing.
+    """
     mocker.patch.object(observability, "_posthog_initialized", True)
     events: list[dict[str, Any]] = []
 
-    def _capture(distinct_id, event, properties):
+    def _capture(event, *, distinct_id=None, properties=None, **_kwargs):
         events.append({"distinct_id": distinct_id, "event": event, "properties": properties})
 
     mocker.patch("posthog.capture", side_effect=_capture)

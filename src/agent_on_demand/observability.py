@@ -123,7 +123,9 @@ def init_posthog() -> None:
         return
     import posthog
 
-    posthog.api_key = api_key
+    # posthog-python 7.x renamed `api_key` to `project_api_key`; both still
+    # exist as module attrs but only the latter is wired up in the new API.
+    posthog.project_api_key = api_key
     posthog.host = os.environ.get("POSTHOG_HOST", DEFAULT_POSTHOG_HOST)
     _posthog_initialized = True
 
@@ -150,6 +152,9 @@ def track(
 
     distinct = distinct_id_for_user(user) if user is not None else "aod-system"
     try:
-        posthog.capture(distinct, event, properties or {})
+        # posthog-python 7.x: capture(event, **kwargs) — distinct_id is a kwarg.
+        # The old `capture(distinct, event, props)` positional form silently
+        # mis-binds (event = distinct_id) and drops the rest.
+        posthog.capture(event, distinct_id=distinct, properties=properties or {})
     except Exception:
         logger.warning("posthog.capture failed for event=%s", event, exc_info=True)
