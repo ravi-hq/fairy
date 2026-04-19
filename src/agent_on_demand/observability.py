@@ -176,11 +176,15 @@ def track(
     Properties MUST contain only non-sensitive metadata (counts, lengths, IDs,
     runtime, model, status). Callers are responsible — see module docstring.
     """
+    logger.warning("track called for event=%s", event) 
     if not _posthog_initialized:
+        logger.warning("PostHog not initialized — dropping event=%s", event)
         return
     import posthog
+    logger.warning("posthog should get this event event=%s", event) 
 
     distinct = distinct_id_for_user(user) if user is not None else "aod-system"
+    logger.warning("posthog.capture should get this event event=%s distinct_id=%s properties=%s", event, distinct, properties)
     try:
         # posthog-python 7.x: capture(event, **kwargs) — distinct_id is a kwarg.
         # The old `capture(distinct, event, props)` positional form raises
