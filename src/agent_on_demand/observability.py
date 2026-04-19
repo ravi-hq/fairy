@@ -75,9 +75,20 @@ def init_otel(service_name: str | None = None) -> None:
         )
     )
     set_logger_provider(logger_provider)
-    logging.getLogger().addHandler(
-        LoggingHandler(level=logging.INFO, logger_provider=logger_provider)
-    )
+    root = logging.getLogger()
+    root.setLevel(logging.INFO)
+    root.addHandler(LoggingHandler(level=logging.INFO, logger_provider=logger_provider))
+    # Attaching the OTel handler disables Python's implicit stderr fallback,
+    # so nothing from app loggers reaches platform log collectors (Render, etc.)
+    # unless we put a StreamHandler back ourselves.
+    if not any(
+        isinstance(h, logging.StreamHandler) and not isinstance(h, LoggingHandler)
+        for h in root.handlers
+    ):
+        stream = logging.StreamHandler()
+        stream.setLevel(logging.INFO)
+        stream.setFormatter(logging.Formatter("%(levelname)s %(name)s: %(message)s"))
+        root.addHandler(stream)
 
     _instrument_libraries()
     _otel_initialized = True
