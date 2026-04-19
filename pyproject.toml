@@ -11,6 +11,9 @@ dependencies = [
     "sprites-py>=0.0.1rc37",
     "pydantic>=2.0.0",
     "cryptography>=43.0",
+    "dj-database-url>=2.1",
+    "psycopg[binary]>=3.1",
+    "gunicorn>=23.0",
 ]
 
 [project.optional-dependencies]

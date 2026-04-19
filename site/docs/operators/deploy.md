@@ -10,10 +10,10 @@ This guide covers running your own Agent on Demand instance in production.
 - A database (SQLite for development; see note below for production)
 
 !!! note "Database"
-    The default configuration uses SQLite (`agent_on_demand.db` in the project root). For
-    production deployments with multiple processes or replicas, replace the
-    `DATABASES` setting with a Postgres DSN via Django's standard
-    `DATABASE_URL` / `dj-database-url` pattern.
+    The default configuration uses SQLite (`agent_on_demand.db` in the project root).
+    For production deployments with multiple processes or replicas, set
+    `DATABASE_URL` to a Postgres DSN (e.g. `postgres://user:pass@host:5432/aod`).
+    The setting is parsed by `dj-database-url` and overrides the SQLite default.
 
 ## Environment variables
 
@@ -25,6 +25,7 @@ sourced from `src/config/settings.py`:
 | `DJANGO_SECRET_KEY` | Yes (prod) | `dev-insecure-key-change-in-prod` | Django secret key — **change this in production** |
 | `DJANGO_DEBUG` | No | `true` | Set to `false` in production |
 | `DJANGO_ALLOWED_HOSTS` | No | `*` | Comma-separated list of allowed host headers |
+| `DATABASE_URL` | No | SQLite file in project root | Database DSN parsed by `dj-database-url` (e.g. `postgres://user:pass@host:5432/aod`) |
 | `SPRITES_BASE_URL` | No | `https://api.sprites.dev` | Override the Sprites API base URL |
 | `SPRITE_NAME_PREFIX` | No | `aod` | Prefix applied to all Sprite names created by this instance |
 | `DEFAULT_TIMEOUT` | No | `600` | Default session timeout in seconds |

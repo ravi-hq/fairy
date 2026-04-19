@@ -1,6 +1,8 @@
 import os
 from pathlib import Path
 
+import dj_database_url
+
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "dev-insecure-key-change-in-prod")
@@ -53,10 +55,10 @@ APPEND_SLASH = False
 CORS_ALLOW_ALL_ORIGINS = True
 
 DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "agent_on_demand.db",
-    }
+    "default": dj_database_url.config(
+        default=f"sqlite:///{BASE_DIR / 'agent_on_demand.db'}",
+        conn_max_age=600,
+    )
 }
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
