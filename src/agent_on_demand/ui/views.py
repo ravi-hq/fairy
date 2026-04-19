@@ -5,7 +5,7 @@ from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
-from fairy.models import (
+from agent_on_demand.models import (
     Agent,
     AgentSession,
     AgentSessionLog,
@@ -13,7 +13,7 @@ from fairy.models import (
     Environment,
     UserSpritesKey,
 )
-from fairy.ui.forms import APIKeyCreateForm, RegisterForm, SpritesKeyForm
+from agent_on_demand.ui.forms import APIKeyCreateForm, RegisterForm, SpritesKeyForm
 
 
 def register(request):

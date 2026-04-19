@@ -16,7 +16,7 @@ JSON-concat trick used by test_skills.py — so the same test body
 covers claude, codex, and gemini.
 
 Requirements:
-    FAIRY_API_TOKEN   valid API key
+    AOD_API_TOKEN   valid API key
 
 Run: `make test-e2e-mcp`.
 """
@@ -30,7 +30,7 @@ import pytest
 
 from tests.e2e.conftest import (
     RUNTIME_MODELS,
-    FairyClient,
+    APIClient,
     _unique,
     stream_all_output,
 )
@@ -137,7 +137,7 @@ class TestMcpServerToolInvocable:
 
     def test_mcp_server_tool_is_invocable(
         self,
-        api: FairyClient,
+        api: APIClient,
         create_agent,
         create_session,
         create_environment,
@@ -186,7 +186,7 @@ class TestMcpPersistsAcrossTurns:
 
     def test_mcp_tool_invocable_on_second_turn(
         self,
-        api: FairyClient,
+        api: APIClient,
         create_agent,
         create_session,
         create_environment,
@@ -216,8 +216,7 @@ class TestMcpPersistsAcrossTurns:
         raw1 = stream_all_output(events1)
         reassembled1 = _concat_json_strings(raw1)
         assert final1["status"] == "completed", (
-            f"Turn 1 status={final1['status']} exit={final1.get('exit_code')}\n"
-            f"Output: {raw1[:500]}"
+            f"Turn 1 status={final1['status']} exit={final1.get('exit_code')}\nOutput: {raw1[:500]}"
         )
         assert signal1 in reassembled1, (
             f"Turn 1 echo signal {signal1!r} missing.\nOutput: {raw1[:500]}"
@@ -229,16 +228,13 @@ class TestMcpPersistsAcrossTurns:
             f"Include the tool's exact response in your reply."
         )
         resp = api.send_prompt(session["id"], prompt=turn2, timeout=300)
-        assert resp.status_code == 202, (
-            f"send_prompt rejected: {resp.status_code} {resp.text}"
-        )
+        assert resp.status_code == 202, f"send_prompt rejected: {resp.status_code} {resp.text}"
 
         final2, events2 = api.run_session(session["id"], timeout=300)
         raw2 = stream_all_output(events2)
         reassembled2 = _concat_json_strings(raw2)
         assert final2["status"] == "completed", (
-            f"Turn 2 status={final2['status']} exit={final2.get('exit_code')}\n"
-            f"Output: {raw2[:500]}"
+            f"Turn 2 status={final2['status']} exit={final2.get('exit_code')}\nOutput: {raw2[:500]}"
         )
         assert signal2 in reassembled2, (
             f"Turn 2 echo signal {signal2!r} missing — MCP config likely not "

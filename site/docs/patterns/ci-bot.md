@@ -24,41 +24,41 @@ on:
     types: [opened, synchronize]
 
 jobs:
-  fairy-review:
+  agent-on-demand-review:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Run fairy review
+      - name: Run Agent on Demand review
         env:
-          FAIRY_TOKEN: ${{ secrets.FAIRY_TOKEN }}
-          FAIRY_URL: ${{ secrets.FAIRY_URL }}
-          AGENT_ID: ${{ secrets.FAIRY_AGENT_ID }}
+          AOD_TOKEN: ${{ secrets.AOD_TOKEN }}
+          AOD_URL: ${{ secrets.AOD_URL }}
+          AGENT_ID: ${{ secrets.AOD_AGENT_ID }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           DIFF=$(git diff origin/${{ github.base_ref }}...HEAD -- '*.py' | head -c 8000)
           PROMPT="Review the following Python diff for bugs, style issues, and security problems:\n\n${DIFF}"
 
           # Create session
-          SESSION=$(curl -sS -X POST "$FAIRY_URL/sessions" \
-            -H "Authorization: Bearer $FAIRY_TOKEN" \
+          SESSION=$(curl -sS -X POST "$AOD_URL/sessions" \
+            -H "Authorization: Bearer $AOD_TOKEN" \
             -H "Content-Type: application/json" \
             -d "{\"agent_id\":\"$AGENT_ID\",\"prompt\":\"$PROMPT\",\"timeout\":300}")
           SESSION_ID=$(echo $SESSION | jq -r .id)
 
           # Poll until done
           for i in $(seq 1 60); do
-            STATUS=$(curl -sS "$FAIRY_URL/sessions/$SESSION_ID" \
-              -H "Authorization: Bearer $FAIRY_TOKEN" | jq -r .status)
+            STATUS=$(curl -sS "$AOD_URL/sessions/$SESSION_ID" \
+              -H "Authorization: Bearer $AOD_TOKEN" | jq -r .status)
             [ "$STATUS" = "completed" ] || [ "$STATUS" = "failed" ] && break
             sleep 5
           done
 
           # Collect output and post as PR comment
-          OUTPUT=$(curl -sS "$FAIRY_URL/sessions/$SESSION_ID/stream" \
-            -H "Authorization: Bearer $FAIRY_TOKEN" \
+          OUTPUT=$(curl -sS "$AOD_URL/sessions/$SESSION_ID/stream" \
+            -H "Authorization: Bearer $AOD_TOKEN" \
             -H "Accept: text/event-stream" \
             | grep '^data: ' | sed 's/^data: //' | jq -r '.text // .' | tr -d '\0')
 
@@ -73,5 +73,5 @@ jobs:
 | **Cost** | Each CI run spins up a Sprite. Budget accordingly; skip on draft PRs or for trivial changes. |
 | **Timeout** | Set `timeout` to a value well under your CI job timeout so the session fails cleanly. |
 | **Diff size** | Truncate large diffs before sending — very long prompts slow the agent and increase cost. |
-| **Cleanup** | Sessions persist in fairy after CI ends. Add a nightly job calling `DELETE /sessions/{id}/delete` to prune old ones. |
-| **Security** | Store `FAIRY_TOKEN` as a GitHub Actions secret, never in the workflow file. |
+| **Cleanup** | Sessions persist in Agent on Demand after CI ends. Add a nightly job calling `DELETE /sessions/{id}/delete` to prune old ones. |
+| **Security** | Store `AOD_TOKEN` as a GitHub Actions secret, never in the workflow file. |

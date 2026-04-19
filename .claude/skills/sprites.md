@@ -5,7 +5,7 @@ description: Use when working with Sprites (sprites.dev) — creating, managing,
 
 # Sprites SDK Skill
 
-Reference for working with Sprites (sprites.dev) — persistent, hardware-isolated Linux microVMs by Fly.io — in the fairy project.
+Reference for working with Sprites (sprites.dev) — persistent, hardware-isolated Linux microVMs by Fly.io — in the Agent on Demand project.
 
 ## When This Skill Applies
 
@@ -49,7 +49,7 @@ sprite = client.sprite("existing-name")
 
 # List (paginated)
 sprite_list = client.list_sprites()  # .sprites, .continuation_token
-all_sprites = client.list_all_sprites(prefix="fairy-")
+all_sprites = client.list_all_sprites(prefix="aod-")
 
 # Delete
 client.delete_sprite("my-sprite")
@@ -253,7 +253,7 @@ Leave `control_mode=False` (default). The multiplexed WebSocket pool was disable
 
 ### The Wrapper Script Pattern (sprites_exec.py)
 
-This is the canonical way to run agents in fairy. See `src/fairy/sprites_exec.py`:
+This is the canonical way to run agents in Agent on Demand. See `src/agent_on_demand/sprites_exec.py`:
 
 ```python
 def build_wrapper_script(config: RuntimeConfig, api_key: str, prompt: str) -> str:
@@ -274,7 +274,7 @@ exec {config.cmd}
 
 ### The QueueWriter Streaming Pattern (stream.py)
 
-Real-time streaming from Sprite → SSE response. See `src/fairy/stream.py`:
+Real-time streaming from Sprite → SSE response. See `src/agent_on_demand/stream.py`:
 
 ```python
 class QueueWriter(io.RawIOBase):
@@ -328,12 +328,12 @@ RUNTIMES = {
 |---------|---------|---------|
 | `SPRITES_TOKEN` | `SPRITES_TOKEN` | `""` |
 | `SPRITES_BASE_URL` | `SPRITES_BASE_URL` | `https://api.sprites.dev` |
-| `SPRITE_NAME_PREFIX` | `SPRITE_NAME_PREFIX` | `fairy` |
+| `SPRITE_NAME_PREFIX` | `SPRITE_NAME_PREFIX` | `aod` |
 | `DEFAULT_TIMEOUT` | `DEFAULT_TIMEOUT` | `600` |
 
 ## Adding a New Runtime
 
-1. Add entry to `RUNTIMES` dict in `src/fairy/runtimes.py`:
+1. Add entry to `RUNTIMES` dict in `src/agent_on_demand/runtimes.py`:
    ```python
    "newruntime": RuntimeConfig(
        name="newruntime",

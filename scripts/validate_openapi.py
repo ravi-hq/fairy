@@ -2,7 +2,7 @@
 
 Fails if:
   - the spec is not valid YAML or missing required OpenAPI fields,
-  - any URL declared in `fairy.urls` is missing from the spec,
+  - any URL declared in `agent_on_demand.urls` is missing from the spec,
   - any (method, path) in the spec has no corresponding Django view.
 
 Run: `uv run python -m scripts.validate_openapi`
@@ -153,7 +153,7 @@ def main() -> int:
     args = parser.parse_args()
 
     _setup_django()
-    from fairy.urls import urlpatterns
+    from agent_on_demand.urls import urlpatterns
 
     code_routes = _collect_routes(urlpatterns)
     code_by_path: dict[str, set[str]] = {}
@@ -200,7 +200,7 @@ def main() -> int:
             )
 
     if errors:
-        print("openapi.yaml is out of sync with fairy.urls:\n", file=sys.stderr)
+        print("openapi.yaml is out of sync with agent_on_demand.urls:\n", file=sys.stderr)
         for err in errors:
             print(f"  - {err}", file=sys.stderr)
         return 1

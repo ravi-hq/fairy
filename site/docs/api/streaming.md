@@ -7,7 +7,7 @@ GET /sessions/{id}/stream
 Authorization: Bearer <token>
 ```
 
-Fairy streams session output as [Server-Sent Events](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events). The response has:
+Agent on Demand streams session output as [Server-Sent Events](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events). The response has:
 
 - `Content-Type: text/event-stream`
 - `Cache-Control: no-cache`
@@ -29,7 +29,7 @@ The stream closes after the terminal event (`exit`, `error`, or `terminated`).
 
 ## Heartbeats
 
-Every 15 seconds with no output, fairy sends a heartbeat to keep the connection alive:
+Every 15 seconds with no output, Agent on Demand sends a heartbeat to keep the connection alive:
 
 ```
 : heartbeat
@@ -98,7 +98,7 @@ for line in resp.iter_lines(decode_unicode=True):
 
 ## Reconnect guidance
 
-Because fairy replays all output on every new connection, reconnecting is safe and cheap:
+Because Agent on Demand replays all output on every new connection, reconnecting is safe and cheap:
 
 1. On connection error, wait briefly, then reconnect with the same request.
 2. You will receive duplicate output starting from `start`, but you won't miss anything.

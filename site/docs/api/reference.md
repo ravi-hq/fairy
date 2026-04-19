@@ -4,7 +4,7 @@ stoplight: true
 
 # API Reference
 
-This page provides an interactive API reference powered by [Stoplight Elements](https://stoplight.io/open-source/elements). Browse all endpoints, view request/response schemas, and make live requests directly against your fairy deployment.
+This page provides an interactive API reference powered by [Stoplight Elements](https://stoplight.io/open-source/elements). Browse all endpoints, view request/response schemas, and make live requests directly against your Agent on Demand deployment.
 
 <div>
   <elements-api

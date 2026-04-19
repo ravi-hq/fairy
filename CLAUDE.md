@@ -4,14 +4,14 @@ Instructions for Claude Code when working in this repo.
 
 ## Project
 
-Fairy is a Django REST API for running AI coding agents on Sprites. It manages
-three resources: **agents**, **environments**, and **sessions**. See `README.md`
-for the full API surface.
+Agent on Demand is a Django REST API for running AI coding agents on Sprites.
+It manages three resources: **agents**, **environments**, and **sessions**. See
+`README.md` for the full API surface.
 
 ## Where things live
 
 - `src/config/` — Django project config (`settings.py`, root `urls.py`)
-- `src/fairy/` — The app
+- `src/agent_on_demand/` — The app (Django app_label is `fairy` for DB compat)
   - `models.py` — `Agent`, `Environment`, `Session`, version history
   - `views.py` — All HTTP endpoints
   - `urls.py` — Route table (single source of truth for the API surface)
@@ -28,7 +28,7 @@ for the full API surface.
 make install       # uv sync --all-extras
 make dev           # runserver 0.0.0.0:8777
 make test          # unit + integration (tests/, excluding tests/e2e)
-make test-e2e      # full e2e suite (needs FAIRY_API_TOKEN)
+make test-e2e      # full e2e suite (needs AOD_API_TOKEN)
 make test-e2e-fast # e2e without @slow tests
 make test-all      # everything; e2e auto-skips without a token
 make lint          # ruff check
@@ -36,7 +36,7 @@ make fmt           # ruff format + ruff check --fix
 ```
 
 Dev server runs on `:8777`, **not** the Django default `:8000`. The `make
-test-e2e*` targets default `FAIRY_API_URL` to `http://localhost:8777` to match;
+test-e2e*` targets default `AOD_API_URL` to `http://localhost:8777` to match;
 export a different value to point at another deployment. If you invoke pytest
 directly (without `make`), `tests/e2e/conftest.py` defaults to
 `http://localhost:8000`.
@@ -44,7 +44,7 @@ directly (without `make`), `tests/e2e/conftest.py` defaults to
 ## Conventions
 
 - **Runtimes**: new models must be added to both `AgentModel` *and*
-  `MODEL_RUNTIME_MAP` in `src/fairy/runtimes.py`.
+  `MODEL_RUNTIME_MAP` in `src/agent_on_demand/runtimes.py`.
 - **Versioning**: `agents` and `environments` use optimistic concurrency —
   updates require the current `version` and return a new row in
   `{agent,environment}_versions`. Tests to reference: `test_agents.py::TestAgentVersioning`,
@@ -65,8 +65,8 @@ directly (without `make`), `tests/e2e/conftest.py` defaults to
 
 - Unit tests use `pytest-django` with a Django `Client` fixture from
   `tests/conftest.py`. They do **not** hit Sprites or any model runtime.
-- E2E tests live in `tests/e2e/` and require a running Fairy deployment +
-  a valid `FAIRY_API_TOKEN`. Without the token they auto-skip.
+- E2E tests live in `tests/e2e/` and require a running deployment +
+  a valid `AOD_API_TOKEN`. Without the token they auto-skip.
 - E2E `@pytest.mark.slow` tests spawn real agent sessions and cost money.
   Prefer `make test-e2e-fast` during iteration; run the full suite before
   landing changes that touch session execution, environment setup, or

@@ -1,6 +1,6 @@
 # Quickstart
 
-This page walks through the minimum-viable flow: create an agent, start a session, and stream its output. All you need is a running fairy deployment and an API token.
+This page walks through the minimum-viable flow: create an agent, start a session, and stream its output. All you need is a running Agent on Demand deployment and an API token.
 
 ## Prerequisites
 
@@ -10,7 +10,7 @@ This page walks through the minimum-viable flow: create an agent, start a sessio
 
 ```bash
 BASE=http://localhost:8777
-TOKEN=fairy_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+TOKEN=aod_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 ```
 
 ## Step 1 — Create an agent
@@ -103,7 +103,7 @@ The stream closes after the terminal event (`exit`, `error`, or `terminated`). R
 
 ```bash
 BASE=http://localhost:8777
-TOKEN=fairy_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+TOKEN=aod_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 AUTH="Authorization: Bearer $TOKEN"
 JSON="Content-Type: application/json"
 

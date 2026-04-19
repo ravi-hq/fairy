@@ -1,12 +1,13 @@
 from django.apps import AppConfig
 
 
-class FairyConfig(AppConfig):
+class AgentOnDemandConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
-    name = "fairy"
+    name = "agent_on_demand"
+    label = "fairy"
 
     def ready(self):
-        import fairy.signals  # noqa: F401 — register signal handlers
+        import agent_on_demand.signals  # noqa: F401 — register signal handlers
 
         from django.db.backends.signals import connection_created
 

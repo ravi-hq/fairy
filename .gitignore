@@ -7,8 +7,8 @@ __pycache__/
 dist/
 .env
 *.db
-fairy.db-shm
-fairy.db-wal
+agent_on_demand.db-shm
+agent_on_demand.db-wal
 .gstack/
 .coverage
 .mypy_cache/

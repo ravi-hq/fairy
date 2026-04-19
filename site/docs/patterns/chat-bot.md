@@ -5,10 +5,10 @@ internal chat tool — with each message in a thread continuing the same session
 
 ## Shape of the solution
 
-Map **one chat thread → one fairy session**. On the first message in a thread,
+Map **one chat thread → one Agent on Demand session**. On the first message in a thread,
 call `POST /sessions` to create a session and store the returned `id` alongside
 the thread ID in your bot's storage. On every subsequent message in that thread,
-call `POST /sessions/{id}/prompt` — fairy resumes the same Sprite, so the agent
+call `POST /sessions/{id}/prompt` — Agent on Demand resumes the same Sprite, so the agent
 has full context of the prior conversation.
 
 Stream the agent's response back to the thread via
@@ -23,21 +23,21 @@ from slack_bolt import App
 import os
 
 app = App(token=os.environ["SLACK_BOT_TOKEN"])
-FAIRY_URL = os.environ["FAIRY_URL"]
-FAIRY_TOKEN = os.environ["FAIRY_TOKEN"]
-AGENT_ID = os.environ["FAIRY_AGENT_ID"]
+AOD_URL = os.environ["AOD_URL"]
+AOD_TOKEN = os.environ["AOD_TOKEN"]
+AGENT_ID = os.environ["AOD_AGENT_ID"]
 
 # Simple in-memory store; use Redis/DB in production
 thread_sessions: dict[str, str] = {}
 
-def fairy_headers():
-    return {"Authorization": f"Bearer {FAIRY_TOKEN}"}
+def api_headers():
+    return {"Authorization": f"Bearer {AOD_TOKEN}"}
 
 def create_session(prompt: str) -> str:
     r = httpx.post(
-        f"{FAIRY_URL}/sessions",
+        f"{AOD_URL}/sessions",
         json={"agent_id": AGENT_ID, "prompt": prompt},
-        headers=fairy_headers(),
+        headers=api_headers(),
         timeout=30,
     )
     r.raise_for_status()
@@ -45,9 +45,9 @@ def create_session(prompt: str) -> str:
 
 def send_prompt(session_id: str, prompt: str) -> str:
     r = httpx.post(
-        f"{FAIRY_URL}/sessions/{session_id}/prompt",
+        f"{AOD_URL}/sessions/{session_id}/prompt",
         json={"prompt": prompt},
-        headers=fairy_headers(),
+        headers=api_headers(),
         timeout=30,
     )
     r.raise_for_status()
@@ -57,8 +57,8 @@ def collect_output(session_id: str) -> str:
     lines = []
     with httpx.stream(
         "GET",
-        f"{FAIRY_URL}/sessions/{session_id}/stream",
-        headers={**fairy_headers(), "Accept": "text/event-stream"},
+        f"{AOD_URL}/sessions/{session_id}/stream",
+        headers={**api_headers(), "Accept": "text/event-stream"},
         timeout=None,
     ) as r:
         for line in r.iter_lines():
@@ -86,7 +86,7 @@ def handle_mention(event, say):
 
 | | |
 |---|---|
-| **Stateful threads** | Fairy holds the session state; your bot only stores the `session_id` mapping. |
+| **Stateful threads** | Agent on Demand holds the session state; your bot only stores the `session_id` mapping. |
 | **Multi-turn** | `POST /sessions/{id}/prompt` re-enters the Sprite — the agent sees previous output. |
 | **Session lifetime** | Sprites are long-lived within a session; terminate (`POST /sessions/{id}/terminate`) when the thread is archived or idle. |
 | **Concurrency** | `POST /sessions/{id}/prompt` returns `409` if the session is already running — queue incoming messages per thread if users type quickly. |

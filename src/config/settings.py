@@ -17,7 +17,7 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "corsheaders",
-    "fairy",
+    "agent_on_demand.apps.AgentOnDemandConfig",
 ]
 
 MIDDLEWARE = [
@@ -55,7 +55,7 @@ CORS_ALLOW_ALL_ORIGINS = True
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "fairy.db",
+        "NAME": BASE_DIR / "agent_on_demand.db",
     }
 }
 
@@ -72,5 +72,5 @@ LOGOUT_REDIRECT_URL = "/ui/login"
 
 # Sprites config
 SPRITES_BASE_URL = os.environ.get("SPRITES_BASE_URL", "https://api.sprites.dev")
-SPRITE_NAME_PREFIX = os.environ.get("SPRITE_NAME_PREFIX", "fairy")
+SPRITE_NAME_PREFIX = os.environ.get("SPRITE_NAME_PREFIX", "aod")
 DEFAULT_TIMEOUT = int(os.environ.get("DEFAULT_TIMEOUT", "600"))

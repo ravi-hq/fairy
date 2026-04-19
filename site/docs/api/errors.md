@@ -63,7 +63,7 @@ All of these return `409`:
 
 ## Notes
 
-- **404 vs 401**: fairy never returns 403. Resources that exist but belong to a different user are returned as 404.
+- **404 vs 401**: Agent on Demand never returns 403. Resources that exist but belong to a different user are returned as 404.
 - **No 204**: deletes return `200` with a `{"detail":"..."}` body, not `204 No Content`.
 - **Delete of missing resource**: returns `404`.
 - **502**: only from session creation when the Sprites API is unreachable or returns an error.

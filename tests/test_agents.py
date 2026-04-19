@@ -5,7 +5,7 @@ import pytest
 from django.contrib.auth.models import User
 from django.test import Client
 
-from fairy.models import Agent, AgentVersion, APIKey, UserRuntimeKey, UserSpritesKey
+from agent_on_demand.models import Agent, AgentVersion, APIKey, UserRuntimeKey, UserSpritesKey
 
 
 @pytest.fixture
@@ -367,8 +367,8 @@ def test_create_session_with_agent(client: Client, auth_headers, agent, runtime_
 
     mock_client = mocker.MagicMock()
     mock_client.create_sprite.return_value = mock_sprite
-    mocker.patch("fairy.views._get_client", return_value=mock_client)
-    mocker.patch("fairy.views.threading.Thread")
+    mocker.patch("agent_on_demand.views._get_client", return_value=mock_client)
+    mocker.patch("agent_on_demand.views.threading.Thread")
 
     resp = client.post(
         "/sessions",
@@ -397,8 +397,8 @@ def test_create_session_with_agent_inherits_runtime(
 
     mock_client = mocker.MagicMock()
     mock_client.create_sprite.return_value = mock_sprite
-    mocker.patch("fairy.views._get_client", return_value=mock_client)
-    mocker.patch("fairy.views.threading.Thread")
+    mocker.patch("agent_on_demand.views._get_client", return_value=mock_client)
+    mocker.patch("agent_on_demand.views.threading.Thread")
 
     # No runtime specified — should inherit from agent
     resp = client.post(

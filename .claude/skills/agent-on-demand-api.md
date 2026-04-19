@@ -1,16 +1,16 @@
 ---
-name: fairy-api
-description: Use when driving the Fairy REST API — creating agents, environments, or sessions; writing/maintaining `tests/e2e/`; adding new endpoints; or debugging 4xx responses. Covers auth, the route table, the `detail`-is-a-list quirk for 422, optimistic concurrency (`version`), agent-metadata-merge vs env_vars-full-replacement divergence, the session state machine with 409 edges, SSE stream consumption, and multi-turn session semantics. Canonical full reference is `docs/API.md`.
+name: agent-on-demand-api
+description: Use when driving the Agent on Demand REST API — creating agents, environments, or sessions; writing/maintaining `tests/e2e/`; adding new endpoints; or debugging 4xx responses. Covers auth, the route table, the `detail`-is-a-list quirk for 422, optimistic concurrency (`version`), agent-metadata-merge vs env_vars-full-replacement divergence, the session state machine with 409 edges, SSE stream consumption, and multi-turn session semantics. Canonical full reference is `docs/API.md`.
 ---
 
-# Fairy API Skill
+# Agent on Demand API Skill
 
-Reference for driving the Fairy REST API — three resources (agents, environments, sessions) used to run AI coding agents inside Sprites.
+Reference for driving the Agent on Demand REST API — three resources (agents, environments, sessions) used to run AI coding agents inside Sprites.
 
 ## When This Skill Applies
 
 Use this skill when:
-- Calling the Fairy API from code, tests, or curl (creating agents, environments, or sessions)
+- Calling the Agent on Demand API from code, tests, or curl (creating agents, environments, or sessions)
 - Writing or maintaining e2e tests in `tests/e2e/`
 - Adding new endpoints — keep the conventions here consistent
 - Debugging 4xx responses (especially 409, 422, or the `detail`-is-a-list edge case)
@@ -21,7 +21,7 @@ Canonical full-depth reference: `docs/API.md`. This skill is the shorter operato
 
 - Dev: `http://localhost:8777` (what `make dev` serves)
 - E2E default when invoking through `make`: same `http://localhost:8777`; raw `pytest` defaults to `http://localhost:8000`
-- Every endpoint except `GET /health` requires `Authorization: Bearer fairy_<token>`. Tokens are created server-side via `APIKey.create_key(user, name)` (Django shell/management command).
+- Every endpoint except `GET /health` requires `Authorization: Bearer aod_<token>`. Tokens are created server-side via `APIKey.create_key(user, name)` (Django shell/management command).
 
 ## Route Table
 
@@ -141,7 +141,7 @@ Each runtime runs with its full default tool set (bash/read/write/edit/glob/grep
 | `codex`        | `gpt-4.1`, `o3`, `o4-mini`                                                                |
 | `gemini`       | `gemini-2.5-pro`, `gemini-2.5-flash`                                                      |
 
-Source of truth: `src/fairy/runtimes.py` — `AgentModel` + `RUNTIMES` + `MODEL_RUNTIME_MAP`.
+Source of truth: `src/agent_on_demand/runtimes.py` — `AgentModel` + `RUNTIMES` + `MODEL_RUNTIME_MAP`.
 
 If you see `400 {"detail":"No API key configured for runtime: <name>"}` at session create, the user hasn't added a `UserRuntimeKey` for that runtime.
 
@@ -262,12 +262,12 @@ curl -X DELETE -H "$AUTH" "$BASE/sessions/<id>/delete"
 
 ## Related Files
 
-- `src/fairy/urls.py` — authoritative route table
-- `src/fairy/views.py` — request models, validation, serializers, all endpoints
-- `src/fairy/models.py` — `Agent`, `Environment`, `AgentSession`, version history, `APIKey`
-- `src/fairy/runtimes.py` — `AgentModel`, `RUNTIMES`, `MODEL_RUNTIME_MAP`
-- `src/fairy/stream.py` — background runner + SSE event emission
-- `src/fairy/sprites_exec.py` — `build_wrapper_script` (sets order of env → packages → clone → setup → exec)
+- `src/agent_on_demand/urls.py` — authoritative route table
+- `src/agent_on_demand/views.py` — request models, validation, serializers, all endpoints
+- `src/agent_on_demand/models.py` — `Agent`, `Environment`, `AgentSession`, version history, `APIKey`
+- `src/agent_on_demand/runtimes.py` — `AgentModel`, `RUNTIMES`, `MODEL_RUNTIME_MAP`
+- `src/agent_on_demand/stream.py` — background runner + SSE event emission
+- `src/agent_on_demand/sprites_exec.py` — `build_wrapper_script` (sets order of env → packages → clone → setup → exec)
 - `tests/e2e/conftest.py` — canonical fixtures (`create_agent`, `create_environment`, `create_session`)
 - `docs/API.md` — full reference with worked end-to-end examples
 - `thoughts/research/2026-04-17-fairy-api-docs.md` — research synthesis behind this skill

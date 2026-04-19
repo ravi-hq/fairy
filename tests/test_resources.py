@@ -4,7 +4,7 @@ import pytest
 from django.contrib.auth.models import User
 from django.test import Client
 
-from fairy.models import (
+from agent_on_demand.models import (
     Agent,
     AgentSession,
     APIKey,
@@ -12,8 +12,8 @@ from fairy.models import (
     UserRuntimeKey,
     UserSpritesKey,
 )
-from fairy.runtimes import RUNTIMES
-from fairy.sprites_exec import RepoSpec, build_wrapper_script
+from agent_on_demand.runtimes import RUNTIMES
+from agent_on_demand.sprites_exec import RepoSpec, build_wrapper_script
 
 
 # --- Fixtures ---
@@ -75,8 +75,8 @@ def mock_sprites(mocker):
 
     mock_client = mocker.MagicMock()
     mock_client.create_sprite.return_value = mock_sprite
-    mocker.patch("fairy.views._get_client", return_value=mock_client)
-    mocker.patch("fairy.views.threading.Thread")
+    mocker.patch("agent_on_demand.views._get_client", return_value=mock_client)
+    mocker.patch("agent_on_demand.views.threading.Thread")
     return mock_sprite, mock_fs
 
 

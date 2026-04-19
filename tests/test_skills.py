@@ -4,9 +4,9 @@ import pytest
 from django.contrib.auth.models import User
 from django.test import Client
 
-from fairy.models import Agent, AgentVersion, APIKey, UserRuntimeKey, UserSpritesKey
-from fairy.runtimes import RUNTIMES
-from fairy.sprites_exec import SkillSpec, build_wrapper_script
+from agent_on_demand.models import Agent, AgentVersion, APIKey, UserRuntimeKey, UserSpritesKey
+from agent_on_demand.runtimes import RUNTIMES
+from agent_on_demand.sprites_exec import SkillSpec, build_wrapper_script
 
 
 SAMPLE_CONTENT = (
@@ -72,8 +72,8 @@ def mock_sprites(mocker):
     mock_sprite.command.return_value.run = mocker.Mock()
     mock_client = mocker.MagicMock()
     mock_client.create_sprite.return_value = mock_sprite
-    mocker.patch("fairy.views._get_client", return_value=mock_client)
-    mocker.patch("fairy.views.threading.Thread")
+    mocker.patch("agent_on_demand.views._get_client", return_value=mock_client)
+    mocker.patch("agent_on_demand.views.threading.Thread")
     return mock_sprite, mock_fs
 
 
@@ -379,7 +379,7 @@ class TestSessionSkillsIntegration:
     def test_continue_session_rematerializes_skills(
         self, client: Client, auth_headers, runtime_key, user, mocker, mock_sprites
     ):
-        from fairy.models import AgentSession
+        from agent_on_demand.models import AgentSession
 
         agent = Agent.objects.create(
             user=user,
@@ -399,7 +399,7 @@ class TestSessionSkillsIntegration:
         )
         mock_sprite, mock_fs = mock_sprites
         mocker.patch(
-            "fairy.views._get_client",
+            "agent_on_demand.views._get_client",
             return_value=mocker.MagicMock(get_sprite=mocker.Mock(return_value=mock_sprite)),
         )
         resp = client.post(

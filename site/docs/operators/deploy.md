@@ -1,6 +1,6 @@
 # Deploy Guide
 
-This guide covers running your own fairy instance in production.
+This guide covers running your own Agent on Demand instance in production.
 
 ## Prerequisites
 
@@ -10,7 +10,7 @@ This guide covers running your own fairy instance in production.
 - A database (SQLite for development; see note below for production)
 
 !!! note "Database"
-    The default configuration uses SQLite (`fairy.db` in the project root). For
+    The default configuration uses SQLite (`agent_on_demand.db` in the project root). For
     production deployments with multiple processes or replicas, replace the
     `DATABASES` setting with a Postgres DSN via Django's standard
     `DATABASE_URL` / `dj-database-url` pattern.
@@ -26,7 +26,7 @@ sourced from `src/config/settings.py`:
 | `DJANGO_DEBUG` | No | `true` | Set to `false` in production |
 | `DJANGO_ALLOWED_HOSTS` | No | `*` | Comma-separated list of allowed host headers |
 | `SPRITES_BASE_URL` | No | `https://api.sprites.dev` | Override the Sprites API base URL |
-| `SPRITE_NAME_PREFIX` | No | `fairy` | Prefix applied to all Sprite names created by this instance |
+| `SPRITE_NAME_PREFIX` | No | `aod` | Prefix applied to all Sprite names created by this instance |
 | `DEFAULT_TIMEOUT` | No | `600` | Default session timeout in seconds |
 
 A minimal production `.env`:
@@ -34,14 +34,14 @@ A minimal production `.env`:
 ```bash
 DJANGO_SECRET_KEY=your-long-random-secret-key
 DJANGO_DEBUG=false
-DJANGO_ALLOWED_HOSTS=fairy.example.com
+DJANGO_ALLOWED_HOSTS=aod.example.com
 ```
 
 ## Installation
 
 ```bash
-git clone https://github.com/ravi-hq/fairy
-cd fairy
+git clone https://github.com/ravi-hq/agent-on-demand
+cd agent-on-demand
 uv sync --all-extras   # or: pip install -e .
 ```
 
@@ -55,7 +55,7 @@ uv run python manage.py migrate
 
 ## Creating the first API token
 
-Fairy uses bearer tokens prefixed with `fairy_` for authentication. Create the
+Agent on Demand uses bearer tokens prefixed with `aod_` for authentication. Create the
 first token via the Django shell:
 
 ```python
@@ -63,22 +63,22 @@ uv run python manage.py shell
 
 # Inside the shell:
 from django.contrib.auth.models import User
-from fairy.models import APIKey
+from agent_on_demand.models import APIKey
 
 user = User.objects.create_user("admin", password=input("Set admin password: "))
 _, raw_key = APIKey.create_key(user, "admin-key")
-print(raw_key)   # fairy_<random> — copy this now, it won't be shown again
+print(raw_key)   # aod_<random> — copy this now, it won't be shown again
 ```
 
 Pass the token in the `Authorization` header:
 
 ```
-Authorization: Bearer fairy_<your-token>
+Authorization: Bearer aod_<your-token>
 ```
 
 ## Running in production
 
-Fairy ships a WSGI entry point at `config.wsgi:application`. Any WSGI-compatible
+Agent on Demand ships a WSGI entry point at `config.wsgi:application`. Any WSGI-compatible
 server works:
 
 ```bash
@@ -98,10 +98,10 @@ uvicorn config.wsgi:application --host 0.0.0.0 --port 8000
 
 ## Sprites credentials
 
-Fairy authenticates to the Sprites platform using a **per-user** token stored
+Agent on Demand authenticates to the Sprites platform using a **per-user** token stored
 encrypted at rest in the `UserSpritesKey` table. Each user brings their own
 Sprites token; there is no shared/service-level fallback. At session creation
-time, fairy:
+time, Agent on Demand:
 
 1. Looks up the caller's `UserSpritesKey` and decrypts the token.
 2. Calls `SpritesClient(token=..., base_url=SPRITES_BASE_URL)` to obtain a
@@ -122,7 +122,7 @@ configured`.
 To set a user's Sprites key (required before they can run sessions):
 
 ```python
-from fairy.models import UserSpritesKey
+from agent_on_demand.models import UserSpritesKey
 from django.contrib.auth.models import User
 
 user = User.objects.get(username="alice")
@@ -135,7 +135,7 @@ To set a user's runtime key (required before they can run sessions on a given
 runtime):
 
 ```python
-from fairy.models import UserRuntimeKey
+from agent_on_demand.models import UserRuntimeKey
 from django.contrib.auth.models import User
 
 user = User.objects.get(username="alice")

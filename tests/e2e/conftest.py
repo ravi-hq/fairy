@@ -1,8 +1,8 @@
 """E2E test fixtures and helpers.
 
 Required env vars:
-    FAIRY_API_URL   — base URL of the Fairy deployment (default: http://localhost:8000)
-    FAIRY_API_TOKEN — valid API key for a preconfigured user
+    AOD_API_URL   — base URL of the agent-on-demand deployment (default: http://localhost:8000)
+    AOD_API_TOKEN — valid API key for a preconfigured user
 
 Optional env vars:
     E2E_RUNTIMES — comma-separated runtimes to test (default: claude)
@@ -29,10 +29,10 @@ DEFAULT_TIMEOUT = int(os.environ.get("E2E_TIMEOUT", "180"))
 
 
 def pytest_collection_modifyitems(config, items):
-    """Auto-skip e2e tests when FAIRY_API_TOKEN is not set."""
-    if os.environ.get("FAIRY_API_TOKEN"):
+    """Auto-skip e2e tests when AOD_API_TOKEN is not set."""
+    if os.environ.get("AOD_API_TOKEN"):
         return
-    skip = pytest.mark.skip(reason="FAIRY_API_TOKEN not set")
+    skip = pytest.mark.skip(reason="AOD_API_TOKEN not set")
     for item in items:
         if "/e2e/" in str(item.fspath):
             item.add_marker(skip)
@@ -47,8 +47,8 @@ def _unique(prefix: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-class FairyClient:
-    """Thin HTTP wrapper around the Fairy API."""
+class APIClient:
+    """Thin HTTP wrapper around the agent-on-demand API."""
 
     def __init__(self, base_url: str, token: str):
         self.base_url = base_url.rstrip("/")
@@ -197,15 +197,15 @@ def stream_all_output(events: list[dict]) -> str:
 
 
 @pytest.fixture(scope="session")
-def fairy_url():
-    return os.environ.get("FAIRY_API_URL", "http://localhost:8000")
+def aod_url():
+    return os.environ.get("AOD_API_URL", "http://localhost:8000")
 
 
 @pytest.fixture(scope="session")
-def fairy_token():
-    token = os.environ.get("FAIRY_API_TOKEN")
+def aod_token():
+    token = os.environ.get("AOD_API_TOKEN")
     if not token:
-        pytest.skip("FAIRY_API_TOKEN not set")
+        pytest.skip("AOD_API_TOKEN not set")
     return token
 
 
@@ -221,8 +221,8 @@ def e2e_timeout():
 
 
 @pytest.fixture(scope="session")
-def api(fairy_url, fairy_token):
-    return FairyClient(fairy_url, fairy_token)
+def api(aod_url, aod_token):
+    return APIClient(aod_url, aod_token)
 
 
 # ---------------------------------------------------------------------------

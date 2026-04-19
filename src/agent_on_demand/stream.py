@@ -8,7 +8,7 @@ from collections.abc import Generator
 
 from sprites import ExecError, Sprite
 
-from fairy.models import AgentSession, AgentSessionLog
+from agent_on_demand.models import AgentSession, AgentSessionLog
 
 logger = logging.getLogger(__name__)
 

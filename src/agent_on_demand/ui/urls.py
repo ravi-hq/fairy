@@ -1,7 +1,7 @@
 from django.contrib.auth import views as auth_views
 from django.urls import path
 
-from fairy.ui import views
+from agent_on_demand.ui import views
 
 urlpatterns = [
     path("", views.dashboard, name="ui-dashboard"),

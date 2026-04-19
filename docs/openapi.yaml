@@ -1,15 +1,16 @@
 openapi: 3.1.0
 info:
-  title: Fairy API
+  title: Agent on Demand API
   version: "0.1.0"
   description: |
-    Fairy runs AI coding agents on Sprites. It manages three resources: agents,
-    environments, and sessions. See docs/API.md for the full operator guide.
+    Agent on Demand runs AI coding agents on Sprites. It manages three
+    resources: agents, environments, and sessions. See docs/API.md for the full
+    operator guide.
 
 servers:
   - url: http://localhost:8777
     description: Local dev
-  - url: https://fairy.example
+  - url: https://aod.example
     description: Production (replace with your deployment)
 
 security:
@@ -362,7 +363,7 @@ components:
     bearerAuth:
       type: http
       scheme: bearer
-      bearerFormat: fairy_<token>
+      bearerFormat: aod_<token>
 
   parameters:
     AgentId:

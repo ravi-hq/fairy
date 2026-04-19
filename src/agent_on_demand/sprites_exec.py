@@ -4,7 +4,7 @@ import json
 import shlex
 from dataclasses import dataclass, field
 
-from fairy.runtimes import RuntimeConfig
+from agent_on_demand.runtimes import RuntimeConfig
 
 
 @dataclass(frozen=True)

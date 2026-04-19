@@ -2,7 +2,7 @@ import pytest
 from django.contrib.auth.models import User
 from django.test import Client
 
-from fairy.models import (
+from agent_on_demand.models import (
     Agent,
     AgentSession,
     APIKey,

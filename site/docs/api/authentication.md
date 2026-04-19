@@ -2,13 +2,13 @@
 
 ## Bearer tokens
 
-Every request to fairy — except `GET /health` — must include an `Authorization` header:
+Every request to Agent on Demand — except `GET /health` — must include an `Authorization` header:
 
 ```
-Authorization: Bearer fairy_<token>
+Authorization: Bearer aod_<token>
 ```
 
-Token strings always begin with `fairy_`. They are created server-side via `APIKey.create_key(user, name)`. The raw token string is shown only once at creation time; there is no way to retrieve it afterward.
+Token strings always begin with `aod_`. They are created server-side via `APIKey.create_key(user, name)`. The raw token string is shown only once at creation time; there is no way to retrieve it afterward.
 
 ## 401 responses
 
@@ -29,7 +29,7 @@ Example response body:
 
 ## No 403
 
-Fairy does not return 403. Resources that exist but don't belong to the authenticated user are returned as 404 (same as not found), preventing enumeration.
+Agent on Demand does not return 403. Resources that exist but don't belong to the authenticated user are returned as 404 (same as not found), preventing enumeration.
 
 ## Example
 
@@ -40,6 +40,6 @@ curl http://localhost:8777/agents
 
 # Valid token
 curl http://localhost:8777/agents \
-  -H "Authorization: Bearer fairy_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  -H "Authorization: Bearer aod_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 # {"data":[...]}
 ```

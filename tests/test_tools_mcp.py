@@ -4,9 +4,9 @@ import pytest
 from django.contrib.auth.models import User
 from django.test import Client
 
-from fairy.models import Agent, AgentVersion, APIKey, UserRuntimeKey, UserSpritesKey
-from fairy.runtimes import RUNTIMES
-from fairy.sprites_exec import McpServerSpec, build_wrapper_script
+from agent_on_demand.models import Agent, AgentVersion, APIKey, UserRuntimeKey, UserSpritesKey
+from agent_on_demand.runtimes import RUNTIMES
+from agent_on_demand.sprites_exec import McpServerSpec, build_wrapper_script
 
 
 # --- Fixtures ---
@@ -55,8 +55,8 @@ def mock_sprites(mocker):
     mock_sprite.command.return_value.run = mocker.Mock()
     mock_client = mocker.MagicMock()
     mock_client.create_sprite.return_value = mock_sprite
-    mocker.patch("fairy.views._get_client", return_value=mock_client)
-    mocker.patch("fairy.views.threading.Thread")
+    mocker.patch("agent_on_demand.views._get_client", return_value=mock_client)
+    mocker.patch("agent_on_demand.views.threading.Thread")
     return mock_sprite, mock_fs
 
 
@@ -513,7 +513,7 @@ class TestSessionMcpIntegration:
         without --mcp-config --strict-mcp-config — dropping MCP tools on
         every turn past the first.
         """
-        from fairy.models import AgentSession
+        from agent_on_demand.models import AgentSession
 
         agent = Agent.objects.create(
             user=user,
@@ -535,7 +535,7 @@ class TestSessionMcpIntegration:
         )
         mock_sprite, mock_fs = mock_sprites
         mocker.patch(
-            "fairy.views._get_client",
+            "agent_on_demand.views._get_client",
             return_value=mocker.MagicMock(get_sprite=mocker.Mock(return_value=mock_sprite)),
         )
         resp = client.post(
@@ -560,7 +560,7 @@ class TestSessionMcpIntegration:
         Shell exports don't survive a fresh wrapper-script invocation, so
         each turn needs the env_vars section regenerated.
         """
-        from fairy.models import AgentSession, Environment
+        from agent_on_demand.models import AgentSession, Environment
 
         env = Environment.objects.create(
             user=user,
@@ -585,7 +585,7 @@ class TestSessionMcpIntegration:
         )
         mock_sprite, mock_fs = mock_sprites
         mocker.patch(
-            "fairy.views._get_client",
+            "agent_on_demand.views._get_client",
             return_value=mocker.MagicMock(get_sprite=mocker.Mock(return_value=mock_sprite)),
         )
         resp = client.post(
@@ -604,7 +604,7 @@ class TestSessionMcpIntegration:
     ):
         """Packages are already installed on the persistent Sprite FS, and
         setup_script may be non-idempotent. Continuation must skip both."""
-        from fairy.models import AgentSession, Environment
+        from agent_on_demand.models import AgentSession, Environment
 
         env = Environment.objects.create(
             user=user,
@@ -630,7 +630,7 @@ class TestSessionMcpIntegration:
         )
         mock_sprite, mock_fs = mock_sprites
         mocker.patch(
-            "fairy.views._get_client",
+            "agent_on_demand.views._get_client",
             return_value=mocker.MagicMock(get_sprite=mocker.Mock(return_value=mock_sprite)),
         )
         resp = client.post(

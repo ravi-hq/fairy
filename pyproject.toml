@@ -1,5 +1,5 @@
 [project]
-name = "fairy"
+name = "agent-on-demand"
 version = "0.1.0"
 description = "API for running AI coding agents on Sprites"
 requires-python = ">=3.11"
@@ -47,13 +47,13 @@ markers = [
 ]
 
 [tool.coverage.run]
-source = ["src/fairy"]
+source = ["src/agent_on_demand"]
 omit = [
     "*/migrations/*",
     "*/tests/*",
-    "src/fairy/admin.py",
-    "src/fairy/apps.py",
-    "src/fairy/signals.py",
+    "src/agent_on_demand/admin.py",
+    "src/agent_on_demand/apps.py",
+    "src/agent_on_demand/signals.py",
 ]
 
 [tool.coverage.report]
@@ -68,8 +68,8 @@ exclude_lines = [
 python_version = "3.11"
 files = ["src"]
 exclude = [
-    "src/fairy/migrations/",
-    "src/fairy\\.egg-info/",
+    "src/agent_on_demand/migrations/",
+    "src/agent_on_demand\\.egg-info/",
 ]
 ignore_missing_imports = true
 check_untyped_defs = false
@@ -77,4 +77,4 @@ disable_error_code = ["annotation-unchecked", "import-untyped"]
 follow_imports = "silent"
 
 [tool.bandit]
-exclude_dirs = ["tests", ".venv", "src/fairy/migrations"]
+exclude_dirs = ["tests", ".venv", "src/agent_on_demand/migrations"]

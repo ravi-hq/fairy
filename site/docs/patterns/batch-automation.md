@@ -10,7 +10,7 @@ Call `POST /sessions` for each item in your batch, run them concurrently with
 a semaphore to stay within your Sprites quota and API rate limits, poll or
 stream each session, then clean up when done.
 
-Because each session runs in its own isolated Sprite, fairy handles parallelism
+Because each session runs in its own isolated Sprite, Agent on Demand handles parallelism
 naturally — the main challenge is staying within the concurrency limits of
 both Sprites and the underlying model runtime.
 
@@ -22,17 +22,17 @@ import httpx
 
 import os
 
-FAIRY_URL = os.environ["FAIRY_URL"]
-FAIRY_TOKEN = os.environ["FAIRY_TOKEN"]
-AGENT_ID = os.environ["FAIRY_AGENT_ID"]
+AOD_URL = os.environ["AOD_URL"]
+AOD_TOKEN = os.environ["AOD_TOKEN"]
+AGENT_ID = os.environ["AOD_AGENT_ID"]
 MAX_CONCURRENT = 5   # tune to your Sprites quota
 
 async def run_session(client: httpx.AsyncClient, prompt: str) -> str:
-    headers = {"Authorization": f"Bearer {FAIRY_TOKEN}"}
+    headers = {"Authorization": f"Bearer {AOD_TOKEN}"}
 
     # Create session
     r = await client.post(
-        f"{FAIRY_URL}/sessions",
+        f"{AOD_URL}/sessions",
         json={"agent_id": AGENT_ID, "prompt": prompt, "timeout": 300},
         headers=headers,
     )
@@ -43,7 +43,7 @@ async def run_session(client: httpx.AsyncClient, prompt: str) -> str:
     for _ in range(120):
         await asyncio.sleep(3)
         status_r = await client.get(
-            f"{FAIRY_URL}/sessions/{session_id}", headers=headers
+            f"{AOD_URL}/sessions/{session_id}", headers=headers
         )
         status_r.raise_for_status()
         status = status_r.json()["status"]
@@ -54,7 +54,7 @@ async def run_session(client: httpx.AsyncClient, prompt: str) -> str:
     output_lines = []
     async with client.stream(
         "GET",
-        f"{FAIRY_URL}/sessions/{session_id}/stream",
+        f"{AOD_URL}/sessions/{session_id}/stream",
         headers={**headers, "Accept": "text/event-stream"},
         timeout=None,
     ) as stream_r:
@@ -65,7 +65,7 @@ async def run_session(client: httpx.AsyncClient, prompt: str) -> str:
     # Clean up session and Sprite
     await client.request(
         "DELETE",
-        f"{FAIRY_URL}/sessions/{session_id}/delete",
+        f"{AOD_URL}/sessions/{session_id}/delete",
         headers=headers,
     )
 
@@ -95,7 +95,7 @@ terminate sessions that exceed it:
 ```python
 # Terminate a stuck session
 await client.post(
-    f"{FAIRY_URL}/sessions/{session_id}/terminate",
+    f"{AOD_URL}/sessions/{session_id}/terminate",
     headers=headers,
 )
 ```

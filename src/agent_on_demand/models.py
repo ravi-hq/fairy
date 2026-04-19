@@ -5,8 +5,8 @@ import uuid
 from django.conf import settings
 from django.db import models
 
-from fairy.crypto import decrypt, encrypt
-from fairy.runtimes import RUNTIMES, AgentModel
+from agent_on_demand.crypto import decrypt, encrypt
+from agent_on_demand.runtimes import RUNTIMES, AgentModel
 
 
 class APIKey(models.Model):
@@ -36,7 +36,7 @@ class APIKey(models.Model):
 
         The raw key is only available at creation time.
         """
-        raw_key = f"fairy_{secrets.token_urlsafe(32)}"
+        raw_key = f"aod_{secrets.token_urlsafe(32)}"
         instance = cls(
             user=user,
             key_hash=cls.hash_key(raw_key),

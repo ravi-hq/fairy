@@ -1,12 +1,12 @@
-# Fairy
+# Agent on Demand
 
 API for running AI coding agents on Sprites.
 
 ## Documentation
 
-Full API and operator documentation: **https://ravi-hq.github.io/fairy**
+Full API and operator documentation: **https://ravi-hq.github.io/agent-on-demand**
 
-Fairy is a Django service that exposes a REST API for creating **agents**
+Agent on Demand is a Django service that exposes a REST API for creating **agents**
 (model + runtime + MCP servers), **environments** (packages, env vars,
 setup scripts, networking), and **sessions** (a single agent execution with
 streaming output and multi-turn prompts).
@@ -29,8 +29,8 @@ make dev
 
 ## API surface
 
-All endpoints live under the root path. See `src/fairy/urls.py` for the full
-route table.
+All endpoints live under the root path. See `src/agent_on_demand/urls.py` for
+the full route table.
 
 - `GET  /health`
 - `POST /agents`, `GET /agents`, `GET /agents/{id}`, `PUT /agents/{id}`,
@@ -56,7 +56,7 @@ families:
 | `codex`        | `gpt-4.1`, `o3`, `o4-mini`                     |
 | `gemini`       | `gemini-2.5-pro`, `gemini-2.5-flash`           |
 
-Full list in `src/fairy/runtimes.py`.
+Full list in `src/agent_on_demand/runtimes.py`.
 
 ## Tools
 
@@ -78,21 +78,21 @@ make test          # runs tests/, excludes tests/e2e
 
 ### End-to-end tests
 
-The `tests/e2e/` suite hits a running Fairy deployment via HTTP. It covers
-agent CRUD + versioning + archive, MCP server validation,
-environment CRUD and session integration (packages installed, env vars
-exported, setup scripts executed), and the full session lifecycle:
-streaming (SSE `start`/`output`/`exit`), termination semantics (409s on
-re-terminate, prompt-after-terminate), stream replay after completion,
-and multi-turn state via `POST /sessions/{id}/prompt`.
+The `tests/e2e/` suite hits a running agent-on-demand deployment via HTTP. It
+covers agent CRUD + versioning + archive, MCP server validation, environment
+CRUD and session integration (packages installed, env vars exported, setup
+scripts executed), and the full session lifecycle: streaming (SSE
+`start`/`output`/`exit`), termination semantics (409s on re-terminate,
+prompt-after-terminate), stream replay after completion, and multi-turn state
+via `POST /sessions/{id}/prompt`.
 
 Required env vars:
 
-- `FAIRY_API_TOKEN` — valid API key for a preconfigured user
+- `AOD_API_TOKEN` — valid API key for a preconfigured user
 
 Optional:
 
-- `FAIRY_API_URL` — defaults to `http://localhost:8777` (what `make dev`
+- `AOD_API_URL` — defaults to `http://localhost:8777` (what `make dev`
   serves). Export a different value to point at another deployment. Note that
   running `pytest` directly (without `make`) defaults to `http://localhost:8000`
   via `tests/e2e/conftest.py`.
@@ -104,20 +104,20 @@ Run them:
 
 ```bash
 # fast subset — skips @slow tests that spawn real agent sessions
-FAIRY_API_TOKEN=<token> make test-e2e-fast
+AOD_API_TOKEN=<token> make test-e2e-fast
 
 # full suite
-FAIRY_API_TOKEN=<token> make test-e2e
+AOD_API_TOKEN=<token> make test-e2e
 
 # single class
-FAIRY_API_TOKEN=<token> \
+AOD_API_TOKEN=<token> \
   uv run pytest tests/e2e/test_sessions.py::TestStreaming -v
 
 # point at a remote deployment instead of local
-FAIRY_API_URL=https://fairy.example.com FAIRY_API_TOKEN=<token> make test-e2e
+AOD_API_URL=https://aod.example.com AOD_API_TOKEN=<token> make test-e2e
 ```
 
-Without `FAIRY_API_TOKEN`, every e2e test is auto-skipped by a hook in
+Without `AOD_API_TOKEN`, every e2e test is auto-skipped by a hook in
 `tests/e2e/conftest.py`, so `make test-all` is safe in CI without creds.
 
 ## Lint / format
@@ -131,11 +131,11 @@ make fmt
 
 ```
 src/
-  config/          Django project (settings, root urls, wsgi)
-  fairy/           App: models, views, auth, runtimes, sprites_exec, stream
+  config/            Django project (settings, root urls, wsgi)
+  agent_on_demand/   App: models, views, auth, runtimes, sprites_exec, stream
 tests/
-  test_*.py        Unit + integration tests (Django test client)
-  e2e/             End-to-end tests against a running deployment
+  test_*.py          Unit + integration tests (Django test client)
+  e2e/               End-to-end tests against a running deployment
 ```
 
 ## License

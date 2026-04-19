@@ -4,7 +4,7 @@ from django.db.models.signals import pre_delete
 from django.dispatch import receiver
 from sprites import SpritesClient, SpriteError
 
-from fairy.models import AgentSession, UserSpritesKey
+from agent_on_demand.models import AgentSession, UserSpritesKey
 
 logger = logging.getLogger(__name__)
 

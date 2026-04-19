@@ -7,6 +7,63 @@ resolution-markers = [
 ]
 
 [[package]]
+name = "agent-on-demand"
+version = "0.1.0"
+source = { virtual = "." }
+dependencies = [
+    { name = "cryptography" },
+    { name = "django", version = "5.2.13", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
+    { name = "django", version = "6.0.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
+    { name = "django-cors-headers" },
+    { name = "pydantic" },
+    { name = "sprites-py" },
+]
+
+[package.optional-dependencies]
+dev = [
+    { name = "bandit" },
+    { name = "mypy" },
+    { name = "pip-audit" },
+    { name = "pylint" },
+    { name = "pytest" },
+    { name = "pytest-cov" },
+    { name = "pytest-django" },
+    { name = "pytest-mock" },
+    { name = "pytest-xdist" },
+    { name = "pyyaml" },
+    { name = "requests" },
+    { name = "ruff" },
+    { name = "types-requests" },
+]
+docs = [
+    { name = "mkdocs-material" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "bandit", marker = "extra == 'dev'", specifier = ">=1.7" },
+    { name = "cryptography", specifier = ">=43.0" },
+    { name = "django", specifier = ">=5.1" },
+    { name = "django-cors-headers", specifier = ">=4.0" },
+    { name = "mkdocs-material", marker = "extra == 'docs'", specifier = ">=9.5" },
+    { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.11" },
+    { name = "pip-audit", marker = "extra == 'dev'", specifier = ">=2.7" },
+    { name = "pydantic", specifier = ">=2.0.0" },
+    { name = "pylint", marker = "extra == 'dev'", specifier = ">=3.2" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
+    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5.0.0" },
+    { name = "pytest-django", marker = "extra == 'dev'", specifier = ">=4.8.0" },
+    { name = "pytest-mock", marker = "extra == 'dev'", specifier = ">=3.14.0" },
+    { name = "pytest-xdist", marker = "extra == 'dev'", specifier = ">=3.6.0" },
+    { name = "pyyaml", marker = "extra == 'dev'", specifier = ">=6.0" },
+    { name = "requests", marker = "extra == 'dev'", specifier = ">=2.31.0" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.8.0" },
+    { name = "sprites-py", specifier = ">=0.0.1rc37" },
+    { name = "types-requests", marker = "extra == 'dev'", specifier = ">=2.31" },
+]
+provides-extras = ["docs", "dev"]
+
+[[package]]
 name = "annotated-types"
 version = "0.7.0"
 source = { registry = "https://pypi.org/simple" }
@@ -553,63 +610,6 @@ sdist = { url = "https://files.pythonhosted.org/packages/bf/89/780e11f9588d9e712
 wheels = [
     { url = "https://files.pythonhosted.org/packages/ab/84/02fc1827e8cdded4aa65baef11296a9bbe595c474f0d6d758af082d849fd/execnet-2.1.2-py3-none-any.whl", hash = "sha256:67fba928dd5a544b783f6056f449e5e3931a5c378b128bc18501f7ea79e296ec", size = 40708, upload-time = "2025-11-12T09:56:36.333Z" },
 ]
-
-[[package]]
-name = "fairy"
-version = "0.1.0"
-source = { virtual = "." }
-dependencies = [
-    { name = "cryptography" },
-    { name = "django", version = "5.2.13", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
-    { name = "django", version = "6.0.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
-    { name = "django-cors-headers" },
-    { name = "pydantic" },
-    { name = "sprites-py" },
-]
-
-[package.optional-dependencies]
-dev = [
-    { name = "bandit" },
-    { name = "mypy" },
-    { name = "pip-audit" },
-    { name = "pylint" },
-    { name = "pytest" },
-    { name = "pytest-cov" },
-    { name = "pytest-django" },
-    { name = "pytest-mock" },
-    { name = "pytest-xdist" },
-    { name = "pyyaml" },
-    { name = "requests" },
-    { name = "ruff" },
-    { name = "types-requests" },
-]
-docs = [
-    { name = "mkdocs-material" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "bandit", marker = "extra == 'dev'", specifier = ">=1.7" },
-    { name = "cryptography", specifier = ">=43.0" },
-    { name = "django", specifier = ">=5.1" },
-    { name = "django-cors-headers", specifier = ">=4.0" },
-    { name = "mkdocs-material", marker = "extra == 'docs'", specifier = ">=9.5" },
-    { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.11" },
-    { name = "pip-audit", marker = "extra == 'dev'", specifier = ">=2.7" },
-    { name = "pydantic", specifier = ">=2.0.0" },
-    { name = "pylint", marker = "extra == 'dev'", specifier = ">=3.2" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
-    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5.0.0" },
-    { name = "pytest-django", marker = "extra == 'dev'", specifier = ">=4.8.0" },
-    { name = "pytest-mock", marker = "extra == 'dev'", specifier = ">=3.14.0" },
-    { name = "pytest-xdist", marker = "extra == 'dev'", specifier = ">=3.6.0" },
-    { name = "pyyaml", marker = "extra == 'dev'", specifier = ">=6.0" },
-    { name = "requests", marker = "extra == 'dev'", specifier = ">=2.31.0" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.8.0" },
-    { name = "sprites-py", specifier = ">=0.0.1rc37" },
-    { name = "types-requests", marker = "extra == 'dev'", specifier = ">=2.31" },
-]
-provides-extras = ["docs", "dev"]
 
 [[package]]
 name = "filelock"

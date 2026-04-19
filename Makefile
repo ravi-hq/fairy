@@ -8,13 +8,13 @@ dev:
 test:
 	uv run pytest tests/ -v --ignore=tests/e2e
 
-# E2E tests against a running Fairy deployment.
-# Required:  FAIRY_API_TOKEN
-# Optional:  FAIRY_API_URL (default http://localhost:8777 — matches `make dev`)
+# E2E tests against a running agent-on-demand deployment.
+# Required:  AOD_API_TOKEN
+# Optional:  AOD_API_URL (default http://localhost:8777 — matches `make dev`)
 #            E2E_RUNTIMES  (default "claude"; comma-separated)
 #            E2E_TIMEOUT   (default 180)
-FAIRY_API_URL ?= http://localhost:8777
-export FAIRY_API_URL
+AOD_API_URL ?= http://localhost:8777
+export AOD_API_URL
 
 # E2E_RUNTIMES ?= "claude,codex,gemini,claude-oauth"
 # export E2E_RUNTIMES
@@ -44,7 +44,7 @@ test-e2e-networking:
 test-e2e-mcp:
 	uv run pytest tests/e2e/test_mcp.py -v -m "mcp_matrix"
 
-# Run everything — unit + e2e. E2E auto-skips if FAIRY_API_TOKEN is unset.
+# Run everything — unit + e2e. E2E auto-skips if AOD_API_TOKEN is unset.
 test-all:
 	uv run pytest tests/ -v
 

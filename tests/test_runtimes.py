@@ -1,5 +1,5 @@
-from fairy.runtimes import RUNTIMES
-from fairy.sprites_exec import build_wrapper_script
+from agent_on_demand.runtimes import RUNTIMES
+from agent_on_demand.sprites_exec import build_wrapper_script
 
 
 def test_all_runtimes_defined():

@@ -1,8 +1,8 @@
 # Overview
 
-## What is fairy?
+## What is Agent on Demand?
 
-Fairy is a REST API for running AI coding agents on [Sprites](https://fly.io/docs/machines/) — Fly.io's lightweight, fast-booting Firecracker microVMs. It manages three resources — agents, environments, and sessions — and exposes a simple HTTP interface for launching agent runs, streaming their output, and continuing multi-turn conversations.
+Agent on Demand is a REST API for running AI coding agents on [Sprites](https://fly.io/docs/machines/) — Fly.io's lightweight, fast-booting Firecracker microVMs. It manages three resources — agents, environments, and sessions — and exposes a simple HTTP interface for launching agent runs, streaming their output, and continuing multi-turn conversations.
 
 ## What problems does it solve?
 
@@ -16,6 +16,6 @@ Fairy is a REST API for running AI coding agents on [Sprites](https://fly.io/doc
 
 ## How it differs from running agents directly
 
-Fairy runs agents on Sprites, not on Fly Machines. Sprites are purpose-built for short-lived, fast-booting workloads. Fairy manages their lifecycle — creating the Sprite at session start, applying the environment, running the agent CLI, and tearing it down on termination — so you don't have to.
+Agent on Demand runs agents on Sprites, not on Fly Machines. Sprites are purpose-built for short-lived, fast-booting workloads. Agent on Demand manages their lifecycle — creating the Sprite at session start, applying the environment, running the agent CLI, and tearing it down on termination — so you don't have to.
 
 The result is a clean API surface: create agent → create session → stream output → optionally continue or terminate.

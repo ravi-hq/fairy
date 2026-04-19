@@ -13,8 +13,8 @@ from typing import Literal
 from pydantic import BaseModel, Field, ValidationError, field_validator
 from sprites import NetworkPolicy, PolicyRule, SpritesClient, SpriteError
 
-from fairy.auth import require_api_key
-from fairy.models import (
+from agent_on_demand.auth import require_api_key
+from agent_on_demand.models import (
     Agent,
     AgentSession,
     AgentVersion,
@@ -24,15 +24,15 @@ from fairy.models import (
     UserRuntimeKey,
     UserSpritesKey,
 )
-from fairy.runtimes import RUNTIMES, AgentModel
-from fairy.sprites_exec import (
+from agent_on_demand.runtimes import RUNTIMES, AgentModel
+from agent_on_demand.sprites_exec import (
     EnvironmentSetup,
     McpServerSpec,
     RepoSpec,
     SkillSpec,
     build_wrapper_script,
 )
-from fairy.stream import run_session_background, stream_session_from_db
+from agent_on_demand.stream import run_session_background, stream_session_from_db
 
 logger = logging.getLogger(__name__)
 

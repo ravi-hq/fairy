@@ -5,12 +5,12 @@ browser or writing HTTP boilerplate.
 
 ## Shape of the solution
 
-Wrap fairy in a thin CLI that creates a session via `POST /sessions`, then opens
+Wrap Agent on Demand in a thin CLI that creates a session via `POST /sessions`, then opens
 the SSE stream at `GET /sessions/{id}/stream` and prints each event to the
 terminal. The user gets a familiar `mytool code "<prompt>"` interface backed by
 a real agent session.
 
-Because fairy tracks session state, the CLI can also support follow-up prompts
+Because Agent on Demand tracks session state, the CLI can also support follow-up prompts
 (`POST /sessions/{id}/prompt`) — but the simplest starting point is
 single-shot: create → stream → exit.
 
@@ -18,15 +18,15 @@ single-shot: create → stream → exit.
 
 ```python
 #!/usr/bin/env python3
-"""mytool code <prompt> — run a fairy session and stream output."""
+"""mytool code <prompt> — run an Agent on Demand session and stream output."""
 import sys
 import httpx
 
 import os
 
-FAIRY_URL = os.environ["FAIRY_URL"]        # e.g. https://fairy.example.com
-FAIRY_TOKEN = os.environ["FAIRY_TOKEN"]    # fairy_...
-AGENT_ID = os.environ["FAIRY_AGENT_ID"]   # your team's shared agent
+AOD_URL = os.environ["AOD_URL"]        # e.g. https://aod.example
+AOD_TOKEN = os.environ["AOD_TOKEN"]    # aod_...
+AGENT_ID = os.environ["AOD_AGENT_ID"]  # your team's shared agent
 
 def main():
     if len(sys.argv) < 2:
@@ -34,11 +34,11 @@ def main():
         sys.exit(1)
 
     prompt = " ".join(sys.argv[1:])
-    headers = {"Authorization": f"Bearer {FAIRY_TOKEN}"}
+    headers = {"Authorization": f"Bearer {AOD_TOKEN}"}
 
     # 1. Create session
     resp = httpx.post(
-        f"{FAIRY_URL}/sessions",
+        f"{AOD_URL}/sessions",
         json={"agent_id": AGENT_ID, "prompt": prompt},
         headers=headers,
         timeout=30,
@@ -51,7 +51,7 @@ def main():
     # 2. Stream output
     with httpx.stream(
         "GET",
-        f"{FAIRY_URL}/sessions/{session_id}/stream",
+        f"{AOD_URL}/sessions/{session_id}/stream",
         headers={**headers, "Accept": "text/event-stream"},
         timeout=None,
     ) as r:
@@ -72,7 +72,7 @@ Install it as a script entry point in your team's internal package, or just
 
 | | |
 |---|---|
-| **Simple** | No persistent state needed client-side — fairy holds the session. |
+| **Simple** | No persistent state needed client-side — Agent on Demand holds the session. |
 | **Streamable** | SSE is plain text; the terminal gets output as it arrives. |
 | **Re-entrant** | Save `session_id` and call `POST /sessions/{id}/prompt` to continue. |
 | **Long prompts** | For large diffs or file contents, pipe via stdin and pass as the prompt string. |

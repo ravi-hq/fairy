@@ -1,6 +1,6 @@
-# Fairy
+# Agent on Demand
 
-Fairy is a REST API for running AI coding agents on [Sprites](https://fly.io/docs/machines/). It manages three resources:
+Agent on Demand is a REST API for running AI coding agents on [Sprites](https://fly.io/docs/machines/). It manages three resources:
 
 - **Agents** — reusable templates that define the model, runtime, system prompt, MCP servers, and skills for an AI coding agent.
 - **Environments** — Sprite sandbox configurations: packages to install, environment variables to export, a setup script, and a network policy.
@@ -14,7 +14,7 @@ Three calls to go from zero to a running agent:
 
 ```bash
 BASE=http://localhost:8777
-TOKEN=fairy_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+TOKEN=aod_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 # 1. Create an agent.
 AGENT_ID=$(curl -s -X POST "$BASE/agents" \
@@ -38,7 +38,7 @@ curl -N -H "Authorization: Bearer $TOKEN" "$BASE/sessions/$SESS_ID/stream"
 |---------|-----------------|
 | [Quickstart](api/quickstart.md) | Full minimum-viable flow with curl commands |
 | [Core Concepts](api/concepts.md) | Resources, versioning, state machines, metadata semantics |
-| [Overview](api/product.md) | What problems fairy solves |
+| [Overview](api/product.md) | What problems Agent on Demand solves |
 | [API Reference](api/reference.md) | Interactive Stoplight Elements explorer |
 | [Authentication](api/authentication.md) | Bearer tokens, 401 shapes |
 | [Streaming](api/streaming.md) | SSE event types, reconnect, replay |

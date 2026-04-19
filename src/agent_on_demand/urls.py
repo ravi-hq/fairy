@@ -1,9 +1,9 @@
 from django.urls import include, path
 
-from fairy import views
+from agent_on_demand import views
 
 urlpatterns = [
-    path("ui/", include("fairy.ui.urls")),
+    path("ui/", include("agent_on_demand.ui.urls")),
     path("health", views.health),
     # Environments
     path("environments", views.environments_list_create),

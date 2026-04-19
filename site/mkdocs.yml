@@ -1,7 +1,7 @@
-site_name: Fairy
-site_url: https://ravi-hq.github.io/fairy
-repo_url: https://github.com/ravi-hq/fairy
-repo_name: ravi-hq/fairy
+site_name: Agent on Demand
+site_url: https://ravi-hq.github.io/agent-on-demand
+repo_url: https://github.com/ravi-hq/agent-on-demand
+repo_name: ravi-hq/agent-on-demand
 
 theme:
   name: material

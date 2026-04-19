@@ -5,7 +5,7 @@ from django.contrib.auth.models import User
 from django.test import Client
 from sprites import NetworkPolicy, PolicyRule, SpriteError
 
-from fairy.models import (
+from agent_on_demand.models import (
     Agent,
     APIKey,
     Environment,
@@ -70,8 +70,8 @@ def mock_sprites(mocker):
 
     mock_client = mocker.MagicMock()
     mock_client.create_sprite.return_value = mock_sprite
-    mocker.patch("fairy.views._get_client", return_value=mock_client)
-    mocker.patch("fairy.views.threading.Thread")
+    mocker.patch("agent_on_demand.views._get_client", return_value=mock_client)
+    mocker.patch("agent_on_demand.views.threading.Thread")
     return mock_client, mock_sprite
 
 

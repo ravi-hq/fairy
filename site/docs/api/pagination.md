@@ -12,7 +12,7 @@ Single-resource endpoints (`GET /agents/{id}`, `GET /sessions/{id}`, etc.) retur
 
 ## No pagination
 
-Fairy's list endpoints return all results in a single response — there is no cursor, no page token, and no `limit`/`offset` parameter.
+Agent on Demand's list endpoints return all results in a single response — there is no cursor, no page token, and no `limit`/`offset` parameter.
 
 | Endpoint | Returns |
 |----------|---------|

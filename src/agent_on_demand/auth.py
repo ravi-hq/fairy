@@ -3,7 +3,7 @@ import functools
 from django.http import JsonResponse
 from django.utils import timezone as tz
 
-from fairy.models import APIKey
+from agent_on_demand.models import APIKey
 
 
 def require_api_key(view_func):

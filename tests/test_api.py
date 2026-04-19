@@ -5,7 +5,7 @@ import pytest
 from django.contrib.auth.models import User
 from django.test import Client
 
-from fairy.models import (
+from agent_on_demand.models import (
     Agent,
     APIKey,
     AgentSession,
@@ -105,7 +105,7 @@ def test_invalid_api_key_rejected(client: Client):
         "/sessions",
         data=json.dumps({"agent_id": str(uuid.uuid4()), "prompt": "hello"}),
         content_type="application/json",
-        HTTP_AUTHORIZATION="Bearer fairy_invalid_key",
+        HTTP_AUTHORIZATION="Bearer aod_invalid_key",
     )
     assert resp.status_code == 401
 
@@ -217,10 +217,10 @@ def test_run_returns_202_with_session_id(client: Client, auth_headers, runtime_k
 
     mock_client = mocker.MagicMock()
     mock_client.create_sprite.return_value = mock_sprite
-    mocker.patch("fairy.views._get_client", return_value=mock_client)
+    mocker.patch("agent_on_demand.views._get_client", return_value=mock_client)
 
     # Prevent the background thread from actually running
-    mocker.patch("fairy.views.threading.Thread")
+    mocker.patch("agent_on_demand.views.threading.Thread")
 
     resp = client.post(
         "/sessions",
@@ -380,10 +380,10 @@ def test_stream_session_failed_with_no_exit_code(client: Client, auth_headers, u
 def test_terminate_session(client: Client, auth_headers, user, mocker):
     """Terminate destroys the Sprite but keeps the session record."""
     mock_client = mocker.MagicMock()
-    mocker.patch("fairy.views._get_client", return_value=mock_client)
+    mocker.patch("agent_on_demand.views._get_client", return_value=mock_client)
 
     session = AgentSession.objects.create(
-        user=user, runtime="claude", prompt="test", sprite_name="fairy-abc123", status="completed"
+        user=user, runtime="claude", prompt="test", sprite_name="aod-abc123", status="completed"
     )
     resp = client.post(f"/sessions/{session.id}/terminate", **auth_headers)
     assert resp.status_code == 200
@@ -394,7 +394,7 @@ def test_terminate_session(client: Client, auth_headers, user, mocker):
     assert session.status == "terminated"
     assert session.sprite_name == ""
 
-    mock_client.delete_sprite.assert_called_once_with("fairy-abc123")
+    mock_client.delete_sprite.assert_called_once_with("aod-abc123")
 
 
 @pytest.mark.django_db
@@ -429,7 +429,7 @@ def test_run_session_background_persists_int_exit_code_on_exec_error(user, mocke
     otherwise Django's IntegerField raises TypeError at save time."""
     from sprites import ExecError
 
-    from fairy.stream import run_session_background
+    from agent_on_demand.stream import run_session_background
 
     session = AgentSession.objects.create(
         user=user, runtime="claude", prompt="test", status="pending"

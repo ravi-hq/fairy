@@ -29,7 +29,7 @@ gates:
 
   # --- Coverage-gated test tier ---
   - name: test
-    command: uv run pytest --cov=fairy --cov-report=term-missing --cov-fail-under=85
+    command: uv run pytest --cov=agent_on_demand --cov-report=term-missing --cov-fail-under=85
     preflight: false
 
   # --- Duplication check (catch AI copy-paste drift) ---

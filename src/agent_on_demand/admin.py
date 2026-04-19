@@ -5,7 +5,7 @@ from django.contrib.auth.models import User
 
 from sprites import SpritesClient, SpriteError
 
-from fairy.models import (
+from agent_on_demand.models import (
     Agent,
     AgentVersion,
     APIKey,
