@@ -12,21 +12,33 @@ It manages three resources: **agents**, **environments**, and **sessions**. See
 
 - `src/config/` — Django project config (`settings.py`, root `urls.py`)
 - `src/agent_on_demand/` — The app (Django app_label is `fairy` for DB compat)
-  - `models.py` — `Agent`, `Environment`, `Session`, version history
-  - `views.py` — All HTTP endpoints
+  - `models/` — `Agent`, `Environment`, `Session`, version history
+  - `views/` — All HTTP endpoints (per-resource routers)
   - `urls.py` — Route table (single source of truth for the API surface)
   - `runtimes.py` — `AgentModel` enum and `MODEL_RUNTIME_MAP`
-  - `sprites_exec.py` — Session execution on Sprites
-  - `stream.py` — SSE streaming for session output
+  - `session_service/` — Sprites orchestration
+    - `provisioning.py` — `provision_session`, per-stage helpers
+    - `tasks.py` — `execute_turn` Procrastinate task (runs in worker process)
+    - `turn.py` — `run_turn` (enqueues the task)
+  - `stream.py` — SSE replay endpoint (tails `AgentSessionLog`)
   - `auth.py`, `crypto.py` — Bearer-token auth and env-var encryption
 - `tests/` — Unit + integration tests (Django test client)
 - `tests/e2e/` — End-to-end tests against a running deployment
+
+## Architecture
+
+**Two-process deploy**: the `web` service (Django/Gunicorn) accepts HTTP, creates
+DB rows, and enqueues Procrastinate tasks. The `worker` service (Procrastinate
+worker) runs the blocking `sprite.command().run()` and writes logs to the DB.
+No threads are spawned from the web process. Both services share one Postgres.
+See `render.yaml` for deploy config.
 
 ## Commands
 
 ```bash
 make install       # uv sync --all-extras
-make dev           # runserver 0.0.0.0:8777
+make dev           # runserver 0.0.0.0:8777 (web)
+make worker        # procrastinate worker (requires Postgres)
 make test          # unit + integration (tests/, excluding tests/e2e)
 make test-e2e      # full e2e suite (needs AOD_API_TOKEN)
 make test-e2e-fast # e2e without @slow tests
@@ -58,8 +70,8 @@ directly (without `make`), `tests/e2e/conftest.py` defaults to
   responses. If you add new secret fields, follow the same pattern in
   `crypto.py`.
 - **Session states**: `pending → running → {completed, failed, terminated}`.
-  `POST /prompt` is only valid on a non-running, non-terminated session (multi-turn
-  resumes the run); otherwise it returns `409`.
+  `POST /prompt` is only valid on a `pending`/`completed` session;
+  `running`, `failed`, and `terminated` all return `409`.
 
 ## Testing guidance
 

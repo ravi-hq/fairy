@@ -4,6 +4,11 @@ install:
 dev:
 	uv run python manage.py runserver 0.0.0.0:8777
 
+# Procrastinate worker. Session execution runs here; `make dev` only handles HTTP.
+# Requires Postgres (Procrastinate does not support SQLite).
+worker:
+	uv run procrastinate --app=agent_on_demand.session_service.tasks.procrastinate_app worker
+
 # Unit + integration tests (e2e suite excluded)
 test:
 	uv run pytest tests/ -v --ignore=tests/e2e

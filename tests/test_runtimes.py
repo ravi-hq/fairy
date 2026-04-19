@@ -1,5 +1,5 @@
 from agent_on_demand.runtimes import RUNTIMES
-from agent_on_demand.stream import _build_turn_command
+from agent_on_demand.session_service.tasks import build_turn_command as _build_turn_command
 
 
 def test_all_runtimes_defined():

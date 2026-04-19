@@ -12,7 +12,8 @@ def client():
 @pytest.fixture
 def fake_sprites(mocker):
     """Swap the real SpritesClient for a recording fake and stub the
-    background-execution thread so create_session calls don't spawn work.
+    Procrastinate task enqueue so create_session doesn't hit the real
+    broker.
 
     Returns the RecordingSpritesClient; use `.last_sprite()` or `.sprites`
     to reach the RecordingSprite(s) created by the test under inspection.
@@ -20,5 +21,7 @@ def fake_sprites(mocker):
     fake = RecordingSpritesClient()
     mocker.patch("agent_on_demand.session_service.client.get_client", return_value=fake)
     mocker.patch("agent_on_demand.session_service.get_client", return_value=fake)
-    mocker.patch("agent_on_demand.session_service.turn.threading.Thread")
+    # Stub task enqueue — tests that care about the enqueue can spy on this
+    # directly via `mocker.spy(execute_turn, "defer")` in their body.
+    mocker.patch("agent_on_demand.session_service.turn.execute_turn.defer")
     return fake

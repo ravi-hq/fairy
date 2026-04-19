@@ -1,19 +1,17 @@
-"""Per-turn entry point: spawn the background execution thread.
+"""Per-turn entry point: enqueue a Procrastinate task.
 
-The prompt flows in via the Sprites stdin frame (see `run_session_background`),
-so no per-turn filesystem write is needed. The runtime-CLI invocation is
-assembled inline per turn.
+The web process no longer runs session execution. It creates the DB rows and
+defers the work onto the worker service; the task body lives in
+`session_service.tasks.execute_turn`.
 """
 
 from __future__ import annotations
 
-import threading
-
 from sprites import Sprite
 
 from agent_on_demand.models import AgentSession, SessionTurn
-from agent_on_demand.runtimes import RUNTIMES
-from agent_on_demand.stream import run_session_background
+
+from .tasks import execute_turn
 
 
 def run_turn(
@@ -24,15 +22,16 @@ def run_turn(
     mode: str,
     timeout: float,
 ) -> None:
-    """Launch the background execution thread for this turn.
+    """Enqueue a task to execute this turn on the worker service.
 
-    Views call this for both turn 1 (`mode="run"`) and subsequent turns
-    (`mode="continue"`). The prompt streams over the Sprites stdin frame.
+    The `sprite` argument is unused — the task re-opens the handle from
+    `session.sprite_name` in the worker process. It stays in the signature
+    for source-compat with the existing views; drop in a follow-up.
     """
-    runtime = RUNTIMES[session.runtime]
-    thread = threading.Thread(
-        target=run_session_background,
-        args=(session, turn, sprite, runtime, prompt, mode, timeout),
-        daemon=True,
+    execute_turn.defer(
+        session_id=str(session.id),
+        turn_id=turn.id,
+        prompt=prompt,
+        mode=mode,
+        timeout=float(timeout),
     )
-    thread.start()

@@ -503,10 +503,10 @@ def test_send_prompt_appends_turn(
 
 
 @pytest.mark.django_db
-def test_send_prompt_invokes_continue_mode(
+def test_send_prompt_enqueues_continue_task(
     client: Client, auth_headers, runtime_key, agent, user, mocker
 ):
-    """/prompt invokes `bash /run-agent.sh continue` on the Sprite."""
+    """/prompt enqueues an `execute_turn` task with mode="continue"."""
     from tests.fakes.sprite import RecordingSpritesClient
 
     session = AgentSession.objects.create(
@@ -525,14 +525,7 @@ def test_send_prompt_invokes_continue_mode(
     mocker.patch("agent_on_demand.session_service.client.get_client", return_value=fake)
     mocker.patch("agent_on_demand.session_service.get_client", return_value=fake)
 
-    # Capture the run_session_background invocation without running it.
-    captured = {}
-
-    def fake_thread(target, args, daemon):
-        captured["args"] = args
-        return mocker.MagicMock()
-
-    mocker.patch("agent_on_demand.session_service.turn.threading.Thread", side_effect=fake_thread)
+    defer_mock = mocker.patch("agent_on_demand.session_service.turn.execute_turn.defer")
 
     resp = client.post(
         f"/sessions/{session.id}/prompt",
@@ -542,11 +535,12 @@ def test_send_prompt_invokes_continue_mode(
     )
     assert resp.status_code == 202
 
-    # run_session_background(session, turn, sprite, runtime, prompt, mode, timeout)
-    _session, _turn, _sprite, _runtime, prompt, mode, _timeout = captured["args"]
-    assert mode == "continue"
-    assert prompt == "second"
-    assert _turn.turn_number == 2
+    # execute_turn.defer is keyword-only.
+    kwargs = defer_mock.call_args.kwargs
+    assert kwargs["mode"] == "continue"
+    assert kwargs["prompt"] == "second"
+    assert kwargs["session_id"] == str(session.id)
+    assert isinstance(kwargs["turn_id"], int)
 
 
 @pytest.mark.django_db
@@ -644,89 +638,6 @@ def test_send_prompt_to_failed_session_rejected(client: Client, auth_headers, us
     )
     assert resp.status_code == 409
     assert "failed" in resp.json()["detail"].lower()
-
-
-@pytest.mark.django_db
-def test_run_session_background_persists_int_exit_code_on_exec_error(user, mocker):
-    """Regression: ExecError.exit_code is a method, not a property. The
-    background runner must call it before storing on `session.exit_code`,
-    otherwise Django's IntegerField raises TypeError at save time."""
-    from sprites import ExecError
-
-    from agent_on_demand.models import SessionTurn
-    from agent_on_demand.runtimes import RUNTIMES
-    from agent_on_demand.stream import run_session_background
-
-    session = AgentSession.objects.create(
-        user=user, runtime="claude", prompt="test", status="pending"
-    )
-    turn = SessionTurn.objects.create(
-        session=session, turn_number=1, prompt="test", status="pending"
-    )
-
-    mock_sprite = mocker.MagicMock()
-    mock_cmd = mocker.MagicMock()
-    mock_cmd.run.side_effect = ExecError("exit status 1", exit_code=1)
-    mock_sprite.command.return_value = mock_cmd
-
-    run_session_background(
-        session, turn, mock_sprite, RUNTIMES["claude"], "hello", "run", timeout=10.0
-    )
-
-    session.refresh_from_db()
-    assert session.status == "failed"
-    assert session.exit_code == 1
-    assert isinstance(session.exit_code, int)
-
-    # Prompt was fed to the runtime CLI via stdin — not argv, not env, not a file.
-    assert mock_cmd.stdin is not None
-    assert mock_cmd.stdin.read() == b"hello"
-
-    # The inline bash -c command — no /run-agent.sh, no prompt file.
-    argv = mock_sprite.command.call_args.args
-    assert argv[0] == "bash"
-    assert argv[1] == "-c"
-    assert "/run-agent.sh" not in argv[2]
-    assert "source /tmp/aod-env" in argv[2]
-    assert "PROMPT=$(cat)" in argv[2]
-
-    turn.refresh_from_db()
-    assert turn.status == "failed"
-    assert turn.exit_code == 1
-    assert turn.ended_at is not None
-
-
-@pytest.mark.django_db
-def test_run_session_background_closes_db_connections(user, mocker):
-    """Django's per-request DB-connection lifecycle doesn't apply to threads
-    spawned outside the request cycle. We call close_old_connections() on
-    entry and exit so a turn's DB writes don't hold a connection for the
-    worker's full lifetime."""
-    from sprites import ExecError
-
-    from agent_on_demand.models import SessionTurn
-    from agent_on_demand.runtimes import RUNTIMES
-
-    session = AgentSession.objects.create(user=user, runtime="claude", prompt="t", status="pending")
-    turn = SessionTurn.objects.create(session=session, turn_number=1, prompt="t", status="pending")
-
-    mock_sprite = mocker.MagicMock()
-    mock_cmd = mocker.MagicMock()
-    mock_cmd.run.side_effect = ExecError("exit status 0", exit_code=0)
-    mock_sprite.command.return_value = mock_cmd
-
-    close_spy = mocker.patch("agent_on_demand.stream.close_old_connections")
-
-    # Re-import after patching so the module uses the spy.
-    from agent_on_demand.stream import run_session_background
-
-    run_session_background(
-        session, turn, mock_sprite, RUNTIMES["claude"], "hi", "run", timeout=10.0
-    )
-
-    # At minimum: called at entry and at exit (finally). >= 2 is defensive —
-    # if the code inadvertently calls it an extra time elsewhere, still fine.
-    assert close_spy.call_count >= 2
 
 
 @pytest.mark.django_db
