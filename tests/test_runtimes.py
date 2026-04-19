@@ -6,24 +6,65 @@ def test_all_runtimes_defined():
     assert set(RUNTIMES) == {"claude", "codex", "gemini", "claude-oauth"}
 
 
-def test_wrapper_script_escapes_prompt():
+def test_wrapper_script_reads_prompt_from_file():
+    """PROMPT is per-turn state; the script reads it from a file rather than
+    baking it in, so turn 2+ don't need to rewrite the script."""
     config = RUNTIMES["claude"]
-    script = build_wrapper_script(config, "sk-test-key", "hello 'world' $(evil)")
+    script = build_wrapper_script(config, "sk-test-key")
     assert "sk-test-key" in script
     assert config.env_var in script
-    # shlex.quote wraps the value in single quotes, making shell expansion impossible.
-    # The PROMPT= line should use shlex quoting (single-quote wrapped).
-    assert "export PROMPT=" in script
-    # Verify the prompt is referenced via $PROMPT (not inlined unescaped)
+    # Prompt is NOT baked into the script; it's loaded from the prompt file.
+    assert "/tmp/aod-prompt.txt" in script
+    assert "PROMPT=$(cat" in script
+    # cmd template still references "$PROMPT"
     assert '"$PROMPT"' in script
 
 
 def test_wrapper_script_escapes_api_key():
     config = RUNTIMES["claude"]
-    script = build_wrapper_script(config, "key with spaces & $pecial", "test")
+    script = build_wrapper_script(config, "key with spaces & $pecial")
     # The key should be shell-quoted
     assert "key with spaces" in script
     assert script.count("export ANTHROPIC_API_KEY=") == 1
+
+
+def test_wrapper_script_dispatches_by_mode():
+    """Script takes $1 = run|continue so the same script serves every turn."""
+    config = RUNTIMES["claude"]
+    script = build_wrapper_script(config, "sk-test")
+    assert 'MODE="${1:-run}"' in script
+    assert "case \"$MODE\" in" in script
+    assert config.cmd in script
+    assert config.continue_cmd in script
+
+
+def test_wrapper_script_exports_session_id_when_provided():
+    """runtime_session_id is baked into the script as AOD_SESSION_ID so the
+    claude cmd can reference --session-id / --resume by UUID."""
+    config = RUNTIMES["claude"]
+    sid = "11111111-2222-3333-4444-555555555555"
+    script = build_wrapper_script(config, "sk-test", runtime_session_id=sid)
+    assert f"export AOD_SESSION_ID={sid}" in script
+
+
+def test_wrapper_script_no_session_id_when_none():
+    """Omitting runtime_session_id leaves AOD_SESSION_ID unset (old sessions,
+    or runtimes that don't need it)."""
+    config = RUNTIMES["codex"]
+    script = build_wrapper_script(config, "sk-test")
+    assert "AOD_SESSION_ID" not in script
+
+
+def test_claude_runtime_uses_session_id_and_resume():
+    """Claude's cmd templates use --session-id on run and --resume on continue
+    (both referencing $AOD_SESSION_ID)."""
+    claude = RUNTIMES["claude"]
+    assert '--session-id "$AOD_SESSION_ID"' in claude.cmd
+    assert '--resume "$AOD_SESSION_ID"' in claude.continue_cmd
+    # Ditto for the OAuth variant, which shares the claude CLI
+    oauth = RUNTIMES["claude-oauth"]
+    assert '--session-id "$AOD_SESSION_ID"' in oauth.cmd
+    assert '--resume "$AOD_SESSION_ID"' in oauth.continue_cmd
 
 
 def test_each_runtime_has_unique_env_var():

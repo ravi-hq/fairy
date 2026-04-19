@@ -118,6 +118,7 @@ class AgentSession(models.Model):
     runtime = models.CharField(max_length=32)
     prompt = models.TextField()
     sprite_name = models.CharField(max_length=100, blank=True)
+    runtime_session_id = models.UUIDField(null=True, blank=True)
     status = models.CharField(max_length=16, choices=STATUS_CHOICES, default="pending")
     exit_code = models.IntegerField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -279,6 +280,43 @@ class AgentVersion(models.Model):
         return f"{self.agent.name} v{self.version}"
 
 
+class SessionTurn(models.Model):
+    """A single prompt+response cycle within a session.
+
+    Sessions persist a Sprite; turns are the discrete executions on that
+    Sprite. Turn 1 runs the agent in 'run' mode; turn 2+ use 'continue' mode
+    so the runtime CLI resumes its own conversation state.
+    """
+
+    STATUS_CHOICES = [
+        ("pending", "Pending"),
+        ("running", "Running"),
+        ("completed", "Completed"),
+        ("failed", "Failed"),
+    ]
+
+    session = models.ForeignKey(AgentSession, on_delete=models.CASCADE, related_name="turns")
+    turn_number = models.PositiveIntegerField()
+    prompt = models.TextField()
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default="pending")
+    exit_code = models.IntegerField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    ended_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "session_turns"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["session", "turn_number"], name="unique_session_turn_number"
+            ),
+        ]
+        ordering = ["session", "turn_number"]
+
+    def __str__(self):
+        return f"turn {self.turn_number} of {self.session_id} ({self.status})"
+
+
 class AgentSessionLog(models.Model):
     STREAM_CHOICES = [
         ("stdout", "stdout"),
@@ -286,6 +324,9 @@ class AgentSessionLog(models.Model):
     ]
 
     session = models.ForeignKey(AgentSession, on_delete=models.CASCADE, related_name="logs")
+    turn = models.ForeignKey(
+        SessionTurn, on_delete=models.CASCADE, related_name="logs", null=True, blank=True
+    )
     stream = models.CharField(max_length=6, choices=STREAM_CHOICES)
     data = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)
@@ -294,6 +335,7 @@ class AgentSessionLog(models.Model):
         db_table = "agent_session_logs"
         indexes = [
             models.Index(fields=["session", "id"]),
+            models.Index(fields=["turn", "id"]),
         ]
 
     def __str__(self):

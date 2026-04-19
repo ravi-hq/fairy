@@ -10,6 +10,7 @@ from agent_on_demand.models import (
     APIKey,
     AgentSession,
     AgentSessionLog,
+    SessionTurn,
     UserRuntimeKey,
     UserSpritesKey,
 )
@@ -408,6 +409,253 @@ def test_terminate_already_terminated(client: Client, auth_headers, user):
 
 
 @pytest.mark.django_db
+def test_create_session_creates_turn_one(
+    client: Client, auth_headers, runtime_key, agent, mocker
+):
+    """POST /sessions produces exactly one turn with prompt + pending status."""
+    mock_sprite = mocker.MagicMock()
+    mock_fs = mocker.MagicMock()
+    mock_sprite.filesystem.return_value = mock_fs
+    mock_fs.__truediv__ = mocker.Mock(return_value=mock_fs)
+    mock_client = mocker.MagicMock()
+    mock_client.create_sprite.return_value = mock_sprite
+    mocker.patch("agent_on_demand.views._get_client", return_value=mock_client)
+    mocker.patch("agent_on_demand.views.threading.Thread")
+
+    resp = client.post(
+        "/sessions",
+        data=json.dumps({"agent_id": str(agent.id), "prompt": "first prompt"}),
+        content_type="application/json",
+        **auth_headers,
+    )
+    assert resp.status_code == 202
+    data = resp.json()
+    assert data["current_turn"] == 1
+
+    turns = list(SessionTurn.objects.filter(session_id=data["id"]).order_by("turn_number"))
+    assert len(turns) == 1
+    assert turns[0].turn_number == 1
+    assert turns[0].prompt == "first prompt"
+    assert turns[0].status == "pending"
+
+
+@pytest.mark.django_db
+def test_create_session_generates_runtime_session_id(
+    client: Client, auth_headers, runtime_key, agent, mocker
+):
+    """Each new session gets a pre-generated UUID persisted as
+    runtime_session_id AND baked into the wrapper script as AOD_SESSION_ID."""
+    import uuid as _uuid
+
+    mock_sprite = mocker.MagicMock()
+    mock_fs = mocker.MagicMock()
+    mock_sprite.filesystem.return_value = mock_fs
+    mock_fs.__truediv__ = mocker.Mock(return_value=mock_fs)
+    mock_client = mocker.MagicMock()
+    mock_client.create_sprite.return_value = mock_sprite
+    mocker.patch("agent_on_demand.views._get_client", return_value=mock_client)
+    mocker.patch("agent_on_demand.views.threading.Thread")
+
+    resp = client.post(
+        "/sessions",
+        data=json.dumps({"agent_id": str(agent.id), "prompt": "hi"}),
+        content_type="application/json",
+        **auth_headers,
+    )
+    assert resp.status_code == 202
+
+    session = AgentSession.objects.get(pk=resp.json()["id"])
+    assert session.runtime_session_id is not None
+    # Should be a real UUID4
+    _uuid.UUID(str(session.runtime_session_id), version=4)
+
+    script = mock_fs.write_text.call_args_list[0][0][0]
+    assert f"export AOD_SESSION_ID={session.runtime_session_id}" in script
+
+
+@pytest.mark.django_db
+def test_create_session_writes_script_once_and_prompt_file(
+    client: Client, auth_headers, runtime_key, agent, mocker
+):
+    """The wrapper script is written exactly once at create-time, along with
+    the prompt file. /prompt should not rewrite the script."""
+    mock_sprite = mocker.MagicMock()
+    mock_fs = mocker.MagicMock()
+    mock_sprite.filesystem.return_value = mock_fs
+    mock_fs.__truediv__ = mocker.Mock(return_value=mock_fs)
+    mock_client = mocker.MagicMock()
+    mock_client.create_sprite.return_value = mock_sprite
+    mocker.patch("agent_on_demand.views._get_client", return_value=mock_client)
+    mocker.patch("agent_on_demand.views.threading.Thread")
+
+    resp = client.post(
+        "/sessions",
+        data=json.dumps({"agent_id": str(agent.id), "prompt": "hello"}),
+        content_type="application/json",
+        **auth_headers,
+    )
+    assert resp.status_code == 202
+
+    calls = mock_fs.write_text.call_args_list
+    assert len(calls) == 2
+    script, prompt = calls[0][0][0], calls[1][0][0]
+    assert script.startswith("#!/bin/bash")
+    assert prompt == "hello"
+
+
+@pytest.mark.django_db
+def test_send_prompt_appends_turn(
+    client: Client, auth_headers, runtime_key, agent, user, mocker
+):
+    """/prompt creates turn N+1 and writes only the prompt file."""
+    session = AgentSession.objects.create(
+        user=user,
+        agent=agent,
+        runtime="claude",
+        prompt="first",
+        sprite_name="sprite-xyz",
+        status="completed",
+    )
+    SessionTurn.objects.create(
+        session=session, turn_number=1, prompt="first", status="completed", exit_code=0
+    )
+
+    mock_sprite = mocker.MagicMock()
+    mock_fs = mocker.MagicMock()
+    mock_sprite.filesystem.return_value = mock_fs
+    mock_fs.__truediv__ = mocker.Mock(return_value=mock_fs)
+    mock_client = mocker.MagicMock()
+    mock_client.get_sprite.return_value = mock_sprite
+    mocker.patch("agent_on_demand.views._get_client", return_value=mock_client)
+    mocker.patch("agent_on_demand.views.threading.Thread")
+
+    resp = client.post(
+        f"/sessions/{session.id}/prompt",
+        data=json.dumps({"prompt": "second"}),
+        content_type="application/json",
+        **auth_headers,
+    )
+    assert resp.status_code == 202
+    assert resp.json()["current_turn"] == 2
+
+    turns = list(SessionTurn.objects.filter(session=session).order_by("turn_number"))
+    assert [t.turn_number for t in turns] == [1, 2]
+    assert turns[1].prompt == "second"
+    assert turns[1].status == "pending"
+
+    # Only the prompt file is written — no new script.
+    assert mock_fs.write_text.call_count == 1
+    assert mock_fs.write_text.call_args_list[0][0][0] == "second"
+
+
+@pytest.mark.django_db
+def test_send_prompt_invokes_continue_mode(
+    client: Client, auth_headers, runtime_key, agent, user, mocker
+):
+    """/prompt invokes `bash /run-agent.sh continue` on the Sprite."""
+    session = AgentSession.objects.create(
+        user=user,
+        agent=agent,
+        runtime="claude",
+        prompt="first",
+        sprite_name="sprite-xyz",
+        status="completed",
+    )
+    SessionTurn.objects.create(
+        session=session, turn_number=1, prompt="first", status="completed", exit_code=0
+    )
+
+    mock_sprite = mocker.MagicMock()
+    mock_fs = mocker.MagicMock()
+    mock_sprite.filesystem.return_value = mock_fs
+    mock_fs.__truediv__ = mocker.Mock(return_value=mock_fs)
+    mock_client = mocker.MagicMock()
+    mock_client.get_sprite.return_value = mock_sprite
+    mocker.patch("agent_on_demand.views._get_client", return_value=mock_client)
+
+    # Capture the run_session_background invocation without running it.
+    captured = {}
+
+    def fake_thread(target, args, daemon):
+        captured["args"] = args
+        return mocker.MagicMock()
+
+    mocker.patch("agent_on_demand.views.threading.Thread", side_effect=fake_thread)
+
+    resp = client.post(
+        f"/sessions/{session.id}/prompt",
+        data=json.dumps({"prompt": "second"}),
+        content_type="application/json",
+        **auth_headers,
+    )
+    assert resp.status_code == 202
+
+    # run_session_background(session, turn, sprite, mode, timeout)
+    _session, _turn, _sprite, mode, _timeout = captured["args"]
+    assert mode == "continue"
+    assert _turn.turn_number == 2
+
+
+@pytest.mark.django_db
+def test_list_session_turns(client: Client, auth_headers, user):
+    session = AgentSession.objects.create(
+        user=user, runtime="claude", prompt="t2", status="completed", exit_code=0
+    )
+    SessionTurn.objects.create(
+        session=session, turn_number=1, prompt="t1", status="completed", exit_code=0
+    )
+    SessionTurn.objects.create(
+        session=session, turn_number=2, prompt="t2", status="completed", exit_code=0
+    )
+
+    resp = client.get(f"/sessions/{session.id}/turns", **auth_headers)
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert [t["turn_number"] for t in data] == [1, 2]
+    assert data[0]["prompt"] == "t1"
+    assert data[1]["prompt"] == "t2"
+
+
+@pytest.mark.django_db
+def test_session_read_exposes_turn_count(client: Client, auth_headers, user):
+    session = AgentSession.objects.create(
+        user=user, runtime="claude", prompt="t2", status="completed", exit_code=0
+    )
+    SessionTurn.objects.create(session=session, turn_number=1, prompt="t1", status="completed")
+    SessionTurn.objects.create(session=session, turn_number=2, prompt="t2", status="completed")
+
+    resp = client.get(f"/sessions/{session.id}", **auth_headers)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["turn_count"] == 2
+    assert body["current_turn"] == 2
+
+
+@pytest.mark.django_db
+def test_stream_emits_turn_start_boundaries(client: Client, auth_headers, user):
+    """Logs are tagged with their turn; stream emits a turn_start event when
+    the turn boundary changes."""
+    session = AgentSession.objects.create(
+        user=user, runtime="claude", prompt="t2", status="completed", exit_code=0
+    )
+    t1 = SessionTurn.objects.create(
+        session=session, turn_number=1, prompt="t1", status="completed", exit_code=0
+    )
+    t2 = SessionTurn.objects.create(
+        session=session, turn_number=2, prompt="t2", status="completed", exit_code=0
+    )
+    AgentSessionLog.objects.create(session=session, turn=t1, stream="stdout", data="a")
+    AgentSessionLog.objects.create(session=session, turn=t2, stream="stdout", data="b")
+
+    resp = client.get(f"/sessions/{session.id}/stream", **auth_headers)
+    content = b"".join(resp.streaming_content).decode()
+    # Two turn_start events in order: 1 then 2.
+    i1 = content.index('"type": "turn_start", "turn": 1')
+    i2 = content.index('"type": "turn_start", "turn": 2')
+    assert i1 < i2
+
+
+@pytest.mark.django_db
 def test_send_prompt_to_terminated_session(client: Client, auth_headers, user):
     session = AgentSession.objects.create(
         user=user, runtime="claude", prompt="test", sprite_name="", status="terminated"
@@ -429,10 +677,14 @@ def test_run_session_background_persists_int_exit_code_on_exec_error(user, mocke
     otherwise Django's IntegerField raises TypeError at save time."""
     from sprites import ExecError
 
+    from agent_on_demand.models import SessionTurn
     from agent_on_demand.stream import run_session_background
 
     session = AgentSession.objects.create(
         user=user, runtime="claude", prompt="test", status="pending"
+    )
+    turn = SessionTurn.objects.create(
+        session=session, turn_number=1, prompt="test", status="pending"
     )
 
     mock_sprite = mocker.MagicMock()
@@ -440,12 +692,17 @@ def test_run_session_background_persists_int_exit_code_on_exec_error(user, mocke
     mock_cmd.run.side_effect = ExecError("exit status 1", exit_code=1)
     mock_sprite.command.return_value = mock_cmd
 
-    run_session_background(session, mock_sprite, timeout=10.0)
+    run_session_background(session, turn, mock_sprite, "run", timeout=10.0)
 
     session.refresh_from_db()
     assert session.status == "failed"
     assert session.exit_code == 1
     assert isinstance(session.exit_code, int)
+
+    turn.refresh_from_db()
+    assert turn.status == "failed"
+    assert turn.exit_code == 1
+    assert turn.ended_at is not None
 
 
 @pytest.mark.django_db

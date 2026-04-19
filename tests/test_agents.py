@@ -378,10 +378,11 @@ def test_create_session_with_agent(client: Client, auth_headers, agent, runtime_
     )
     assert resp.status_code == 202
 
-    # The script should contain the agent's system prompt
-    written_script = mock_fs.write_text.call_args[0][0]
-    assert "You are a helpful assistant." in written_script
-    assert "Fix the bug" in written_script
+    # System prompt is prepended to the user prompt, written to the prompt
+    # file on the Sprite. Call 0 is the script; call 1 is the prompt file.
+    written_prompt = mock_fs.write_text.call_args_list[1][0][0]
+    assert "You are a helpful assistant." in written_prompt
+    assert "Fix the bug" in written_prompt
 
 
 @pytest.mark.django_db

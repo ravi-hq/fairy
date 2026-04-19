@@ -54,10 +54,14 @@ class RuntimeConfig:
 
 
 RUNTIMES: dict[str, RuntimeConfig] = {
+    # Claude: we pre-generate a session UUID at AOD session-create time and
+    # pass it as --session-id on turn 1, then --resume <uuid> on every
+    # subsequent turn. This is more reliable than --continue in --print mode
+    # (which has been observed to silently fork new sessions).
     "claude": RuntimeConfig(
         name="claude",
-        cmd='claude --print --verbose --output-format stream-json -p "$PROMPT"',
-        continue_cmd='claude --dangerously-skip-permissions --print --verbose --output-format stream-json --continue -p "$PROMPT"',
+        cmd='claude --print --verbose --output-format stream-json --session-id "$AOD_SESSION_ID" -p "$PROMPT"',
+        continue_cmd='claude --dangerously-skip-permissions --print --verbose --output-format stream-json --resume "$AOD_SESSION_ID" -p "$PROMPT"',
         env_var="ANTHROPIC_API_KEY",
     ),
     "codex": RuntimeConfig(
@@ -76,8 +80,8 @@ RUNTIMES: dict[str, RuntimeConfig] = {
     ),
     "claude-oauth": RuntimeConfig(
         name="claude-oauth",
-        cmd='claude --print --verbose --output-format stream-json -p "$PROMPT"',
-        continue_cmd='claude --dangerously-skip-permissions --print --verbose --output-format stream-json --continue -p "$PROMPT"',
+        cmd='claude --print --verbose --output-format stream-json --session-id "$AOD_SESSION_ID" -p "$PROMPT"',
+        continue_cmd='claude --dangerously-skip-permissions --print --verbose --output-format stream-json --resume "$AOD_SESSION_ID" -p "$PROMPT"',
         env_var="CLAUDE_CODE_OAUTH_TOKEN",
     ),
 }

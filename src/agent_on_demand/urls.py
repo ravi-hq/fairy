@@ -22,6 +22,7 @@ urlpatterns = [
     path("sessions", views.sessions_list_create),
     path("sessions/<uuid:session_id>", views.get_session),
     path("sessions/<uuid:session_id>/prompt", views.send_prompt),
+    path("sessions/<uuid:session_id>/turns", views.list_session_turns),
     path("sessions/<uuid:session_id>/terminate", views.terminate_session),
     path("sessions/<uuid:session_id>/delete", views.delete_session),
     path("sessions/<uuid:session_id>/stream", views.stream_session),

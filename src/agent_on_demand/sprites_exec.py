@@ -253,24 +253,48 @@ def _build_skills_section(runtime_name: str, skills: list[SkillSpec]) -> str:
     return "\n".join(lines)
 
 
+PROMPT_FILE_PATH = "/tmp/aod-prompt.txt"
+INIT_SENTINEL_PATH = "/tmp/aod-initialized"
+
+
+def _indent(block: str, spaces: int = 4) -> str:
+    """Indent every non-empty line of `block` for embedding inside a bash if-block."""
+    if not block:
+        return ""
+    pad = " " * spaces
+    return "\n".join(pad + line if line else line for line in block.splitlines())
+
+
 def build_wrapper_script(
     config: RuntimeConfig,
     api_key: str,
-    prompt: str,
     *,
-    continue_session: bool = False,
+    runtime_session_id: str | None = None,
     repos: list[RepoSpec] | None = None,
     environment: EnvironmentSetup | None = None,
     mcp_servers: list[McpServerSpec] | None = None,
     skills: list[SkillSpec] | None = None,
 ) -> str:
-    """Build a shell script that exports the API key and runs the agent.
+    """Build a mode-dispatching shell script for a session.
+
+    The script is written ONCE at session-create time. Invoked as:
+
+        bash /run-agent.sh run       # first turn
+        bash /run-agent.sh continue  # subsequent turns
+
+    Per-turn state (the prompt) is read from {PROMPT_FILE_PATH}, which the
+    caller writes before each invocation. Non-idempotent setup (package
+    install, repo clone, user setup_script, git init) is gated behind a
+    sentinel so it only runs once — safe even if mode=continue is invoked
+    first for any reason, or if run is re-invoked after completion.
+
+    MCP config and skill files are written every run because they're
+    idempotent and runtimes read them at startup.
 
     Uses a wrapper script instead of passing env= on the exec call because:
     1. env= replaces the entire environment (no PATH -> binary not found)
     2. env= appears in WebSocket URL query params (API key in server logs)
     """
-    cmd = config.continue_cmd if continue_session else config.cmd
     clone_section = _build_clone_section(repos or [])
 
     env_vars_section = ""
@@ -285,30 +309,60 @@ def build_wrapper_script(
     mcp_flags = _mcp_cmd_flags(config.name, mcp_servers or [])
     skills_section = _build_skills_section(config.name, skills or [])
 
+    first_run_body = "\n\n".join(
+        s
+        for s in (
+            packages_section,
+            clone_section,
+            setup_section,
+        )
+        if s
+    )
+    first_run_block = _indent(first_run_body) if first_run_body else "    :"
+
+    session_id_export = (
+        f"export AOD_SESSION_ID={shlex.quote(runtime_session_id)}" if runtime_session_id else ""
+    )
+
     return f"""#!/bin/bash
 set -euo pipefail
+
+# Baked at session-create time
 export {config.env_var}={shlex.quote(api_key)}
-export PROMPT={shlex.quote(prompt)}
+{session_id_export}
 {env_vars_section}
 
-# Setup working directory
+MODE="${{1:-run}}"
+if [ ! -f {shlex.quote(PROMPT_FILE_PATH)} ]; then
+    echo "missing prompt file: {PROMPT_FILE_PATH}" >&2
+    exit 2
+fi
+PROMPT=$(cat {shlex.quote(PROMPT_FILE_PATH)})
+export PROMPT
+
 cd /home/sprite
 mkdir -p .gemini
-if [ ! -d .git ]; then
-    git init -q
-    git add -A 2>/dev/null || true
-    git commit -q -m "init" --allow-empty 2>/dev/null || true
+
+# One-time setup, gated on a sentinel so it's safe regardless of mode or retries
+if [ ! -f {shlex.quote(INIT_SENTINEL_PATH)} ]; then
+    if [ ! -d .git ]; then
+        git init -q
+        git add -A 2>/dev/null || true
+        git commit -q -m "init" --allow-empty 2>/dev/null || true
+    fi
+
+{first_run_block}
+
+    touch {shlex.quote(INIT_SENTINEL_PATH)}
 fi
-
-{packages_section}
-
-{clone_section}
-
-{setup_section}
 
 {mcp_section}
 
 {skills_section}
 
-exec {cmd}{mcp_flags}
+case "$MODE" in
+    run)      exec {config.cmd}{mcp_flags} ;;
+    continue) exec {config.continue_cmd}{mcp_flags} ;;
+    *)        echo "unknown mode: $MODE" >&2; exit 2 ;;
+esac
 """

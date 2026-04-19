@@ -86,13 +86,13 @@ def mock_sprites(mocker):
 class TestBuildCloneSection:
     def test_no_repos_produces_no_clone_lines(self):
         config = RUNTIMES["claude"]
-        script = build_wrapper_script(config, "sk-test", "hello", repos=[])
+        script = build_wrapper_script(config, "sk-test", repos=[])
         assert "git clone" not in script
 
     def test_single_public_repo(self):
         config = RUNTIMES["claude"]
         repo = RepoSpec(url="https://github.com/org/repo", mount_path="/workspace/repo")
-        script = build_wrapper_script(config, "sk-test", "hello", repos=[repo])
+        script = build_wrapper_script(config, "sk-test", repos=[repo])
         assert "git clone --depth=1 --quiet" in script
         assert "/workspace/repo" in script
         assert ".git-credentials" not in script  # no token = no credentials file
@@ -104,7 +104,7 @@ class TestBuildCloneSection:
             mount_path="/workspace/private-repo",
             token="ghp_testtoken123",
         )
-        script = build_wrapper_script(config, "sk-test", "hello", repos=[repo])
+        script = build_wrapper_script(config, "sk-test", repos=[repo])
         assert "git clone --depth=1 --quiet" in script
         assert "/workspace/private-repo" in script
         # Token should be in .git-credentials, not in the clone URL
@@ -125,7 +125,7 @@ class TestBuildCloneSection:
                 token="ghp_token",
             ),
         ]
-        script = build_wrapper_script(config, "sk-test", "hello", repos=repos)
+        script = build_wrapper_script(config, "sk-test", repos=repos)
         assert script.count("git clone") == 2
         assert "/workspace/frontend" in script
         assert "/workspace/backend" in script
@@ -133,16 +133,26 @@ class TestBuildCloneSection:
     def test_clone_section_before_exec(self):
         config = RUNTIMES["claude"]
         repo = RepoSpec(url="https://github.com/org/repo", mount_path="/workspace/repo")
-        script = build_wrapper_script(config, "sk-test", "hello", repos=[repo])
+        script = build_wrapper_script(config, "sk-test", repos=[repo])
         clone_pos = script.index("git clone")
         exec_pos = script.index("exec ")
         assert clone_pos < exec_pos
 
-    def test_continue_session_no_repos(self):
+    def test_continue_mode_skips_clones(self):
+        """The mode-dispatching script gates clones behind the init sentinel,
+        so `continue` mode won't re-clone. `--continue` is still reachable via
+        the case-dispatch."""
         config = RUNTIMES["claude"]
-        script = build_wrapper_script(config, "sk-test", "hello", continue_session=True, repos=[])
-        assert "git clone" not in script
-        assert "--continue" in script
+        repo = RepoSpec(url="https://github.com/org/repo", mount_path="/workspace/repo")
+        script = build_wrapper_script(config, "sk-test", repos=[repo])
+        # Clone lives inside the one-time init block, behind the sentinel.
+        init_block_start = script.index("if [ ! -f /tmp/aod-initialized ]")
+        init_block_end = script.index("touch /tmp/aod-initialized")
+        clone_pos = script.index("git clone")
+        assert init_block_start < clone_pos < init_block_end
+        # Claude resumes via --resume <uuid> in continue-mode; the continue
+        # command must appear in the case dispatch.
+        assert "--resume" in script
 
 
 # --- API validation tests ---

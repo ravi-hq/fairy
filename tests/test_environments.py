@@ -118,7 +118,7 @@ class TestWrapperScriptWithEnvironment:
             env_vars={},
             setup_script="",
         )
-        script = build_wrapper_script(config, "sk-test", "hello", environment=env)
+        script = build_wrapper_script(config, "sk-test", environment=env)
         apt_pos = script.index("apt-get")
         npm_pos = script.index("npm install")
         pip_pos = script.index("pip install")
@@ -131,7 +131,7 @@ class TestWrapperScriptWithEnvironment:
             env_vars={"DATABASE_URL": "postgres://localhost/db", "DEBUG": "1"},
             setup_script="",
         )
-        script = build_wrapper_script(config, "sk-test", "hello", environment=env)
+        script = build_wrapper_script(config, "sk-test", environment=env)
         assert "export DATABASE_URL=" in script
         assert "export DEBUG=" in script
 
@@ -142,7 +142,7 @@ class TestWrapperScriptWithEnvironment:
             env_vars={},
             setup_script="createdb myapp\necho done",
         )
-        script = build_wrapper_script(config, "sk-test", "hello", environment=env)
+        script = build_wrapper_script(config, "sk-test", environment=env)
         assert "createdb myapp" in script
         assert "echo done" in script
 
@@ -157,7 +157,7 @@ class TestWrapperScriptWithEnvironment:
             setup_script="echo setup",
         )
         repo = RepoSpec(url="https://github.com/org/repo", mount_path="/workspace/repo")
-        script = build_wrapper_script(config, "sk-test", "hello", repos=[repo], environment=env)
+        script = build_wrapper_script(config, "sk-test", repos=[repo], environment=env)
         env_pos = script.index("export KEY=")
         pkg_pos = script.index("pip install")
         clone_pos = script.index("git clone")
@@ -167,7 +167,7 @@ class TestWrapperScriptWithEnvironment:
 
     def test_no_environment_backward_compat(self):
         config = RUNTIMES["claude"]
-        script = build_wrapper_script(config, "sk-test", "hello")
+        script = build_wrapper_script(config, "sk-test")
         assert "pip install" not in script
         assert "apt-get" not in script
         assert "# Custom setup" not in script
@@ -175,7 +175,7 @@ class TestWrapperScriptWithEnvironment:
     def test_empty_environment(self):
         config = RUNTIMES["claude"]
         env = EnvironmentSetup(packages={}, env_vars={}, setup_script="")
-        script = build_wrapper_script(config, "sk-test", "hello", environment=env)
+        script = build_wrapper_script(config, "sk-test", environment=env)
         assert "pip install" not in script
         assert "# Custom setup" not in script
 
@@ -186,7 +186,7 @@ class TestWrapperScriptWithEnvironment:
             env_vars={},
             setup_script="",
         )
-        script = build_wrapper_script(config, "sk-test", "hello", environment=env)
+        script = build_wrapper_script(config, "sk-test", environment=env)
         assert "cargo install" in script
         assert script.count("cargo install") == 2
 
@@ -197,7 +197,7 @@ class TestWrapperScriptWithEnvironment:
             env_vars={},
             setup_script="",
         )
-        script = build_wrapper_script(config, "sk-test", "hello", environment=env)
+        script = build_wrapper_script(config, "sk-test", environment=env)
         assert "gem install --silent" in script
 
     def test_go_packages(self):
@@ -207,7 +207,7 @@ class TestWrapperScriptWithEnvironment:
             env_vars={},
             setup_script="",
         )
-        script = build_wrapper_script(config, "sk-test", "hello", environment=env)
+        script = build_wrapper_script(config, "sk-test", environment=env)
         assert "go install" in script
 
 
@@ -546,7 +546,7 @@ class TestSessionEnvironmentIntegration:
         assert data["environment_id"] == str(environment.id)
 
         # Verify wrapper script includes environment setup
-        written_script = mock_fs.write_text.call_args[0][0]
+        written_script = mock_fs.write_text.call_args_list[0][0][0]
         assert "apt-get" in written_script
         assert "pip install" in written_script
         assert "DATABASE_URL" in written_script
@@ -574,7 +574,7 @@ class TestSessionEnvironmentIntegration:
         data = resp.json()
         assert data["environment_id"] == str(environment.id)
 
-        written_script = mock_fs.write_text.call_args[0][0]
+        written_script = mock_fs.write_text.call_args_list[0][0][0]
         assert "pip install" in written_script
 
     def test_explicit_environment_overrides_agent(
@@ -611,7 +611,7 @@ class TestSessionEnvironmentIntegration:
         data = resp.json()
         assert data["environment_id"] == str(other_env.id)
 
-        written_script = mock_fs.write_text.call_args[0][0]
+        written_script = mock_fs.write_text.call_args_list[0][0][0]
         assert "npm install" in written_script
         # Should NOT have the original environment's pip packages
         assert "pandas" not in written_script

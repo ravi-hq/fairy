@@ -84,7 +84,7 @@ class TestWrapperScriptSkills:
     def test_claude_skills_written_to_dot_claude(self):
         config = RUNTIMES["claude"]
         skills = [SkillSpec(name="web-search", content=SAMPLE_CONTENT)]
-        script = build_wrapper_script(config, "sk-test", "hello", skills=skills)
+        script = build_wrapper_script(config, "sk-test", skills=skills)
         assert "mkdir -p /home/sprite/.claude/skills/web-search" in script
         assert "/home/sprite/.claude/skills/web-search/SKILL.md" in script
         assert "Use this skill when the user asks" in script
@@ -92,25 +92,25 @@ class TestWrapperScriptSkills:
     def test_claude_oauth_shares_claude_path(self):
         config = RUNTIMES["claude-oauth"]
         skills = [SkillSpec(name="web-search", content=SAMPLE_CONTENT)]
-        script = build_wrapper_script(config, "sk-test", "hello", skills=skills)
+        script = build_wrapper_script(config, "sk-test", skills=skills)
         assert "/home/sprite/.claude/skills/web-search/SKILL.md" in script
 
     def test_codex_skills_written_to_codex_dir(self):
         config = RUNTIMES["codex"]
         skills = [SkillSpec(name="web-search", content=SAMPLE_CONTENT)]
-        script = build_wrapper_script(config, "sk-test", "hello", skills=skills)
+        script = build_wrapper_script(config, "sk-test", skills=skills)
         assert "/home/sprite/.codex/skills/web-search/SKILL.md" in script
         assert "/home/sprite/.claude/skills" not in script
 
     def test_gemini_skills_written_to_gemini_dir(self):
         config = RUNTIMES["gemini"]
         skills = [SkillSpec(name="web-search", content=SAMPLE_CONTENT)]
-        script = build_wrapper_script(config, "sk-test", "hello", skills=skills)
+        script = build_wrapper_script(config, "sk-test", skills=skills)
         assert "/home/sprite/.gemini/skills/web-search/SKILL.md" in script
 
     def test_no_skills_backward_compat(self):
         config = RUNTIMES["claude"]
-        script = build_wrapper_script(config, "sk-test", "hello")
+        script = build_wrapper_script(config, "sk-test")
         assert ".claude/skills" not in script
         assert "SKILL.md" not in script
 
@@ -120,14 +120,14 @@ class TestWrapperScriptSkills:
             SkillSpec(name="one", content="---\nname: one\ndescription: d\n---\nbody\n"),
             SkillSpec(name="two", content="---\nname: two\ndescription: d\n---\nbody\n"),
         ]
-        script = build_wrapper_script(config, "sk-test", "hello", skills=skills)
+        script = build_wrapper_script(config, "sk-test", skills=skills)
         assert "/home/sprite/.claude/skills/one/SKILL.md" in script
         assert "/home/sprite/.claude/skills/two/SKILL.md" in script
 
     def test_skills_section_before_exec(self):
         config = RUNTIMES["claude"]
         skills = [SkillSpec(name="web-search", content=SAMPLE_CONTENT)]
-        script = build_wrapper_script(config, "sk-test", "hello", skills=skills)
+        script = build_wrapper_script(config, "sk-test", skills=skills)
         skills_pos = script.index("# Agent skills")
         exec_pos = script.index("exec ")
         assert skills_pos < exec_pos
@@ -137,7 +137,7 @@ class TestWrapperScriptSkills:
         config = RUNTIMES["claude"]
         content = "---\nname: sh\ndescription: d\n---\n$VAR `whoami` $(date)\n"
         skills = [SkillSpec(name="sh", content=content)]
-        script = build_wrapper_script(config, "sk-test", "hello", skills=skills)
+        script = build_wrapper_script(config, "sk-test", skills=skills)
         assert "$VAR `whoami` $(date)" in script
 
 
@@ -350,7 +350,7 @@ class TestSessionSkillsIntegration:
             **auth_headers,
         )
         assert resp.status_code == 202
-        written_script = mock_fs.write_text.call_args[0][0]
+        written_script = mock_fs.write_text.call_args_list[0][0][0]
         assert "mkdir -p /home/sprite/.claude/skills/web-search" in written_script
         assert "/home/sprite/.claude/skills/web-search/SKILL.md" in written_script
 
@@ -372,13 +372,17 @@ class TestSessionSkillsIntegration:
             **auth_headers,
         )
         assert resp.status_code == 202
-        written_script = mock_fs.write_text.call_args[0][0]
+        written_script = mock_fs.write_text.call_args_list[0][0][0]
         assert "# Agent skills" not in written_script
         assert "SKILL.md" not in written_script
 
-    def test_continue_session_rematerializes_skills(
+    def test_continue_session_only_writes_prompt_file(
         self, client: Client, auth_headers, runtime_key, user, mocker, mock_sprites
     ):
+        """/prompt is a minimal operation; the wrapper script was baked at
+        create-time and already carries all skills. We only update the prompt
+        file on the Sprite.
+        """
         from agent_on_demand.models import AgentSession
 
         agent = Agent.objects.create(
@@ -409,5 +413,5 @@ class TestSessionSkillsIntegration:
             **auth_headers,
         )
         assert resp.status_code == 202
-        written_script = mock_fs.write_text.call_args[0][0]
-        assert "/home/sprite/.claude/skills/web-search/SKILL.md" in written_script
+        assert mock_fs.write_text.call_count == 1
+        assert mock_fs.write_text.call_args_list[0][0][0] == "follow-up"

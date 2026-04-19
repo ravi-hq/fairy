@@ -6,9 +6,10 @@ import threading
 import time
 from collections.abc import Generator
 
+from django.utils import timezone
 from sprites import ExecError, Sprite
 
-from agent_on_demand.models import AgentSession, AgentSessionLog
+from agent_on_demand.models import AgentSession, AgentSessionLog, SessionTurn
 
 logger = logging.getLogger(__name__)
 
@@ -49,13 +50,16 @@ class TaggingQueueWriter(io.RawIOBase):
 
 def run_session_background(
     session: AgentSession,
+    turn: SessionTurn,
     sprite: Sprite,
+    mode: str,
     timeout: float,
 ):
-    """Run agent in a background thread, writing output to the database.
+    """Run one turn of an agent session in a background thread.
 
-    POST /run starts this and returns immediately. Output is persisted to
-    AgentSessionLog rows.
+    `mode` is "run" for turn 1 and "continue" for subsequent turns. Logs are
+    tagged with the turn so consumers can replay per-turn. The session's
+    status tracks the latest turn for backward-compat.
     """
     output_q: queue.Queue = queue.Queue(maxsize=4096)
     db_buffer: list[AgentSessionLog] = []
@@ -68,7 +72,7 @@ def run_session_background(
 
     def _run_command():
         try:
-            cmd = sprite.command("bash", "/run-agent.sh", timeout=timeout)
+            cmd = sprite.command("bash", "/run-agent.sh", mode, timeout=timeout)
             cmd.stdout = TaggingQueueWriter(output_q, "stdout")
             cmd.stderr = TaggingQueueWriter(output_q, "stderr")
             cmd.run()
@@ -81,15 +85,16 @@ def run_session_background(
         finally:
             output_q.put(_SENTINEL)
 
-    # Update session status
+    now = timezone.now()
     session.status = "running"
     session.save(update_fields=["status", "updated_at"])
+    turn.status = "running"
+    turn.started_at = now
+    turn.save(update_fields=["status", "started_at"])
 
-    # Run the command in a sub-thread so we can drain the queue in this thread
     cmd_thread = threading.Thread(target=_run_command, daemon=True)
     cmd_thread.start()
 
-    # Drain queue → DB
     while True:
         try:
             chunk = output_q.get(timeout=1.0)
@@ -103,6 +108,7 @@ def run_session_background(
         db_buffer.append(
             AgentSessionLog(
                 session=session,
+                turn=turn,
                 stream=chunk.stream,
                 data=chunk.data.decode("utf-8", errors="replace"),
             )
@@ -110,54 +116,72 @@ def run_session_background(
         if len(db_buffer) >= FLUSH_SIZE:
             _flush_buffer()
 
-    # Flush remaining
     _flush_buffer()
 
     cmd_thread.join(timeout=5.0)
 
-    # Update session with result
     if result_holder:
         kind, value = result_holder[0]
         if kind == "exit":
-            session.status = "completed" if value == 0 else "failed"
-            session.exit_code = value
+            final_status = "completed" if value == 0 else "failed"
+            exit_code = value
         else:
-            session.status = "failed"
+            final_status = "failed"
+            exit_code = None
     else:
-        session.status = "failed"
+        final_status = "failed"
+        exit_code = None
 
-    session.save(update_fields=["status", "exit_code", "updated_at"])
+    ended = timezone.now()
+    # Don't clobber session.status if the session was terminated mid-run.
+    session.refresh_from_db(fields=["status"])
+    if session.status != "terminated":
+        session.status = final_status
+        session.exit_code = exit_code
+        session.save(update_fields=["status", "exit_code", "updated_at"])
+
+    turn.status = final_status
+    turn.exit_code = exit_code
+    turn.ended_at = ended
+    turn.save(update_fields=["status", "exit_code", "ended_at"])
 
 
 def stream_session_from_db(session_id: str) -> Generator[str, None, None]:
     """Yield SSE event strings by tailing the AgentSessionLog table.
 
-    1. Replay all existing rows
+    1. Replay all existing rows (emitting turn_start when the log's turn advances)
     2. Poll for new rows every 500ms
     3. Send heartbeat every 15s
     4. Stop when session is complete/failed AND no new rows remain
     """
     last_id = 0
+    last_turn_id = None
     last_heartbeat = time.time()
 
     while True:
         chunks = list(
             AgentSessionLog.objects.filter(session_id=session_id, id__gt=last_id)
             .order_by("id")
-            .values("id", "stream", "data")[:100]
+            .values("id", "stream", "data", "turn_id", "turn__turn_number")[:100]
         )
 
         for chunk in chunks:
             last_id = chunk["id"]
+            turn_id = chunk["turn_id"]
+            if turn_id is not None and turn_id != last_turn_id:
+                yield json.dumps(
+                    {"type": "turn_start", "turn": chunk["turn__turn_number"]}
+                )
+                last_turn_id = turn_id
             yield json.dumps(
                 {
                     "type": "output",
                     "stream": chunk["stream"],
                     "data": chunk["data"],
+                    "turn": chunk["turn__turn_number"],
                 }
             )
 
-        # Check if session is done
         session = AgentSession.objects.get(pk=session_id)
         if session.status in ("completed", "failed", "terminated") and not chunks:
             if session.status == "terminated":
@@ -168,7 +192,6 @@ def stream_session_from_db(session_id: str) -> Generator[str, None, None]:
                 yield json.dumps({"type": "exit", "code": session.exit_code})
             break
 
-        # Heartbeat to keep connection alive
         now = time.time()
         if now - last_heartbeat >= 15:
             last_heartbeat = now
