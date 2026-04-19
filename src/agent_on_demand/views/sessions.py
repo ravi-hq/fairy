@@ -1,5 +1,4 @@
 import json
-import logging
 import re
 import uuid
 from typing import Literal
@@ -25,48 +24,7 @@ from agent_on_demand.models import (
     UserRuntimeKey,
 )
 from agent_on_demand.runtimes import RUNTIMES
-from agent_on_demand.session_service import (
-    McpServerSpec,
-    RepoSpec,
-    SessionSpec,
-    SkillSpec,
-)
 from agent_on_demand.stream import stream_session_from_db
-
-logger = logging.getLogger(__name__)
-
-
-def _mcp_servers_to_specs(mcp_servers: list[dict]) -> list[McpServerSpec]:
-    """Convert agent's mcp_servers JSON to McpServerSpec list."""
-    return [
-        McpServerSpec(
-            name=s["name"],
-            type=s.get("type", "url"),
-            url=s.get("url", ""),
-            headers=s.get("headers", {}),
-            command=s.get("command", ""),
-            args=s.get("args", []),
-            env=s.get("env", {}),
-        )
-        for s in mcp_servers
-    ]
-
-
-def _skills_to_specs(skills: list[dict]) -> list[SkillSpec]:
-    """Convert agent's skills JSON to SkillSpec list for materialization."""
-    return [SkillSpec(name=s["name"], content=s["content"]) for s in skills]
-
-
-def _resources_to_repo_specs(resources: list) -> list[RepoSpec]:
-    """Convert GitHubRepoResource list to RepoSpec list for the wrapper script."""
-    return [
-        RepoSpec(
-            url=r.url,
-            mount_path=r.resolved_mount_path(),
-            token=r.authorization_token,
-        )
-        for r in resources
-    ]
 
 
 def _serialize_resources(session: AgentSession) -> list[dict]:
@@ -240,7 +198,11 @@ def _create_session(request):
             status=400,
         )
 
-    config = RUNTIMES[runtime]
+    # Sync pre-check so missing Sprites creds return 400 immediately rather
+    # than surfacing as a failed session the client has to poll for.
+    if session_service.get_client(request.user) is None:
+        return JsonResponse({"detail": "No Sprites API key configured"}, status=400)
+
     name = f"{settings.SPRITE_NAME_PREFIX}-{uuid.uuid4().hex[:12]}"
     runtime_session_id = str(uuid.uuid4())
 
@@ -249,25 +211,6 @@ def _create_session(request):
     effective_prompt = req.prompt
     if agent_obj.system:
         effective_prompt = f"{agent_obj.system}\n\n{req.prompt}"
-
-    spec = SessionSpec(
-        name=name,
-        runtime=config,
-        api_key=api_key,
-        runtime_session_id=runtime_session_id,
-        environment=environment_obj,
-        repos=_resources_to_repo_specs(req.resources),
-        mcp_servers=_mcp_servers_to_specs(agent_obj.mcp_servers),
-        skills=_skills_to_specs(agent_obj.skills),
-    )
-
-    try:
-        sprite = session_service.provision_session(request.user, spec)
-    except session_service.NoSpritesKeyError as e:
-        return JsonResponse({"detail": str(e)}, status=400)
-    except session_service.ProvisionError as e:
-        logger.warning("provision failed at stage=%s: %s", e.stage, e)
-        return JsonResponse({"detail": str(e)}, status=502)
 
     with transaction.atomic():
         session = AgentSession.objects.create(
@@ -298,7 +241,13 @@ def _create_session(request):
                 sr.set_token(resource.authorization_token)
             sr.save()
 
-    session_service.run_turn(session, turn, sprite, effective_prompt, "run", float(req.timeout))
+    session_service.provision_session_task.defer(
+        session_id=str(session.id),
+        turn_id=turn.id,
+        prompt=effective_prompt,
+        mode="run",
+        timeout=float(req.timeout),
+    )
 
     with posthog.new_context():
         posthog.identify_context(str(request.user.id))

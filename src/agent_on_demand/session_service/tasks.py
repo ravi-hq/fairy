@@ -1,17 +1,23 @@
-"""Procrastinate task: execute one turn of an agent session.
+"""Procrastinate tasks for session lifecycle.
 
-This runs in the worker process, not the web process. Its job is to drive the
-per-turn DB state machine, run the blocking SDK call, persist log chunks to
-`AgentSessionLog`, and finalize.
+Two tasks live here, both running in the worker process:
 
-The inner daemon thread that wraps `sprite.command().run()` stays here — it's
-load-bearing for the producer-consumer pattern against the SDK's own
-event-loop thread (which pushes log chunks into a queue via
+- `provision_session_task` creates the Sprite and runs setup stages, then
+  enqueues the first turn. Moving this off the web process is what keeps
+  `POST /sessions` snappy — provisioning is the slow step.
+- `execute_turn` drives one turn of the agent: DB state machine, blocking
+  SDK call, log chunk persistence, finalize.
+
+The inner daemon thread that wraps `sprite.command().run()` in `execute_turn`
+stays here — it's load-bearing for the producer-consumer pattern against the
+SDK's own event-loop thread (which pushes log chunks into a queue via
 `TaggingQueueWriter`). Eliminating it is a separate optimization.
 
 Retry policy: **none**. Turn-level retries against a Sprite that may be
 half-torn-down would not heal anything; failures surface as session status
-`failed` and the caller starts a new session.
+`failed` and the caller starts a new session. Provision failures follow the
+same rule — a half-provisioned Sprite is torn down and the session is
+marked `failed`.
 """
 
 from __future__ import annotations
@@ -27,11 +33,18 @@ from django.utils import timezone
 from procrastinate.contrib.django import app as procrastinate_app
 from sprites import ExecError
 
-from agent_on_demand.models import AgentSession, AgentSessionLog, SessionTurn
+from agent_on_demand.models import (
+    AgentSession,
+    AgentSessionLog,
+    SessionTurn,
+    UserRuntimeKey,
+)
 from agent_on_demand.observability import get_tracer
 from agent_on_demand.runtimes import RUNTIMES, RuntimeConfig
 
-from .provisioning import resume_session
+from .errors import NoSpritesKeyError, ProvisionError
+from .provisioning import provision_session, resume_session
+from .specs import McpServerSpec, RepoSpec, SessionSpec, SkillSpec
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +94,166 @@ def build_turn_command(runtime: RuntimeConfig, mode: str) -> str:
     """
     runtime_cmd = runtime.cmd if mode == "run" else runtime.continue_cmd
     return f"set -a; source /tmp/aod-env; set +a; PROMPT=$(cat); export PROMPT; exec {runtime_cmd}"
+
+
+@procrastinate_app.task(queue="sessions", name="provision_session", pass_context=False)
+def provision_session_task(
+    *,
+    session_id: str,
+    turn_id: int,
+    prompt: str,
+    mode: str,
+    timeout: float,
+) -> None:
+    """Provision the Sprite on the worker, then enqueue the first turn.
+
+    The session and turn rows already exist in the DB (created by the view in
+    `pending` state). On success we chain into `execute_turn`. On any
+    provision failure we mark the session + turn `failed` and stop; the
+    client sees the outcome via `GET /sessions/{id}` or the stream endpoint.
+    """
+    close_old_connections()
+    try:
+        _provision_session_inner(
+            session_id=session_id,
+            turn_id=turn_id,
+            prompt=prompt,
+            mode=mode,
+            timeout=timeout,
+        )
+    finally:
+        close_old_connections()
+
+
+def _provision_session_inner(
+    *,
+    session_id: str,
+    turn_id: int,
+    prompt: str,
+    mode: str,
+    timeout: float,
+) -> None:
+    session = AgentSession.objects.select_related("user", "agent", "environment").get(
+        pk=session_id
+    )
+    # If the client terminated before the worker picked this up, skip.
+    if session.status == "terminated":
+        return
+
+    spec = _build_spec_for_session(session)
+    if spec is None:
+        _mark_provision_failed(
+            session, turn_id, f"No API key configured for runtime: {session.runtime}"
+        )
+        return
+
+    tracer = get_tracer()
+    with tracer.start_as_current_span(
+        "session.provision_task",
+        attributes={
+            "aod.session_id": session_id,
+            "aod.runtime": session.runtime,
+        },
+    ) as span:
+        try:
+            provision_session(session.user, spec)
+        except NoSpritesKeyError as e:
+            span.set_attribute("aod.failure_stage", "no_sprites_key")
+            _mark_provision_failed(session, turn_id, str(e))
+            return
+        except ProvisionError as e:
+            span.set_attribute("aod.failure_stage", e.stage)
+            logger.warning("provision failed at stage=%s: %s", e.stage, e)
+            _mark_provision_failed(session, turn_id, str(e))
+            return
+
+    execute_turn.defer(
+        session_id=session_id,
+        turn_id=turn_id,
+        prompt=prompt,
+        mode=mode,
+        timeout=timeout,
+    )
+
+
+def _build_spec_for_session(session: AgentSession) -> SessionSpec | None:
+    """Rehydrate a SessionSpec from persisted session state. Returns None when
+    the user no longer has an API key configured for the session's runtime."""
+    api_key = UserRuntimeKey.get_key_for(session.user, session.runtime)
+    if api_key is None:
+        return None
+
+    agent = session.agent
+    mcp_servers: list[McpServerSpec] = []
+    skills: list[SkillSpec] = []
+    if agent is not None:
+        for s in agent.mcp_servers or []:
+            mcp_servers.append(
+                McpServerSpec(
+                    name=s["name"],
+                    type=s.get("type", "url"),
+                    url=s.get("url", ""),
+                    headers=s.get("headers", {}),
+                    command=s.get("command", ""),
+                    args=s.get("args", []),
+                    env=s.get("env", {}),
+                )
+            )
+        for s in agent.skills or []:
+            skills.append(SkillSpec(name=s["name"], content=s["content"]))
+
+    repos = [
+        RepoSpec(url=r.url, mount_path=r.mount_path, token=r.get_token())
+        for r in session.resources.all()
+    ]
+
+    return SessionSpec(
+        name=session.sprite_name,
+        runtime=RUNTIMES[session.runtime],
+        api_key=api_key,
+        runtime_session_id=str(session.runtime_session_id)
+        if session.runtime_session_id
+        else None,
+        environment=session.environment,
+        repos=repos,
+        mcp_servers=mcp_servers,
+        skills=skills,
+    )
+
+
+def _mark_provision_failed(session: AgentSession, turn_id: int, message: str) -> None:
+    """Record a provision failure: log stderr chunk, mark session + turn failed,
+    clear sprite_name (nothing was left behind — provision_session deletes on
+    failure), and emit the posthog event."""
+    AgentSessionLog.objects.create(
+        session=session,
+        turn_id=turn_id,
+        stream="stderr",
+        data=f"provision failed: {message}\n",
+    )
+    now = timezone.now()
+
+    session.refresh_from_db(fields=["status"])
+    if session.status != "terminated":
+        session.status = "failed"
+        session.sprite_name = ""
+        session.save(update_fields=["status", "sprite_name", "updated_at"])
+
+    SessionTurn.objects.filter(pk=turn_id).update(
+        status="failed",
+        ended_at=now,
+    )
+
+    with posthog.new_context():
+        posthog.identify_context(str(session.user_id))
+        posthog.capture(
+            "session.provision_failed",
+            properties={
+                "session_id": str(session.id),
+                "runtime": session.runtime,
+                "message": message,
+            },
+        )
 
 
 @procrastinate_app.task(queue="sessions", name="execute_turn", pass_context=False)

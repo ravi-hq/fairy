@@ -148,11 +148,14 @@ class TestSessionNetworkingIntegration:
     def test_policy_apply_failure_cleans_up_sprite(
         self, client: Client, auth_headers, runtime_key, user, agent, fake_sprites, mocker
     ):
-        """update_network_policy failing mid-provision tears the Sprite back down."""
+        """update_network_policy failing mid-provision tears the Sprite back
+        down and marks the session failed. The HTTP response is still 202
+        because provisioning now runs on the worker — the failure surfaces
+        through session.status, not the create response."""
+        from agent_on_demand.models import AgentSession
+
         env = _make_env(user, networking_type="limited", allowed_hosts=["api.anthropic.com"])
 
-        # Arrange: the next Sprite created by the service will raise on
-        # update_network_policy. We do this by wrapping create_sprite.
         original_create = fake_sprites.create_sprite
 
         def wrapped(name):
@@ -174,9 +177,11 @@ class TestSessionNetworkingIntegration:
             content_type="application/json",
             **auth_headers,
         )
-        assert resp.status_code == 502
-        assert "Failed to prepare Sprite" in resp.json()["detail"]
-        assert fake_sprites.deleted  # cleanup ran
+        assert resp.status_code == 202
+
+        session = AgentSession.objects.get(pk=resp.json()["id"])
+        assert session.status == "failed"
+        assert fake_sprites.deleted  # provision_session tore the Sprite back down
 
     def test_limited_with_empty_allowed_hosts_denies_all(
         self, client: Client, auth_headers, runtime_key, user, agent, fake_sprites
