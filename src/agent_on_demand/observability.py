@@ -100,7 +100,9 @@ def _instrument_libraries() -> None:
     try:
         from opentelemetry.instrumentation.django import DjangoInstrumentor
 
-        DjangoInstrumentor().instrument()
+        # `/health` is polled every few seconds by Render's health check; without
+        # this filter it dominates Honeycomb traffic and crowds out real spans.
+        DjangoInstrumentor().instrument(excluded_urls="health")
     except Exception:
         logger.warning("OTel Django instrumentation failed", exc_info=True)
     try:
