@@ -367,8 +367,8 @@ def test_create_session_with_agent(client: Client, auth_headers, agent, runtime_
 
     mock_client = mocker.MagicMock()
     mock_client.create_sprite.return_value = mock_sprite
-    mocker.patch("agent_on_demand.views.sessions._get_client", return_value=mock_client)
-    mocker.patch("agent_on_demand.views.sessions.threading.Thread")
+    mocker.patch("agent_on_demand.session_service.get_client", return_value=mock_client)
+    mocker.patch("agent_on_demand.session_service.threading.Thread")
 
     resp = client.post(
         "/sessions",
@@ -398,8 +398,8 @@ def test_create_session_with_agent_inherits_runtime(
 
     mock_client = mocker.MagicMock()
     mock_client.create_sprite.return_value = mock_sprite
-    mocker.patch("agent_on_demand.views.sessions._get_client", return_value=mock_client)
-    mocker.patch("agent_on_demand.views.sessions.threading.Thread")
+    mocker.patch("agent_on_demand.session_service.get_client", return_value=mock_client)
+    mocker.patch("agent_on_demand.session_service.threading.Thread")
 
     # No runtime specified — should inherit from agent
     resp = client.post(

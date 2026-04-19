@@ -1,7 +1,6 @@
 import json
 import logging
 import re
-import threading
 import uuid
 from typing import Literal
 
@@ -13,8 +12,8 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST
 
 from pydantic import BaseModel, Field, ValidationError, field_validator
-from sprites import NetworkPolicy, PolicyRule, SpriteError
 
+from agent_on_demand import session_service
 from agent_on_demand.auth import require_api_key
 from agent_on_demand.models import (
     Agent,
@@ -25,19 +24,14 @@ from agent_on_demand.models import (
 )
 from agent_on_demand.runtimes import RUNTIMES
 from agent_on_demand.sprites_exec import (
-    PROMPT_FILE_PATH,
     EnvironmentSetup,
     McpServerSpec,
     RepoSpec,
     SkillSpec,
     build_wrapper_script,
 )
-from agent_on_demand.stream import run_session_background, stream_session_from_db
-from agent_on_demand.views._shared import (
-    _get_client,
-    _get_runtime_key,
-    _no_sprites_key_response,
-)
+from agent_on_demand.stream import stream_session_from_db
+from agent_on_demand.views._shared import _get_runtime_key
 
 logger = logging.getLogger(__name__)
 
@@ -61,20 +55,6 @@ def _mcp_servers_to_specs(mcp_servers: list[dict]) -> list[McpServerSpec]:
 def _skills_to_specs(skills: list[dict]) -> list[SkillSpec]:
     """Convert agent's skills JSON to SkillSpec list for materialization."""
     return [SkillSpec(name=s["name"], content=s["content"]) for s in skills]
-
-
-def _environment_to_network_policy(env: Environment | None) -> NetworkPolicy | None:
-    """Build a Sprites NetworkPolicy from an Environment's networking fields.
-
-    Returns None for unrestricted environments so the caller can skip the
-    update_network_policy call and rely on the Sprites default (allow-all).
-    """
-    if env is None or env.networking_type != "limited":
-        return None
-    allowed_hosts = (env.networking_config or {}).get("allowed_hosts", [])
-    rules = [PolicyRule(domain=host, action="allow") for host in allowed_hosts]
-    rules.append(PolicyRule(domain="*", action="deny"))
-    return NetworkPolicy(rules=rules)
 
 
 def _resources_to_repo_specs(resources: list) -> list[RepoSpec]:
@@ -221,7 +201,6 @@ def sessions_list_create(request):
     except ValidationError as e:
         return JsonResponse({"detail": e.errors(include_context=False)}, status=422)
 
-    # Resolve agent (required)
     try:
         agent_obj = Agent.objects.get(pk=req.agent_id, user=request.user)
     except (Agent.DoesNotExist, ValueError):
@@ -229,7 +208,6 @@ def sessions_list_create(request):
     if agent_obj.is_archived:
         return JsonResponse({"detail": "Cannot create session with archived agent"}, status=409)
 
-    # Resolve environment: explicit > agent default > none
     environment_obj = None
     env_id = req.environment_id or agent_obj.environment_id
     if env_id:
@@ -242,7 +220,6 @@ def sessions_list_create(request):
                 {"detail": "Cannot create session with archived environment"}, status=409
             )
 
-    # Runtime from agent
     runtime = agent_obj.runtime
     if runtime not in RUNTIMES:
         return JsonResponse(
@@ -260,57 +237,43 @@ def sessions_list_create(request):
     config = RUNTIMES[runtime]
     name = f"{settings.SPRITE_NAME_PREFIX}-{uuid.uuid4().hex[:12]}"
     runtime_session_id = str(uuid.uuid4())
-    client = _get_client(request.user)
-    if client is None:
-        return _no_sprites_key_response()
 
-    try:
-        sprite = client.create_sprite(name)
-    except SpriteError as e:
-        return JsonResponse({"detail": f"Failed to create Sprite: {e}"}, status=502)
+    # First-turn prompt gets the agent's system prepended. Subsequent turns
+    # inherit it via the runtime CLI's own --continue/--resume state.
+    effective_prompt = req.prompt
+    if agent_obj.system:
+        effective_prompt = f"{agent_obj.system}\n\n{req.prompt}"
 
-    try:
-        network_policy = _environment_to_network_policy(environment_obj)
-        if network_policy is not None:
-            sprite.update_network_policy(network_policy)
-
-        fs = sprite.filesystem()
-        repo_specs = _resources_to_repo_specs(req.resources)
-
-        # First-turn prompt gets the agent's system prepended. Subsequent turns
-        # inherit it via the runtime CLI's own --continue/--resume state.
-        effective_prompt = req.prompt
-        if agent_obj.system:
-            effective_prompt = f"{agent_obj.system}\n\n{req.prompt}"
-
-        env_setup = None
-        if environment_obj:
-            env_setup = EnvironmentSetup(
-                packages=environment_obj.packages,
-                env_vars=environment_obj.env_vars,
-                setup_script=environment_obj.setup_script,
-            )
-
-        mcp_specs = _mcp_servers_to_specs(agent_obj.mcp_servers) if agent_obj else []
-        skill_specs = _skills_to_specs(agent_obj.skills) if agent_obj else []
-        script = build_wrapper_script(
-            config,
-            api_key,
-            runtime_session_id=runtime_session_id,
-            repos=repo_specs,
-            environment=env_setup,
-            mcp_servers=mcp_specs,
-            skills=skill_specs,
+    env_setup = None
+    if environment_obj:
+        env_setup = EnvironmentSetup(
+            packages=environment_obj.packages,
+            env_vars=environment_obj.env_vars,
+            setup_script=environment_obj.setup_script,
         )
-        (fs / "run-agent.sh").write_text(script)
-        (fs / PROMPT_FILE_PATH.lstrip("/")).write_text(effective_prompt)
-        sprite.command("chmod", "+x", "/run-agent.sh").run()
-    except SpriteError as e:
-        try:
-            client.delete_sprite(name)
-        except SpriteError:
-            logger.warning("Failed to cleanup Sprite %s", name, exc_info=True)
-        return JsonResponse({"detail": f"Failed to prepare Sprite: {e}"}, status=502)
+
+    script = build_wrapper_script(
+        config,
+        api_key,
+        runtime_session_id=runtime_session_id,
+        repos=_resources_to_repo_specs(req.resources),
+        environment=env_setup,
+        mcp_servers=_mcp_servers_to_specs(agent_obj.mcp_servers),
+        skills=_skills_to_specs(agent_obj.skills),
+    )
+
+    try:
+        sprite = session_service.provision_session(
+            request.user,
+            name=name,
+            environment=environment_obj,
+            wrapper_script=script,
+            prompt=effective_prompt,
+        )
+    except session_service.NoSpritesKeyError as e:
+        return JsonResponse({"detail": str(e)}, status=400)
+    except session_service.ProvisionError as e:
+        return JsonResponse({"detail": str(e)}, status=502)
 
     with transaction.atomic():
         session = AgentSession.objects.create(
@@ -341,12 +304,7 @@ def sessions_list_create(request):
                 sr.set_token(resource.authorization_token)
             sr.save()
 
-    thread = threading.Thread(
-        target=run_session_background,
-        args=(session, turn, sprite, "run", float(req.timeout)),
-        daemon=True,
-    )
-    thread.start()
+    session_service.start_turn(session, turn, sprite, "run", float(req.timeout))
 
     return JsonResponse(
         {
@@ -430,14 +388,12 @@ def send_prompt(request, session_id):
     except ValidationError as e:
         return JsonResponse({"detail": e.errors(include_context=False)}, status=422)
 
-    client = _get_client(request.user)
-    if client is None:
-        return _no_sprites_key_response()
-
     try:
-        sprite = client.get_sprite(session.sprite_name)
-    except SpriteError as e:
-        return JsonResponse({"detail": f"Sprite not found: {e}"}, status=404)
+        sprite = session_service.resume_session(request.user, session.sprite_name)
+    except session_service.NoSpritesKeyError as e:
+        return JsonResponse({"detail": str(e)}, status=400)
+    except session_service.SessionHandleNotFound as e:
+        return JsonResponse({"detail": str(e)}, status=404)
 
     # Atomically lock the session row, re-check state, and allocate a turn
     # number. Prevents two concurrent POSTs from both creating turn N+1 or
@@ -468,17 +424,11 @@ def send_prompt(request, session_id):
         return JsonResponse({"detail": "Session not found"}, status=404)
 
     try:
-        fs = sprite.filesystem()
-        (fs / PROMPT_FILE_PATH.lstrip("/")).write_text(req.prompt)
-    except SpriteError as e:
-        return JsonResponse({"detail": f"Failed to prepare Sprite: {e}"}, status=502)
+        session_service.write_prompt(sprite, req.prompt)
+    except session_service.ProvisionError as e:
+        return JsonResponse({"detail": str(e)}, status=502)
 
-    thread = threading.Thread(
-        target=run_session_background,
-        args=(session, turn, sprite, "continue", float(req.timeout)),
-        daemon=True,
-    )
-    thread.start()
+    session_service.start_turn(session, turn, sprite, "continue", float(req.timeout))
 
     return JsonResponse(
         {
@@ -517,20 +467,7 @@ def terminate_session(request, session_id):
     if session.status == "terminated":
         return JsonResponse({"detail": "Session is already terminated"}, status=409)
 
-    # Delete the Sprite
-    if session.sprite_name:
-        client = _get_client(request.user)
-        if client is None:
-            logger.warning(
-                "Cannot delete Sprite %s: no Sprites key for user %s",
-                session.sprite_name,
-                request.user,
-            )
-        else:
-            try:
-                client.delete_sprite(session.sprite_name)
-            except SpriteError:
-                logger.warning("Failed to delete Sprite %s", session.sprite_name, exc_info=True)
+    session_service.destroy_session(request.user, session.sprite_name)
 
     session.status = "terminated"
     session.sprite_name = ""
