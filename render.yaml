@@ -15,7 +15,7 @@ projects:
             plan: starter
             buildCommand: pip install uv && uv sync
             preDeployCommand: uv run python manage.py migrate --noinput
-            startCommand: uv run gunicorn config.wsgi:application --bind 0.0.0.0:$PORT
+            startCommand: uv run gunicorn config.wsgi:application --chdir src --bind 0.0.0.0:$PORT
             healthCheckPath: /health
             envVars:
               - key: DATABASE_URL
