@@ -1,17 +1,35 @@
 install:
 	uv sync --all-extras
 
+# Start the local Postgres container (docker-compose.yml). Blocks until ready.
+db-up:
+	docker compose up -d db
+	@until docker compose exec -T db pg_isready -U agent_on_demand >/dev/null 2>&1; do \
+		echo "waiting for postgres..."; sleep 1; \
+	done
+	uv run python manage.py migrate
+
+db-down:
+	docker compose down
+
+# Reset local dev DB — destroys the data volume, recreates the container, migrates.
+db-reset:
+	docker compose down -v
+	$(MAKE) db-up
+
 dev:
 	uv run python manage.py runserver 0.0.0.0:8777
 
 # Procrastinate worker. Session execution runs here; `make dev` only handles HTTP.
-# Requires Postgres (Procrastinate does not support SQLite).
+# Requires the Postgres container to be up (`make db-up`).
 worker:
-	uv run procrastinate --app=agent_on_demand.session_service.tasks.procrastinate_app worker
+	uv run python manage.py procrastinate worker
 
-# Unit + integration tests (e2e suite excluded)
+# Unit + integration tests (e2e suite excluded). Tests run against SQLite so
+# Postgres doesn't need to be running; Procrastinate migrations are skipped
+# on non-Postgres backends (see config/settings.py).
 test:
-	uv run pytest tests/ -v --ignore=tests/e2e
+	DATABASE_URL=sqlite:///test.db uv run pytest tests/ -v --ignore=tests/e2e
 
 # E2E tests against a running agent-on-demand deployment.
 # Required:  AOD_API_TOKEN

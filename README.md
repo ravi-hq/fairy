@@ -19,26 +19,30 @@ allow-list at session start — domains outside `allowed_hosts` are blocked
 
 ```bash
 make install       # uv sync --all-extras
-```
-
-Run the dev server on `:8777`:
-
-```bash
-make dev
+make db-up         # start local Postgres (Docker) + run migrations
 ```
 
 Session execution runs on a separate **worker** process (Procrastinate,
 Postgres-backed broker). The web server only accepts requests and enqueues
-work. To run an agent turn locally you need the worker too:
+work; a worker picks them up and runs them.
+
+Run both in separate terminals:
 
 ```bash
-make worker
+make dev           # web — serves HTTP on :8777
+make worker        # worker — runs session turns
 ```
 
-Procrastinate requires Postgres. For local dev against SQLite, the web server
-runs but sessions will stay `pending` forever because the worker can't attach
-to a SQLite broker. Point `DATABASE_URL` at a local Postgres to execute
-sessions end-to-end.
+`docker-compose.yml` provisions Postgres 16 on `:5432`; the default
+`DATABASE_URL` in `config/settings.py` points at that container. Override
+`DATABASE_URL` to point at another DB.
+
+Local teardown:
+
+```bash
+make db-down       # stop the container
+make db-reset      # destroy the volume and re-migrate
+```
 
 ## API surface
 
