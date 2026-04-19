@@ -40,6 +40,9 @@ class AgentSession(models.Model):
 
     class Meta:
         db_table = "agent_sessions"
+        indexes = [
+            models.Index(fields=["status", "updated_at"], name="agentsession_status_upd_idx"),
+        ]
 
     def __str__(self):
         return f"{self.runtime} — {self.status} ({self.id})"

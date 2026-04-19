@@ -210,7 +210,7 @@ class AgentSessionAdmin(admin.ModelAdmin):
         "updated_at",
     )
     inlines = [AgentSessionLogInline]
-    actions = ["terminate_sessions"]
+    actions = ["terminate_sessions", "purge_sessions"]
 
     def has_add_permission(self, request):
         return False
@@ -261,6 +261,18 @@ class AgentSessionAdmin(admin.ModelAdmin):
             messages.warning(request, msg)
         else:
             messages.success(request, msg)
+
+    @admin.action(description="Purge selected sessions and their logs (terminal only)")
+    def purge_sessions(self, request, queryset):
+        terminal = ("completed", "failed", "terminated")
+        skipped = queryset.exclude(status__in=terminal).count()
+        if skipped:
+            messages.warning(
+                request,
+                f"Skipped {skipped} non-terminal session(s); terminate them first.",
+            )
+        deleted, _ = queryset.filter(status__in=terminal).delete()
+        messages.success(request, f"Purged {deleted} session(s) and their logs.")
 
 
 @admin.register(AgentSessionLog)

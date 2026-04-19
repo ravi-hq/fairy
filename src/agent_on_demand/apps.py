@@ -14,6 +14,7 @@ class AgentOnDemandConfig(AppConfig):
 
     def ready(self):
         import agent_on_demand.signals  # noqa: F401 — register signal handlers
+        from agent_on_demand.session_service import maintenance  # noqa: F401 — register periodic tasks
 
         from agent_on_demand.observability import init_otel
 
