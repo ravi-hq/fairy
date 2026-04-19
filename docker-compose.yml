@@ -1,0 +1,21 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: agent_on_demand
+      POSTGRES_PASSWORD: agent_on_demand
+      POSTGRES_DB: agent_on_demand
+    # Host port 5460 to avoid colliding with Homebrew/OS Postgres on 5432.
+    # If 5460 is also taken, override AOD_DB_PORT when running `make db-up`.
+    ports:
+      - "${AOD_DB_PORT:-5460}:5432"
+    volumes:
+      - aod-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agent_on_demand"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  aod-postgres-data:

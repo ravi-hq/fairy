@@ -61,17 +61,21 @@ APPEND_SLASH = False
 
 CORS_ALLOW_ALL_ORIGINS = True
 
+# Local default points at the Postgres container in docker-compose.yml
+# (`make db-up`). Override via DATABASE_URL for production (Render injects it)
+# or to point at another DB. Procrastinate requires Postgres; SQLite fallback
+# is only useful for running the Django test suite without Postgres running.
 DATABASES = {
     "default": dj_database_url.config(
-        default=f"sqlite:///{BASE_DIR / 'agent_on_demand.db'}",
+        default="postgres://agent_on_demand:agent_on_demand@localhost:5460/agent_on_demand",
         conn_max_age=600,
     )
 }
 
-# Procrastinate requires Postgres. On non-Postgres backends (local SQLite dev,
-# pytest on SQLite), skip its migrations so `manage.py migrate` doesn't blow up
-# on CREATE EXTENSION statements. Unit tests override the app connector with
-# InMemoryConnector and don't need the schema.
+# Procrastinate requires Postgres — skip its migrations on non-Postgres
+# backends so `manage.py migrate` and the SQLite-backed test suite don't
+# blow up on CREATE EXTENSION statements. Unit tests stub `execute_turn.defer`
+# directly and don't need the Procrastinate schema.
 if "postgresql" not in DATABASES["default"].get("ENGINE", ""):
     MIGRATION_MODULES = {"procrastinate": None}
 
