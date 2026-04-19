@@ -181,16 +181,22 @@ class PromptRequest(BaseModel):
 def sessions_list_create(request):
     """POST: create a session. GET: list the caller's sessions."""
     if request.method == "GET":
-        qs = (
-            AgentSession.objects.filter(user=request.user)
-            .prefetch_related("resources")
-            .order_by("-created_at")
-        )
-        return JsonResponse({"data": [_serialize_session(s) for s in qs]})
+        return _list_sessions(request)
+    if request.method == "POST":
+        return _create_session(request)
+    return JsonResponse({"detail": "Method not allowed"}, status=405)
 
-    if request.method != "POST":
-        return JsonResponse({"detail": "Method not allowed"}, status=405)
 
+def _list_sessions(request):
+    qs = (
+        AgentSession.objects.filter(user=request.user)
+        .prefetch_related("resources")
+        .order_by("-created_at")
+    )
+    return JsonResponse({"data": [_serialize_session(s) for s in qs]})
+
+
+def _create_session(request):
     try:
         body = json.loads(request.body)
     except (json.JSONDecodeError, ValueError):
