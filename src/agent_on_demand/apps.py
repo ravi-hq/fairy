@@ -9,6 +9,11 @@ class AgentOnDemandConfig(AppConfig):
     def ready(self):
         import agent_on_demand.signals  # noqa: F401 — register signal handlers
 
+        from agent_on_demand.observability import init_otel, init_posthog
+
+        init_otel()
+        init_posthog()
+
         from django.db.backends.signals import connection_created
 
         def _set_sqlite_pragmas(sender, connection, **kwargs):

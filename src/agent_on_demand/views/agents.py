@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from agent_on_demand.auth import require_api_key
 from agent_on_demand.models import Agent, AgentVersion, Environment
+from agent_on_demand.observability import track
 from agent_on_demand.runtimes import RUNTIMES, AgentModel
 
 
@@ -262,6 +263,22 @@ def agents_list_create(request):
         )
         _snapshot_version(agent)
 
+        track(
+            "agent.created",
+            user=request.user,
+            properties={
+                "agent_id": str(agent.id),
+                "runtime": agent.runtime,
+                "model": agent.model,
+                "has_environment": agent.environment_id is not None,
+                "system_length": len(agent.system or ""),
+                "description_length": len(agent.description or ""),
+                "skill_count": len(agent.skills or []),
+                "mcp_server_count": len(agent.mcp_servers or []),
+                "metadata_key_count": len(agent.metadata or {}),
+            },
+        )
+
         return JsonResponse(_serialize_agent(agent), status=201)
 
     elif request.method == "GET":
@@ -346,6 +363,16 @@ def agent_detail(request, agent_id):
             agent.version += 1
             agent.save()
             _snapshot_version(agent)
+            track(
+                "agent.updated",
+                user=request.user,
+                properties={
+                    "agent_id": str(agent.id),
+                    "version": agent.version,
+                    "runtime": agent.runtime,
+                    "model": agent.model,
+                },
+            )
 
         return JsonResponse(_serialize_agent(agent))
 
@@ -367,6 +394,8 @@ def agent_archive(request, agent_id):
 
     agent.archived_at = timezone.now()
     agent.save(update_fields=["archived_at", "updated_at"])
+
+    track("agent.archived", user=request.user, properties={"agent_id": str(agent.id)})
 
     return JsonResponse(_serialize_agent(agent))
 

@@ -23,6 +23,14 @@ dependencies = [
     "gunicorn>=23.0",
     "whitenoise>=6.7",
     "procrastinate[django]>=3.0",
+    "posthog>=3.7",
+    "opentelemetry-api>=1.29",
+    "opentelemetry-sdk>=1.29",
+    "opentelemetry-exporter-otlp-proto-http>=1.29",
+    "opentelemetry-instrumentation-django>=0.50b0",
+    "opentelemetry-instrumentation-psycopg>=0.50b0",
+    "opentelemetry-instrumentation-requests>=0.50b0",
+    "opentelemetry-instrumentation-logging>=0.50b0",
 ]
 
 [project.optional-dependencies]
