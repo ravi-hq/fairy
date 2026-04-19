@@ -39,6 +39,14 @@ projects:
                 value: aod.ravi.id,agent-on-demand-api.onrender.com
               - key: PYTHON_VERSION
                 value: "3.11.9"
+              - key: OTEL_SERVICE_NAME
+                value: aod-web
+              - key: HONEYCOMB_API_KEY
+                sync: false
+              - key: POSTHOG_API_KEY
+                sync: false
+              - key: POSTHOG_HOST
+                value: https://us.i.posthog.com
 
           - type: worker
             name: agent-on-demand-worker
@@ -68,3 +76,17 @@ projects:
                 value: aod.ravi.id,agent-on-demand-api.onrender.com
               - key: PYTHON_VERSION
                 value: "3.11.9"
+              - key: OTEL_SERVICE_NAME
+                value: aod-worker
+              - key: HONEYCOMB_API_KEY
+                fromService:
+                  name: agent-on-demand-api
+                  type: web
+                  envVarKey: HONEYCOMB_API_KEY
+              - key: POSTHOG_API_KEY
+                fromService:
+                  name: agent-on-demand-api
+                  type: web
+                  envVarKey: POSTHOG_API_KEY
+              - key: POSTHOG_HOST
+                value: https://us.i.posthog.com

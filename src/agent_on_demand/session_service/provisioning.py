@@ -15,6 +15,7 @@ import shlex
 from sprites import NetworkPolicy, PolicyRule, Sprite, SpriteError
 
 from agent_on_demand.models import Environment
+from agent_on_demand.observability import get_tracer
 
 from .client import best_effort_delete, require_client
 from .errors import ProvisionError
@@ -40,28 +41,45 @@ def provision_session(user, spec: SessionSpec) -> Sprite:
     On any failure the Sprite is best-effort deleted before a `ProvisionError`
     is re-raised.
     """
-    client = require_client(user)
-    try:
-        sprite = client.create_sprite(spec.name)
-    except SpriteError as e:
-        raise ProvisionError(f"Failed to create Sprite: {e}", stage="create") from e
+    env = spec.environment
+    tracer = get_tracer()
+    with tracer.start_as_current_span(
+        "session.provision",
+        attributes={
+            "aod.runtime": spec.runtime.name,
+            "aod.repo_count": len(spec.repos),
+            "aod.skill_count": len(spec.skills),
+            "aod.mcp_server_count": len(spec.mcp_servers),
+            "aod.env_var_count": len((env.env_vars or {})) if env else 0,
+            "aod.networking_type": env.networking_type if env else "none",
+            "aod.has_setup_script": bool((env.setup_script or "").strip()) if env else False,
+        },
+    ) as span:
+        client = require_client(user)
+        try:
+            sprite = client.create_sprite(spec.name)
+        except SpriteError as e:
+            span.set_attribute("aod.failure_stage", "create")
+            raise ProvisionError(f"Failed to create Sprite: {e}", stage="create") from e
 
-    try:
-        _apply_network_policy(sprite, spec.environment)
-        _write_env_file(sprite, spec)
-        _install_packages(sprite, spec.environment)
-        _clone_repos(sprite, spec.repos)
-        _run_user_setup(sprite, spec.environment)
-        _write_mcp_config(sprite, spec.runtime.name, spec.mcp_servers)
-        _write_skills(sprite, spec.runtime.name, spec.skills)
-    except ProvisionError:
-        best_effort_delete(client, spec.name)
-        raise
-    except SpriteError as e:
-        best_effort_delete(client, spec.name)
-        raise ProvisionError(f"Failed to prepare Sprite: {e}", stage="unknown") from e
+        try:
+            _apply_network_policy(sprite, env)
+            _write_env_file(sprite, spec)
+            _install_packages(sprite, env)
+            _clone_repos(sprite, spec.repos)
+            _run_user_setup(sprite, env)
+            _write_mcp_config(sprite, spec.runtime.name, spec.mcp_servers)
+            _write_skills(sprite, spec.runtime.name, spec.skills)
+        except ProvisionError as e:
+            span.set_attribute("aod.failure_stage", e.stage)
+            best_effort_delete(client, spec.name)
+            raise
+        except SpriteError as e:
+            span.set_attribute("aod.failure_stage", "unknown")
+            best_effort_delete(client, spec.name)
+            raise ProvisionError(f"Failed to prepare Sprite: {e}", stage="unknown") from e
 
-    return sprite
+        return sprite
 
 
 def resume_session(user, sprite_name: str) -> Sprite:

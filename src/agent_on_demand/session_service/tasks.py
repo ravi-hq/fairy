@@ -27,6 +27,7 @@ from procrastinate.contrib.django import app as procrastinate_app
 from sprites import ExecError
 
 from agent_on_demand.models import AgentSession, AgentSessionLog, SessionTurn
+from agent_on_demand.observability import get_tracer, track
 from agent_on_demand.runtimes import RUNTIMES, RuntimeConfig
 
 from .provisioning import resume_session
@@ -121,7 +122,26 @@ def _execute_turn_inner(
     session = AgentSession.objects.select_related("user").get(pk=session_id)
     turn = SessionTurn.objects.get(pk=turn_id)
     runtime = RUNTIMES[session.runtime]
-    sprite = resume_session(session.user, session.sprite_name)
+
+    tracer = get_tracer()
+    with tracer.start_as_current_span(
+        "session.execute_turn",
+        attributes={
+            "aod.session_id": session_id,
+            "aod.turn_number": turn.turn_number,
+            "aod.runtime": session.runtime,
+            "aod.mode": mode,
+            "aod.prompt_length": len(prompt),
+            "aod.timeout": timeout,
+        },
+    ) as span:
+        sprite = resume_session(session.user, session.sprite_name)
+        _execute_turn_body(session, turn, runtime, sprite, prompt, mode, timeout, span)
+
+
+def _execute_turn_body(
+    session, turn, runtime, sprite, prompt, mode, timeout, span
+) -> None:
 
     output_q: queue.Queue = queue.Queue(maxsize=4096)
     db_buffer: list[AgentSessionLog] = []
@@ -211,3 +231,22 @@ def _execute_turn_inner(
     turn.exit_code = exit_code
     turn.ended_at = ended
     turn.save(update_fields=["status", "exit_code", "ended_at"])
+
+    duration_seconds = (ended - now).total_seconds()
+    span.set_attribute("aod.final_status", final_status)
+    if exit_code is not None:
+        span.set_attribute("aod.exit_code", exit_code)
+    span.set_attribute("aod.duration_seconds", duration_seconds)
+
+    track(
+        f"session.{final_status}",
+        user=session.user,
+        properties={
+            "session_id": str(session.id),
+            "turn_number": turn.turn_number,
+            "runtime": session.runtime,
+            "exit_code": exit_code,
+            "duration_seconds": duration_seconds,
+            "mode": mode,
+        },
+    )
