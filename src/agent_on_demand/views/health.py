@@ -1,7 +1,13 @@
-from django.http import JsonResponse
-from django.views.decorators.http import require_GET
+from ninja import Router, Schema
 
 
-@require_GET
+class HealthOut(Schema):
+    status: str
+
+
+router = Router(auth=None)
+
+
+@router.get("/health", response=HealthOut)
 def health(request):
-    return JsonResponse({"status": "ok"})
+    return {"status": "ok"}

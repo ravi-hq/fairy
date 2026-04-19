@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 import logging
 import re
@@ -7,20 +9,20 @@ from typing import Literal
 from django.conf import settings
 from django.db import transaction
 from django.db.models import Max
-from django.http import JsonResponse, StreamingHttpResponse
-from django.views.decorators.csrf import csrf_exempt
-from django.views.decorators.http import require_GET, require_POST
-
-from pydantic import BaseModel, Field, ValidationError, field_validator
+from django.http import StreamingHttpResponse
+from ninja import Router, Schema
+from ninja.errors import HttpError
+from ninja.responses import Status
+from pydantic import Field, field_validator
 
 from agent_on_demand import session_service
-from agent_on_demand.auth import require_api_key
 from agent_on_demand.models import (
     Agent,
     AgentSession,
     Environment,
     SessionResource,
     SessionTurn,
+    UserRuntimeKey,
 )
 from agent_on_demand.runtimes import RUNTIMES
 from agent_on_demand.sprites_exec import (
@@ -31,13 +33,19 @@ from agent_on_demand.sprites_exec import (
     build_wrapper_script,
 )
 from agent_on_demand.stream import stream_session_from_db
-from agent_on_demand.views._shared import _get_runtime_key
 
 logger = logging.getLogger(__name__)
 
 
+def _get_runtime_key(user, runtime: str) -> str | None:
+    try:
+        urk = UserRuntimeKey.objects.get(user=user, runtime=runtime)
+        return urk.get_api_key()
+    except UserRuntimeKey.DoesNotExist:
+        return None
+
+
 def _mcp_servers_to_specs(mcp_servers: list[dict]) -> list[McpServerSpec]:
-    """Convert agent's mcp_servers JSON to McpServerSpec list."""
     return [
         McpServerSpec(
             name=s["name"],
@@ -53,12 +61,10 @@ def _mcp_servers_to_specs(mcp_servers: list[dict]) -> list[McpServerSpec]:
 
 
 def _skills_to_specs(skills: list[dict]) -> list[SkillSpec]:
-    """Convert agent's skills JSON to SkillSpec list for materialization."""
     return [SkillSpec(name=s["name"], content=s["content"]) for s in skills]
 
 
-def _resources_to_repo_specs(resources: list) -> list[RepoSpec]:
-    """Convert GitHubRepoResource list to RepoSpec list for the wrapper script."""
+def _resources_to_repo_specs(resources: list[GitHubRepoResource]) -> list[RepoSpec]:
     return [
         RepoSpec(
             url=r.url,
@@ -69,49 +75,108 @@ def _resources_to_repo_specs(resources: list) -> list[RepoSpec]:
     ]
 
 
-def _serialize_resources(session: AgentSession) -> list[dict]:
-    """Serialize session resources for API responses (token is never included)."""
-    return [
-        {
-            "type": sr.resource_type,
-            "url": sr.url,
-            "mount_path": sr.mount_path,
-        }
-        for sr in session.resources.all()
-    ]
+class SessionResourceOut(Schema):
+    type: str
+    url: str
+    mount_path: str
+
+    @staticmethod
+    def from_model(sr: SessionResource) -> SessionResourceOut:
+        return SessionResourceOut(
+            type=sr.resource_type,
+            url=sr.url,
+            mount_path=sr.mount_path,
+        )
 
 
-def _serialize_session(session: AgentSession) -> dict:
-    latest = session.turns.order_by("-turn_number").first()
-    turn_count = latest.turn_number if latest else 0
-    return {
-        "id": str(session.id),
-        "agent_id": str(session.agent_id) if session.agent_id else None,
-        "environment_id": str(session.environment_id) if session.environment_id else None,
-        "runtime": session.runtime,
-        "status": session.status,
-        "exit_code": session.exit_code,
-        "created_at": session.created_at.isoformat(),
-        "updated_at": session.updated_at.isoformat(),
-        "resources": _serialize_resources(session),
-        "turn_count": turn_count,
-        "current_turn": latest.turn_number if latest else None,
-    }
+class SessionOut(Schema):
+    id: str
+    agent_id: str | None
+    environment_id: str | None
+    runtime: str
+    status: str
+    exit_code: int | None
+    created_at: str
+    updated_at: str
+    resources: list[SessionResourceOut]
+    turn_count: int
+    current_turn: int | None
+
+    @staticmethod
+    def from_model(session: AgentSession) -> SessionOut:
+        latest = session.turns.order_by("-turn_number").first()
+        turn_count = latest.turn_number if latest else 0
+        return SessionOut(
+            id=str(session.id),
+            agent_id=str(session.agent_id) if session.agent_id else None,
+            environment_id=str(session.environment_id) if session.environment_id else None,
+            runtime=session.runtime,
+            status=session.status,
+            exit_code=session.exit_code,
+            created_at=session.created_at.isoformat(),
+            updated_at=session.updated_at.isoformat(),
+            resources=[SessionResourceOut.from_model(sr) for sr in session.resources.all()],
+            turn_count=turn_count,
+            current_turn=latest.turn_number if latest else None,
+        )
 
 
-def _serialize_turn(turn: SessionTurn) -> dict:
-    return {
-        "turn_number": turn.turn_number,
-        "prompt": turn.prompt,
-        "status": turn.status,
-        "exit_code": turn.exit_code,
-        "created_at": turn.created_at.isoformat(),
-        "started_at": turn.started_at.isoformat() if turn.started_at else None,
-        "ended_at": turn.ended_at.isoformat() if turn.ended_at else None,
-    }
+class SessionTurnOut(Schema):
+    turn_number: int
+    prompt: str
+    status: str
+    exit_code: int | None
+    created_at: str
+    started_at: str | None
+    ended_at: str | None
+
+    @staticmethod
+    def from_model(turn: SessionTurn) -> SessionTurnOut:
+        return SessionTurnOut(
+            turn_number=turn.turn_number,
+            prompt=turn.prompt,
+            status=turn.status,
+            exit_code=turn.exit_code,
+            created_at=turn.created_at.isoformat(),
+            started_at=turn.started_at.isoformat() if turn.started_at else None,
+            ended_at=turn.ended_at.isoformat() if turn.ended_at else None,
+        )
 
 
-class GitHubRepoResource(BaseModel):
+class SessionListOut(Schema):
+    data: list[SessionOut]
+
+
+class SessionTurnListOut(Schema):
+    data: list[SessionTurnOut]
+
+
+class SessionCreatedOut(Schema):
+    id: str
+    status: str
+    stream_url: str
+    environment_id: str | None
+    resources: list[SessionResourceOut]
+    current_turn: int
+
+
+class PromptAcceptedOut(Schema):
+    id: str
+    status: str
+    stream_url: str
+    current_turn: int
+
+
+class SessionTerminatedOut(Schema):
+    id: str
+    status: str
+
+
+class DetailOut(Schema):
+    detail: str
+
+
+class GitHubRepoResource(Schema):
     type: Literal["github_repository"]
     url: str = Field(description="HTTPS GitHub repo URL, e.g. https://github.com/org/repo")
     mount_path: str | None = Field(
@@ -148,7 +213,7 @@ class GitHubRepoResource(BaseModel):
         return f"/workspace/{repo_name}"
 
 
-class RunRequest(BaseModel):
+class RunRequest(Schema):
     agent_id: str = Field(description="Agent ID to use for this session")
     prompt: str = Field(description="The prompt to send to the agent")
     timeout: int = Field(default=600, ge=10, le=3600, description="Max seconds")
@@ -171,74 +236,57 @@ class RunRequest(BaseModel):
         return v
 
 
-class PromptRequest(BaseModel):
+class PromptRequest(Schema):
     prompt: str = Field(description="The prompt to send to the agent")
     timeout: int = Field(default=600, ge=10, le=3600, description="Max seconds")
 
 
-@csrf_exempt
-@require_api_key
-def sessions_list_create(request):
-    """POST: create a session. GET: list the caller's sessions."""
-    if request.method == "GET":
-        return _list_sessions(request)
-    if request.method == "POST":
-        return _create_session(request)
-    return JsonResponse({"detail": "Method not allowed"}, status=405)
+def _get_session(user, session_id: uuid.UUID) -> AgentSession:
+    try:
+        return AgentSession.objects.get(pk=session_id, user=user)
+    except (AgentSession.DoesNotExist, ValueError):
+        raise HttpError(404, "Session not found")
 
 
-def _list_sessions(request):
+router = Router()
+
+
+@router.get("/sessions", response=SessionListOut)
+def list_sessions(request):
     qs = (
         AgentSession.objects.filter(user=request.user)
         .prefetch_related("resources")
         .order_by("-created_at")
     )
-    return JsonResponse({"data": [_serialize_session(s) for s in qs]})
+    return {"data": [SessionOut.from_model(s) for s in qs]}
 
 
-def _create_session(request):
+@router.post("/sessions", response={202: SessionCreatedOut})
+def create_session(request, payload: RunRequest):
     try:
-        body = json.loads(request.body)
-    except (json.JSONDecodeError, ValueError):
-        return JsonResponse({"detail": "Invalid JSON"}, status=400)
-
-    try:
-        req = RunRequest(**body)
-    except ValidationError as e:
-        return JsonResponse({"detail": e.errors(include_context=False)}, status=422)
-
-    try:
-        agent_obj = Agent.objects.get(pk=req.agent_id, user=request.user)
+        agent_obj = Agent.objects.get(pk=payload.agent_id, user=request.user)
     except (Agent.DoesNotExist, ValueError):
-        return JsonResponse({"detail": "Agent not found"}, status=404)
+        raise HttpError(404, "Agent not found")
     if agent_obj.is_archived:
-        return JsonResponse({"detail": "Cannot create session with archived agent"}, status=409)
+        raise HttpError(409, "Cannot create session with archived agent")
 
     environment_obj = None
-    env_id = req.environment_id or agent_obj.environment_id
+    env_id = payload.environment_id or agent_obj.environment_id
     if env_id:
         try:
             environment_obj = Environment.objects.get(pk=env_id, user=request.user)
         except (Environment.DoesNotExist, ValueError):
-            return JsonResponse({"detail": "Environment not found"}, status=404)
+            raise HttpError(404, "Environment not found")
         if environment_obj.is_archived:
-            return JsonResponse(
-                {"detail": "Cannot create session with archived environment"}, status=409
-            )
+            raise HttpError(409, "Cannot create session with archived environment")
 
     runtime = agent_obj.runtime
     if runtime not in RUNTIMES:
-        return JsonResponse(
-            {"detail": f"Unknown runtime: {runtime}. Must be one of: {list(RUNTIMES)}"},
-            status=400,
-        )
+        raise HttpError(400, f"Unknown runtime: {runtime}. Must be one of: {list(RUNTIMES)}")
 
     api_key = _get_runtime_key(request.user, runtime)
     if api_key is None:
-        return JsonResponse(
-            {"detail": f"No API key configured for runtime: {runtime}"},
-            status=400,
-        )
+        raise HttpError(400, f"No API key configured for runtime: {runtime}")
 
     config = RUNTIMES[runtime]
     name = f"{settings.SPRITE_NAME_PREFIX}-{uuid.uuid4().hex[:12]}"
@@ -246,9 +294,9 @@ def _create_session(request):
 
     # First-turn prompt gets the agent's system prepended. Subsequent turns
     # inherit it via the runtime CLI's own --continue/--resume state.
-    effective_prompt = req.prompt
+    effective_prompt = payload.prompt
     if agent_obj.system:
-        effective_prompt = f"{agent_obj.system}\n\n{req.prompt}"
+        effective_prompt = f"{agent_obj.system}\n\n{payload.prompt}"
 
     env_setup = None
     if environment_obj:
@@ -262,7 +310,7 @@ def _create_session(request):
         config,
         api_key,
         runtime_session_id=runtime_session_id,
-        repos=_resources_to_repo_specs(req.resources),
+        repos=_resources_to_repo_specs(payload.resources),
         environment=env_setup,
         mcp_servers=_mcp_servers_to_specs(agent_obj.mcp_servers),
         skills=_skills_to_specs(agent_obj.skills),
@@ -277,9 +325,9 @@ def _create_session(request):
             prompt=effective_prompt,
         )
     except session_service.NoSpritesKeyError as e:
-        return JsonResponse({"detail": str(e)}, status=400)
+        raise HttpError(400, str(e))
     except session_service.ProvisionError as e:
-        return JsonResponse({"detail": str(e)}, status=502)
+        raise HttpError(502, str(e))
 
     with transaction.atomic():
         session = AgentSession.objects.create(
@@ -287,7 +335,7 @@ def _create_session(request):
             agent=agent_obj,
             environment=environment_obj,
             runtime=runtime,
-            prompt=req.prompt,
+            prompt=payload.prompt,
             sprite_name=name,
             runtime_session_id=runtime_session_id,
             status="pending",
@@ -295,11 +343,11 @@ def _create_session(request):
         turn = SessionTurn.objects.create(
             session=session,
             turn_number=1,
-            prompt=req.prompt,
+            prompt=payload.prompt,
             status="pending",
         )
 
-        for resource in req.resources:
+        for resource in payload.resources:
             sr = SessionResource(
                 session=session,
                 resource_type=resource.type,
@@ -310,48 +358,32 @@ def _create_session(request):
                 sr.set_token(resource.authorization_token)
             sr.save()
 
-    session_service.start_turn(session, turn, sprite, "run", float(req.timeout))
+    session_service.start_turn(session, turn, sprite, "run", float(payload.timeout))
 
-    return JsonResponse(
-        {
-            "id": str(session.id),
-            "status": "pending",
-            "stream_url": f"/sessions/{session.id}/stream",
-            "environment_id": str(session.environment_id) if session.environment_id else None,
-            "resources": _serialize_resources(session),
-            "current_turn": turn.turn_number,
-        },
-        status=202,
+    return Status(
+        202,
+        SessionCreatedOut(
+            id=str(session.id),
+            status="pending",
+            stream_url=f"/sessions/{session.id}/stream",
+            environment_id=str(session.environment_id) if session.environment_id else None,
+            resources=[SessionResourceOut.from_model(sr) for sr in session.resources.all()],
+            current_turn=turn.turn_number,
+        ),
     )
 
 
-@require_GET
-@require_api_key
-def get_session(request, session_id):
-    """Return session metadata."""
-    try:
-        session = AgentSession.objects.get(pk=session_id, user=request.user)
-    except (AgentSession.DoesNotExist, ValueError):
-        return JsonResponse({"detail": "Session not found"}, status=404)
-
-    return JsonResponse(_serialize_session(session))
+@router.get("/sessions/{session_id}", response=SessionOut)
+def get_session(request, session_id: uuid.UUID):
+    return SessionOut.from_model(_get_session(request.user, session_id))
 
 
-@require_GET
-@require_api_key
-def stream_session(request, session_id):
-    """Stream session logs via SSE.
-
-    Works during execution (live tail) and after completion (full replay).
-    """
-    try:
-        session = AgentSession.objects.get(pk=session_id, user=request.user)
-    except (AgentSession.DoesNotExist, ValueError):
-        return JsonResponse({"detail": "Session not found"}, status=404)
+@router.get("/sessions/{session_id}/stream")
+def stream_session(request, session_id: uuid.UUID):
+    session = _get_session(request.user, session_id)
 
     def event_generator():
         yield f"data: {json.dumps({'type': 'start', 'runtime': session.runtime, 'session_id': str(session.id)})}\n\n"
-
         for event in stream_session_from_db(str(session.id)):
             if event == "":
                 yield ": heartbeat\n\n"
@@ -364,42 +396,21 @@ def stream_session(request, session_id):
     return response
 
 
-@csrf_exempt
-@require_POST
-@require_api_key
-def send_prompt(request, session_id):
-    """Send a subsequent prompt to an existing session's Sprite.
-
-    The wrapper script is already on the Sprite from session-create. We only
-    write the new prompt file and invoke `bash /run-agent.sh continue`.
-    """
-    try:
-        session = AgentSession.objects.get(pk=session_id, user=request.user)
-    except (AgentSession.DoesNotExist, ValueError):
-        return JsonResponse({"detail": "Session not found"}, status=404)
+@router.post("/sessions/{session_id}/prompt", response={202: PromptAcceptedOut})
+def send_prompt(request, session_id: uuid.UUID, payload: PromptRequest):
+    session = _get_session(request.user, session_id)
 
     if session.status == "running":
-        return JsonResponse({"detail": "Session is already running"}, status=409)
-
+        raise HttpError(409, "Session is already running")
     if session.status == "terminated":
-        return JsonResponse({"detail": "Session has been terminated"}, status=409)
-
-    try:
-        body = json.loads(request.body)
-    except (json.JSONDecodeError, ValueError):
-        return JsonResponse({"detail": "Invalid JSON"}, status=400)
-
-    try:
-        req = PromptRequest(**body)
-    except ValidationError as e:
-        return JsonResponse({"detail": e.errors(include_context=False)}, status=422)
+        raise HttpError(409, "Session has been terminated")
 
     try:
         sprite = session_service.resume_session(request.user, session.sprite_name)
     except session_service.NoSpritesKeyError as e:
-        return JsonResponse({"detail": str(e)}, status=400)
+        raise HttpError(400, str(e))
     except session_service.SessionHandleNotFound as e:
-        return JsonResponse({"detail": str(e)}, status=404)
+        raise HttpError(404, str(e))
 
     # Atomically lock the session row, re-check state, and allocate a turn
     # number. Prevents two concurrent POSTs from both creating turn N+1 or
@@ -408,9 +419,9 @@ def send_prompt(request, session_id):
         with transaction.atomic():
             locked = AgentSession.objects.select_for_update().get(pk=session.id)
             if locked.status == "running":
-                return JsonResponse({"detail": "Session is already running"}, status=409)
+                raise HttpError(409, "Session is already running")
             if locked.status == "terminated":
-                return JsonResponse({"detail": "Session has been terminated"}, status=409)
+                raise HttpError(409, "Session has been terminated")
 
             next_turn_number = (
                 SessionTurn.objects.filter(session=locked).aggregate(n=Max("turn_number"))["n"] or 0
@@ -418,60 +429,47 @@ def send_prompt(request, session_id):
             turn = SessionTurn.objects.create(
                 session=locked,
                 turn_number=next_turn_number,
-                prompt=req.prompt,
+                prompt=payload.prompt,
                 status="pending",
             )
-            locked.prompt = req.prompt
+            locked.prompt = payload.prompt
             locked.status = "pending"
             locked.exit_code = None
             locked.save(update_fields=["prompt", "status", "exit_code", "updated_at"])
             session = locked
     except AgentSession.DoesNotExist:
-        return JsonResponse({"detail": "Session not found"}, status=404)
+        raise HttpError(404, "Session not found")
 
     try:
-        session_service.write_prompt(sprite, req.prompt)
+        session_service.write_prompt(sprite, payload.prompt)
     except session_service.ProvisionError as e:
-        return JsonResponse({"detail": str(e)}, status=502)
+        raise HttpError(502, str(e))
 
-    session_service.start_turn(session, turn, sprite, "continue", float(req.timeout))
+    session_service.start_turn(session, turn, sprite, "continue", float(payload.timeout))
 
-    return JsonResponse(
-        {
-            "id": str(session.id),
-            "status": "pending",
-            "stream_url": f"/sessions/{session.id}/stream",
-            "current_turn": turn.turn_number,
-        },
-        status=202,
+    return Status(
+        202,
+        PromptAcceptedOut(
+            id=str(session.id),
+            status="pending",
+            stream_url=f"/sessions/{session.id}/stream",
+            current_turn=turn.turn_number,
+        ),
     )
 
 
-@require_GET
-@require_api_key
-def list_session_turns(request, session_id):
-    """Return the full turn history for a session, ordered by turn_number."""
-    try:
-        session = AgentSession.objects.get(pk=session_id, user=request.user)
-    except (AgentSession.DoesNotExist, ValueError):
-        return JsonResponse({"detail": "Session not found"}, status=404)
-
+@router.get("/sessions/{session_id}/turns", response=SessionTurnListOut)
+def list_session_turns(request, session_id: uuid.UUID):
+    session = _get_session(request.user, session_id)
     turns = session.turns.order_by("turn_number")
-    return JsonResponse({"data": [_serialize_turn(t) for t in turns]})
+    return {"data": [SessionTurnOut.from_model(t) for t in turns]}
 
 
-@csrf_exempt
-@require_POST
-@require_api_key
-def terminate_session(request, session_id):
-    """Terminate a session's Sprite without deleting the session record."""
-    try:
-        session = AgentSession.objects.get(pk=session_id, user=request.user)
-    except (AgentSession.DoesNotExist, ValueError):
-        return JsonResponse({"detail": "Session not found"}, status=404)
-
+@router.post("/sessions/{session_id}/terminate", response=SessionTerminatedOut)
+def terminate_session(request, session_id: uuid.UUID):
+    session = _get_session(request.user, session_id)
     if session.status == "terminated":
-        return JsonResponse({"detail": "Session is already terminated"}, status=409)
+        raise HttpError(409, "Session is already terminated")
 
     session_service.destroy_session(request.user, session.sprite_name)
 
@@ -479,28 +477,13 @@ def terminate_session(request, session_id):
     session.sprite_name = ""
     session.save(update_fields=["status", "sprite_name", "updated_at"])
 
-    return JsonResponse(
-        {
-            "id": str(session.id),
-            "status": "terminated",
-        }
-    )
+    return SessionTerminatedOut(id=str(session.id), status="terminated")
 
 
-@csrf_exempt
-@require_api_key
-def delete_session(request, session_id):
-    """Delete a session and its Sprite."""
-    if request.method != "DELETE":
-        return JsonResponse({"detail": "Method not allowed"}, status=405)
-
-    try:
-        session = AgentSession.objects.get(pk=session_id, user=request.user)
-    except (AgentSession.DoesNotExist, ValueError):
-        return JsonResponse({"detail": "Session not found"}, status=404)
-
+@router.delete("/sessions/{session_id}/delete", response=DetailOut)
+def delete_session(request, session_id: uuid.UUID):
+    session = _get_session(request.user, session_id)
     if session.status == "running":
-        return JsonResponse({"detail": "Cannot delete a running session"}, status=409)
-
+        raise HttpError(409, "Cannot delete a running session")
     session.delete()  # pre_delete signal handles Sprite cleanup
-    return JsonResponse({"detail": "Session deleted"}, status=200)
+    return DetailOut(detail="Session deleted")
