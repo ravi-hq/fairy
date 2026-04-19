@@ -16,6 +16,7 @@ urlpatterns = [
         name="ui-logout",
     ),
     path("register", views.register, name="ui-register"),
+    path("welcome", views.welcome, name="ui-welcome"),
     path("sprites-key", views.sprites_key, name="ui-sprites-key"),
     path("api-keys", views.api_keys, name="ui-api-keys"),
     path("api-keys/<int:key_id>/revoke", views.api_key_revoke, name="ui-api-key-revoke"),

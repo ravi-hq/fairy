@@ -1,0 +1,56 @@
+{% extends "ui/base.html" %}
+{% block title %}Welcome · Fairy{% endblock %}
+{% block content %}
+  <h1>You're all set, {{ user.username }}</h1>
+  <p class="muted">
+    Your Sprites token is saved and we've provisioned an Agent on Demand API key
+    below. Copy it now — it won't be shown again.
+  </p>
+
+  <div class="reveal">
+    <p><strong>Your API key</strong></p>
+    <code id="aod-key">{{ raw_key }}</code>
+  </div>
+
+  <h2>Try it</h2>
+  <p class="muted">
+    All endpoints authenticate with <code>Authorization: Bearer &lt;key&gt;</code>.
+    Set it once and reuse it:
+  </p>
+
+  <pre><code>export AOD_API_TOKEN={{ raw_key }}
+export AOD_API_URL={{ api_base }}</code></pre>
+
+  <h3>Health check</h3>
+  <pre><code>curl "$AOD_API_URL/health"</code></pre>
+
+  <h3>Create an environment</h3>
+  <pre><code>curl -X POST "$AOD_API_URL/environments" \
+  -H "Authorization: Bearer $AOD_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "default"}'</code></pre>
+
+  <h3>Create an agent</h3>
+  <pre><code>curl -X POST "$AOD_API_URL/agents" \
+  -H "Authorization: Bearer $AOD_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "hello",
+    "runtime": "claude",
+    "model": "claude-sonnet-4-6"
+  }'</code></pre>
+
+  <h3>Run a session</h3>
+  <pre><code>curl -X POST "$AOD_API_URL/sessions" \
+  -H "Authorization: Bearer $AOD_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "agent_id": "&lt;agent-id-from-above&gt;",
+    "prompt": "print hello world"
+  }'</code></pre>
+
+  <p>
+    Head to the <a href="{% url 'ui-dashboard' %}">dashboard</a> to browse your
+    agents, environments, and sessions.
+  </p>
+{% endblock %}

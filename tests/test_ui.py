@@ -36,29 +36,82 @@ def test_dashboard_requires_login(client: Client):
 
 
 @pytest.mark.django_db
-def test_register_creates_user_and_logs_in(client: Client):
+def test_register_provisions_sprites_key_and_api_key(client: Client):
     resp = client.post(
         "/ui/register",
         data={
             "username": "charlie",
             "password1": "supersecret123!",
             "password2": "supersecret123!",
-            "email": "charlie@example.com",
+            "sprites_api_key": "sprites-token-xyz",
         },
     )
     assert resp.status_code == 302
-    assert resp.url == "/ui/sprites-key"
-    assert User.objects.filter(username="charlie").exists()
+    assert resp.url == "/ui/welcome"
+
+    charlie = User.objects.get(username="charlie")
+    assert UserSpritesKey.objects.get(user=charlie).get_api_key() == "sprites-token-xyz"
+    assert APIKey.objects.filter(user=charlie, is_active=True).count() == 1
+
+
+@pytest.mark.django_db
+def test_register_missing_sprites_key_rejected(client: Client):
+    resp = client.post(
+        "/ui/register",
+        data={
+            "username": "erin",
+            "password1": "supersecret123!",
+            "password2": "supersecret123!",
+        },
+    )
+    assert resp.status_code == 200
+    assert not User.objects.filter(username="erin").exists()
 
 
 @pytest.mark.django_db
 def test_register_mismatched_passwords_rejected(client: Client):
     resp = client.post(
         "/ui/register",
-        data={"username": "dave", "password1": "a", "password2": "b"},
+        data={
+            "username": "dave",
+            "password1": "a",
+            "password2": "b",
+            "sprites_api_key": "sprites-token",
+        },
     )
     assert resp.status_code == 200
     assert not User.objects.filter(username="dave").exists()
+
+
+@pytest.mark.django_db
+def test_welcome_shows_raw_key_once(client: Client):
+    resp = client.post(
+        "/ui/register",
+        data={
+            "username": "frank",
+            "password1": "supersecret123!",
+            "password2": "supersecret123!",
+            "sprites_api_key": "sprites-token",
+        },
+    )
+    assert resp.status_code == 302
+
+    resp = client.get("/ui/welcome")
+    assert resp.status_code == 200
+    assert b"aod_" in resp.content
+    assert b"curl" in resp.content
+    assert b"/ui/" in resp.content  # dashboard link
+
+    resp = client.get("/ui/welcome")
+    assert resp.status_code == 302
+    assert resp.url == "/ui/"
+
+
+@pytest.mark.django_db
+def test_welcome_requires_login(client: Client):
+    resp = client.get("/ui/welcome")
+    assert resp.status_code == 302
+    assert "/ui/login" in resp.url
 
 
 @pytest.mark.django_db

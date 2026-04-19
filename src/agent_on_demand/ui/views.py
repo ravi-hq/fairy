@@ -24,13 +24,34 @@ def register(request):
         form = RegisterForm(request.POST)
         if form.is_valid():
             user = form.save()
+
+            usk = UserSpritesKey(user=user)
+            usk.set_api_key(form.cleaned_data["sprites_api_key"])
+            usk.save()
+
+            _, raw_key = APIKey.create_key(user=user, name="Onboarding key")
+
             login(request, user)
-            messages.success(request, "Account created. Set your Sprites token next.")
-            return redirect("ui-sprites-key")
+            request.session["onboarding_raw_key"] = raw_key
+            return redirect("ui-welcome")
     else:
         form = RegisterForm()
 
     return render(request, "ui/register.html", {"form": form})
+
+
+@login_required(login_url="/ui/login")
+def welcome(request):
+    raw_key = request.session.pop("onboarding_raw_key", None)
+    if not raw_key:
+        return redirect("ui-dashboard")
+
+    api_base = request.build_absolute_uri("/").rstrip("/")
+    return render(
+        request,
+        "ui/welcome.html",
+        {"raw_key": raw_key, "api_base": api_base},
+    )
 
 
 @login_required(login_url="/ui/login")
