@@ -228,8 +228,7 @@ class TestProvisioningStages:
         pip_i = _index_of(cmds, "pip install")
         clone_i = _index_of(cmds, "git clone")
         setup_i = _index_of(cmds, "echo setup")
-        run_chmod_i = _index_of(cmds, "chmod +x /run-agent.sh")
-        assert chmod_env_i < pip_i < clone_i < setup_i < run_chmod_i
+        assert chmod_env_i < pip_i < clone_i < setup_i
 
     def test_empty_environment_no_package_commands(
         self, client: Client, auth_headers, runtime_key, user, agent, fake_sprites

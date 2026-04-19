@@ -77,9 +77,6 @@ class TestSessionMcpIntegration:
         assert cfg == {
             "mcpServers": {"github": {"type": "http", "url": "https://mcp.github.com/mcp"}}
         }
-        run_script = sprite.write_map()["/run-agent.sh"]
-        assert "--mcp-config" not in run_script
-        assert "--strict-mcp-config" not in run_script
 
     def test_claude_mcp_with_headers(
         self, client: Client, auth_headers, runtime_key, user, fake_sprites
@@ -165,9 +162,6 @@ class TestSessionMcpIntegration:
         toml = sprite.write_map()["/home/sprite/.codex/config.toml"]
         assert "[mcp_servers.github]" in toml
         assert 'url = "https://mcp.github.com/mcp"' in toml
-        # MCP is auto-discovered from ~/.codex/config.toml — no CLI flags.
-        run_script = sprite.write_map()["/run-agent.sh"]
-        assert "--mcp-config" not in run_script
 
     def test_codex_mcp_bearer_token_env_var(
         self, client: Client, auth_headers, user, sprites_key, fake_sprites
@@ -248,8 +242,6 @@ class TestSessionMcpIntegration:
         assert resp.status_code == 202
         writes = fake_sprites.last_sprite().write_map()
         assert "/home/sprite/.claude.json" not in writes
-        run_script = writes["/run-agent.sh"]
-        assert "--mcp-config" not in run_script
 
     def test_multiple_mcp_servers(
         self, client: Client, auth_headers, runtime_key, user, fake_sprites

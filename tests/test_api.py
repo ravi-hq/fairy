@@ -445,12 +445,12 @@ def test_create_session_generates_runtime_session_id(
 
 
 @pytest.mark.django_db
-def test_create_session_writes_script_and_env_file(
+def test_create_session_writes_env_file_only(
     client: Client, auth_headers, runtime_key, agent, fake_sprites
 ):
-    """The dispatcher script and env file are written during provision. The
-    prompt is piped through stdin at turn time — no prompt file is ever
-    written to the Sprite filesystem."""
+    """Provisioning writes the env file. There is no dispatcher script and no
+    prompt file — the runtime CLI is assembled inline per turn and the prompt
+    streams over stdin."""
     resp = client.post(
         "/sessions",
         data=json.dumps({"agent_id": str(agent.id), "prompt": "hello"}),
@@ -460,10 +460,9 @@ def test_create_session_writes_script_and_env_file(
     assert resp.status_code == 202
 
     writes = fake_sprites.last_sprite().write_map()
-    assert "/run-agent.sh" in writes
     assert "/tmp/aod-env" in writes
+    assert "/run-agent.sh" not in writes
     assert "/tmp/aod-prompt.txt" not in writes
-    assert writes["/run-agent.sh"].startswith("#!/bin/bash")
 
 
 @pytest.mark.django_db
@@ -543,8 +542,8 @@ def test_send_prompt_invokes_continue_mode(
     )
     assert resp.status_code == 202
 
-    # run_session_background(session, turn, sprite, prompt, mode, timeout)
-    _session, _turn, _sprite, prompt, mode, _timeout = captured["args"]
+    # run_session_background(session, turn, sprite, runtime, prompt, mode, timeout)
+    _session, _turn, _sprite, _runtime, prompt, mode, _timeout = captured["args"]
     assert mode == "continue"
     assert prompt == "second"
     assert _turn.turn_number == 2
@@ -632,6 +631,7 @@ def test_run_session_background_persists_int_exit_code_on_exec_error(user, mocke
     from sprites import ExecError
 
     from agent_on_demand.models import SessionTurn
+    from agent_on_demand.runtimes import RUNTIMES
     from agent_on_demand.stream import run_session_background
 
     session = AgentSession.objects.create(
@@ -646,16 +646,26 @@ def test_run_session_background_persists_int_exit_code_on_exec_error(user, mocke
     mock_cmd.run.side_effect = ExecError("exit status 1", exit_code=1)
     mock_sprite.command.return_value = mock_cmd
 
-    run_session_background(session, turn, mock_sprite, "hello", "run", timeout=10.0)
+    run_session_background(
+        session, turn, mock_sprite, RUNTIMES["claude"], "hello", "run", timeout=10.0
+    )
 
     session.refresh_from_db()
     assert session.status == "failed"
     assert session.exit_code == 1
     assert isinstance(session.exit_code, int)
 
-    # Prompt was fed to the dispatcher via stdin — not argv, not env, not a file.
+    # Prompt was fed to the runtime CLI via stdin — not argv, not env, not a file.
     assert mock_cmd.stdin is not None
     assert mock_cmd.stdin.read() == b"hello"
+
+    # The inline bash -c command — no /run-agent.sh, no prompt file.
+    argv = mock_sprite.command.call_args.args
+    assert argv[0] == "bash"
+    assert argv[1] == "-c"
+    assert "/run-agent.sh" not in argv[2]
+    assert "source /tmp/aod-env" in argv[2]
+    assert "PROMPT=$(cat)" in argv[2]
 
     turn.refresh_from_db()
     assert turn.status == "failed"

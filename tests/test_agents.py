@@ -378,7 +378,7 @@ def test_create_session_with_agent(
 
     # System prompt is prepended to the user prompt; the combined string is
     # passed to run_session_background for streaming over stdin.
-    _, _, _, effective_prompt, _, _ = captured["args"]
+    _, _, _, _runtime, effective_prompt, _, _ = captured["args"]
     assert "You are a helpful assistant." in effective_prompt
     assert "Fix the bug" in effective_prompt
 
