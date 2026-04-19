@@ -16,6 +16,10 @@ from agent_on_demand.models import (
 from agent_on_demand.ui.forms import APIKeyCreateForm, RegisterForm, SpritesKeyForm
 
 
+def landing(request):
+    return render(request, "ui/landing.html")
+
+
 def register(request):
     if request.user.is_authenticated:
         return redirect("ui-dashboard")

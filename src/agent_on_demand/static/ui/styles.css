@@ -126,3 +126,33 @@ dl.kv dd { margin: 0; }
   max-height: 32rem;
   overflow: auto;
 }
+
+.landing-hero { padding: 1.5rem 0 0.5rem; }
+.landing-hero h1 { font-size: 2.2rem; margin-bottom: 0.5rem; }
+.landing-hero .lede { font-size: 1.1rem; color: var(--fg); max-width: 640px; }
+.landing-ctas { display: flex; gap: 0.75rem; flex-wrap: wrap; margin-top: 1.25rem; }
+.btn-primary, .btn-secondary {
+  display: inline-block;
+  padding: 0.55rem 1rem;
+  border-radius: 4px;
+  text-decoration: none;
+  font-weight: 500;
+}
+.btn-primary { background: var(--accent); color: #fff; }
+.btn-primary:hover { background: #1f5891; }
+.btn-secondary { background: var(--card); color: var(--accent); border: 1px solid var(--border); }
+.btn-secondary:hover { background: #f0f0f0; }
+
+.landing-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1rem;
+  margin: 2rem 0;
+}
+.landing-cards .card { padding: 1rem 1.1rem; }
+.landing-cards .card h3 { margin: 0 0 0.4rem; }
+.landing-cards .card p { margin: 0; color: var(--muted); }
+
+.landing-block { margin: 2rem 0; }
+.landing-block h2 { margin-bottom: 0.5rem; }
+.landing-block p { max-width: 720px; }

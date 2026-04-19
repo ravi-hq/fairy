@@ -36,6 +36,26 @@ def test_dashboard_requires_login(client: Client):
 
 
 @pytest.mark.django_db
+def test_landing_is_public(client: Client):
+    resp = client.get("/")
+    assert resp.status_code == 200
+    body = resp.content.decode()
+    assert "Agent on Demand" in body
+    assert "sprites.dev" in body
+    assert "/ui/register" in body
+    assert "ravi-hq.github.io/agent-on-demand" in body
+
+
+@pytest.mark.django_db
+def test_landing_shows_dashboard_cta_when_logged_in(logged_in_client: Client):
+    resp = logged_in_client.get("/")
+    assert resp.status_code == 200
+    body = resp.content.decode()
+    assert "Open dashboard" in body
+    assert "Create an account" not in body
+
+
+@pytest.mark.django_db
 def test_register_provisions_sprites_key_and_api_key(client: Client):
     resp = client.post(
         "/ui/register",

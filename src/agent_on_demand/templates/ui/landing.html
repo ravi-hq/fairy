@@ -1,0 +1,63 @@
+{% extends "ui/base.html" %}
+{% block title %}Agent on Demand{% endblock %}
+{% block content %}
+  <section class="landing-hero">
+    <h1>Agent on Demand</h1>
+    <p class="lede">
+      A REST API for running AI coding agents on sandboxed cloud machines.
+      Define an <strong>agent</strong> (model + runtime), wire up an
+      <strong>environment</strong> (packages, env vars, network rules), and start
+      a <strong>session</strong>. Stream output back over SSE. Multi-turn when
+      you need it.
+    </p>
+    <div class="landing-ctas">
+      {% if user.is_authenticated %}
+        <a class="btn-primary" href="{% url 'ui-dashboard' %}">Open dashboard</a>
+      {% else %}
+        <a class="btn-primary" href="{% url 'ui-register' %}">Create an account</a>
+      {% endif %}
+      <a class="btn-secondary" href="https://ravi-hq.github.io/agent-on-demand">Read the docs</a>
+      <a class="btn-secondary" href="https://github.com/ravi-hq/agent-on-demand">GitHub</a>
+    </div>
+  </section>
+
+  <section class="landing-cards">
+    <div class="card">
+      <h3>Agents</h3>
+      <p>A runtime + model pairing. Claude, Codex, Gemini, and more. Optional MCP servers and system prompts.</p>
+    </div>
+    <div class="card">
+      <h3>Environments</h3>
+      <p>Packages, env vars, setup scripts, DNS allow-lists. Encrypted at rest. Versioned.</p>
+    </div>
+    <div class="card">
+      <h3>Sessions</h3>
+      <p>One agent run on one environment. Stream output over SSE. Resume with new prompts.</p>
+    </div>
+  </section>
+
+  <section class="landing-block">
+    <h2>Powered by Sprites</h2>
+    <p>
+      Every session runs inside a fresh sandbox provisioned on
+      <a href="https://sprites.dev">sprites.dev</a>. You bring your own Sprites
+      token and your own model API keys, stored encrypted and scoped per-user.
+      No shared credentials, no credential pooling.
+    </p>
+  </section>
+
+  <section class="landing-block">
+    <h2>Open source. Contributors welcome.</h2>
+    <p>
+      Agent on Demand is Apache-2.0 and lives on
+      <a href="https://github.com/ravi-hq/agent-on-demand">GitHub</a>. We'd
+      especially love help adding more runtimes and model backends. If your
+      favorite agent CLI isn't supported, open a PR, file an issue, or come
+      say hello.
+    </p>
+    <p>
+      <a class="btn-secondary" href="https://github.com/ravi-hq/agent-on-demand/issues">Browse issues</a>
+      <a class="btn-secondary" href="https://ravi-hq.github.io/agent-on-demand">Architecture docs</a>
+    </p>
+  </section>
+{% endblock %}

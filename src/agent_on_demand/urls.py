@@ -1,8 +1,10 @@
 from django.urls import include, path
 
 from agent_on_demand import views
+from agent_on_demand.ui import views as ui_views
 
 urlpatterns = [
+    path("", ui_views.landing, name="landing"),
     path("ui/", include("agent_on_demand.ui.urls")),
     path("health", views.health),
     # Environments
