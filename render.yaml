@@ -4,7 +4,7 @@ projects:
       - name: production
         databases:
           - name: agent-on-demand-db
-            plan: basic-256mb
+            plan: standard-1gb
             databaseName: agent_on_demand
             postgresMajorVersion: "16"
 
@@ -19,6 +19,8 @@ projects:
               uv run gunicorn config.wsgi:application
               --bind 0.0.0.0:$PORT
               --workers 3
+              --worker-class gthread
+              --threads 8
               --graceful-timeout 650
               --timeout 700
               --max-requests 1000
@@ -55,6 +57,7 @@ projects:
             buildCommand: pip install uv && uv sync
             startCommand: >-
               uv run python manage.py procrastinate worker
+              --concurrency 4
             envVars:
               - key: DATABASE_URL
                 fromDatabase:
