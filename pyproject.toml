@@ -21,6 +21,7 @@ dependencies = [
     "dj-database-url>=2.1",
     "psycopg[binary]>=3.1",
     "gunicorn>=23.0",
+    "whitenoise>=6.7",
 ]
 
 [project.optional-dependencies]

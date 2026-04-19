@@ -15,3 +15,4 @@ agent_on_demand.db-wal
 .agent-mcp-config.json
 site/docs/api/openapi.json
 site/site/
+staticfiles/
