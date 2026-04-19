@@ -30,6 +30,7 @@ import io
 import logging
 import queue
 import threading
+import time
 
 import posthog
 from django.contrib.auth import get_user_model
@@ -55,6 +56,7 @@ logger = logging.getLogger(__name__)
 
 _SENTINEL = object()
 FLUSH_SIZE = 20
+_BULK_CREATE_DELAYS = (0.1, 0.3, 1.0)
 
 
 class TaggedChunk:
@@ -77,13 +79,19 @@ class TaggingQueueWriter(io.RawIOBase):
     def __init__(self, q: queue.Queue, stream: str):
         self._queue = q
         self._stream = stream
+        self.drop_count = 0
 
     def writable(self) -> bool:
         return True
 
     def write(self, b) -> int:  # type: ignore[override]
         data = bytes(b)
-        self._queue.put(TaggedChunk(self._stream, data))
+        try:
+            self._queue.put(TaggedChunk(self._stream, data), timeout=5.0)
+        except queue.Full:
+            self.drop_count += 1
+            if self.drop_count == 1:
+                logger.warning("TaggingQueueWriter: output queue full, dropping chunks")
         return len(data)
 
 
@@ -138,9 +146,7 @@ def _provision_session_inner(
     mode: str,
     timeout: float,
 ) -> None:
-    session = AgentSession.objects.select_related("user", "agent", "environment").get(
-        pk=session_id
-    )
+    session = AgentSession.objects.select_related("user", "agent", "environment").get(pk=session_id)
     # If the client terminated before the worker picked this up, skip.
     if session.status == "terminated":
         return
@@ -216,9 +222,7 @@ def _build_spec_for_session(session: AgentSession) -> SessionSpec | None:
         name=session.sprite_name,
         runtime=RUNTIMES[session.runtime],
         api_key=api_key,
-        runtime_session_id=str(session.runtime_session_id)
-        if session.runtime_session_id
-        else None,
+        runtime_session_id=str(session.runtime_session_id) if session.runtime_session_id else None,
         environment=session.environment,
         repos=repos,
         mcp_servers=mcp_servers,
@@ -318,18 +322,39 @@ def _execute_turn_inner(
         _execute_turn_body(session, turn, runtime, sprite, prompt, mode, timeout, span)
 
 
-def _execute_turn_body(
-    session, turn, runtime, sprite, prompt, mode, timeout, span
-) -> None:
+def _execute_turn_body(session, turn, runtime, sprite, prompt, mode, timeout, span) -> None:
 
     output_q: queue.Queue = queue.Queue(maxsize=4096)
     db_buffer: list[AgentSessionLog] = []
     result_holder: list = []
+    stdout_writer = TaggingQueueWriter(output_q, "stdout")
+    stderr_writer = TaggingQueueWriter(output_q, "stderr")
 
     def _flush_buffer():
-        if db_buffer:
-            AgentSessionLog.objects.bulk_create(db_buffer)
-            db_buffer.clear()
+        if not db_buffer:
+            return
+        for attempt, delay in enumerate(_BULK_CREATE_DELAYS, 1):
+            try:
+                AgentSessionLog.objects.bulk_create(db_buffer)
+                db_buffer.clear()
+                return
+            except Exception:
+                if attempt == len(_BULK_CREATE_DELAYS):
+                    logger.exception("bulk_create exhausted retries")
+                    with posthog.new_context():
+                        posthog.identify_context(str(session.user_id))
+                        posthog.capture(
+                            "session.log_write_retry_exhausted",
+                            properties={
+                                "session_id": str(session.id),
+                                "turn_number": turn.turn_number,
+                                "runtime": session.runtime,
+                                "dropped_chunks": len(db_buffer),
+                            },
+                        )
+                    raise
+                close_old_connections()
+                time.sleep(delay)
 
     def _run_command():
         # NOTE: if you add DB writes inside this inner thread, wrap the body
@@ -343,8 +368,8 @@ def _execute_turn_body(
                 timeout=timeout,
             )
             cmd.stdin = io.BytesIO(prompt.encode("utf-8"))
-            cmd.stdout = TaggingQueueWriter(output_q, "stdout")
-            cmd.stderr = TaggingQueueWriter(output_q, "stderr")
+            cmd.stdout = stdout_writer
+            cmd.stderr = stderr_writer
             cmd.run()
             result_holder.append(("exit", 0))
         except ExecError as e:
@@ -385,7 +410,38 @@ def _execute_turn_body(
             _flush_buffer()
 
     _flush_buffer()
+
+    total_drops = stdout_writer.drop_count + stderr_writer.drop_count
+    if total_drops > 0:
+        with posthog.new_context():
+            posthog.identify_context(str(session.user_id))
+            posthog.capture(
+                "session.output_chunks_dropped",
+                properties={
+                    "session_id": str(session.id),
+                    "turn_number": turn.turn_number,
+                    "runtime": session.runtime,
+                    "dropped_count": total_drops,
+                },
+            )
+
     cmd_thread.join(timeout=5.0)
+    if cmd_thread.is_alive():
+        logger.error(
+            "session %s turn %s: command thread still alive after join",
+            session.id,
+            turn.turn_number,
+        )
+        with posthog.new_context():
+            posthog.identify_context(str(session.user_id))
+            posthog.capture(
+                "session.cmd_thread_leaked",
+                properties={
+                    "session_id": str(session.id),
+                    "turn_number": turn.turn_number,
+                    "runtime": session.runtime,
+                },
+            )
 
     if result_holder:
         kind, value = result_holder[0]

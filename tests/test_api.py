@@ -596,9 +596,14 @@ def test_stream_emits_turn_start_boundaries(client: Client, auth_headers, user):
     resp = client.get(f"/sessions/{session.id}/stream", **auth_headers)
     content = b"".join(resp.streaming_content).decode()
     # Two turn_start events in order: 1 then 2.
-    i1 = content.index('"type": "turn_start", "turn": 1')
-    i2 = content.index('"type": "turn_start", "turn": 2')
-    assert i1 < i2
+    turn_start_events = [
+        json.loads(line[6:])
+        for line in content.splitlines()
+        if line.startswith("data: ")
+        and json.loads(line[6:]).get("type") == "turn_start"
+    ]
+    turns = [e["turn"] for e in turn_start_events]
+    assert turns == [1, 2]
 
 
 @pytest.mark.django_db

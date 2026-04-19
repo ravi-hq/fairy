@@ -8,6 +8,9 @@ contract without spinning up a worker or needing Postgres locally.
 
 from __future__ import annotations
 
+import queue
+import threading
+
 import pytest
 from django.contrib.auth.models import User
 from sprites import ExecError, SpriteError
@@ -22,10 +25,23 @@ from agent_on_demand.models import (
     UserSpritesKey,
 )
 from agent_on_demand.session_service.tasks import (
+    TaggingQueueWriter,
     destroy_session_task,
     execute_turn,
     provision_session_task,
 )
+
+
+@pytest.fixture(autouse=True)
+def mock_close_old_connections(mocker):
+    """Prevent close_old_connections() from closing the test DB connection.
+
+    Tasks call close_old_connections() in entry/exit wrappers and inside
+    _flush_buffer's retry loop. In production that's correct; in tests the
+    call kills the pytest-django test transaction, breaking every subsequent
+    DB query in the same test. Stub it out so test isolation is preserved.
+    """
+    mocker.patch("agent_on_demand.session_service.tasks.close_old_connections")
 
 
 @pytest.fixture
@@ -267,16 +283,12 @@ def _make_pending_session(user):
         runtime_session_id="11111111-2222-3333-4444-555555555555",
         status="pending",
     )
-    turn = SessionTurn.objects.create(
-        session=session, turn_number=1, prompt="hi", status="pending"
-    )
+    turn = SessionTurn.objects.create(session=session, turn_number=1, prompt="hi", status="pending")
     return session, turn
 
 
 @pytest.mark.django_db
-def test_provision_task_enqueues_execute_turn_on_success(
-    provision_user, fake_sprites, mocker
-):
+def test_provision_task_enqueues_execute_turn_on_success(provision_user, fake_sprites, mocker):
     session, turn = _make_pending_session(provision_user)
     defer_spy = mocker.patch("agent_on_demand.session_service.tasks.execute_turn.defer")
 
@@ -351,9 +363,7 @@ def test_provision_task_skips_if_session_terminated(provision_user, fake_sprites
 
 
 @pytest.mark.django_db
-def test_provision_task_marks_failed_when_runtime_key_missing(
-    provision_user, fake_sprites, mocker
-):
+def test_provision_task_marks_failed_when_runtime_key_missing(provision_user, fake_sprites, mocker):
     """If the user's runtime key was deleted between create and provision,
     the task surfaces that as a failed session rather than raising."""
     session, turn = _make_pending_session(provision_user)
@@ -398,8 +408,184 @@ def test_destroy_task_swallows_sprite_errors(provision_user, fake_sprites, mocke
     """Matches the pre-existing `best_effort_delete` contract — errors are
     logged, not raised. Re-raising would let Procrastinate keep retrying a
     call that might never succeed."""
-    mocker.patch.object(
-        fake_sprites, "delete_sprite", side_effect=SpriteError("transient")
-    )
+    mocker.patch.object(fake_sprites, "delete_sprite", side_effect=SpriteError("transient"))
     destroy_session_task(user_id=provision_user.id, sprite_name="aod-xyz")
     # Assertion is "no exception raised".
+
+
+# --------------------------------------------------------------------------
+# Producer robustness tests
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_bulk_create_retries_on_transient_failure(user, mocker):
+    """bulk_create raises once then succeeds → chunks land in DB, no exhaustion event."""
+    session, turn = _make_session_and_turn(user)
+
+    call_count = 0
+    original_bulk_create = AgentSessionLog.objects.bulk_create
+
+    def flaky_bulk_create(objs, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            raise Exception("transient DB error")
+        return original_bulk_create(objs, **kwargs)
+
+    mocker.patch.object(AgentSessionLog.objects, "bulk_create", side_effect=flaky_bulk_create)
+    mocker.patch("agent_on_demand.session_service.tasks.time.sleep")
+    mock_posthog = mocker.patch("posthog.capture")
+
+    def drive_output(*_, **__):
+        writer = mock_cmd.stdout
+        writer.write(b"chunk-a\n")
+        writer.write(b"chunk-b\n")
+
+    _, mock_cmd = _patch_sprite(mocker, "success")
+    mock_cmd.run.side_effect = drive_output
+
+    execute_turn(
+        session_id=str(session.id),
+        turn_id=turn.id,
+        prompt="t",
+        mode="run",
+        timeout=10.0,
+    )
+
+    # All chunks must be in DB
+    logs = list(AgentSessionLog.objects.filter(session=session).order_by("id"))
+    assert any("chunk-a" in log.data for log in logs)
+    assert any("chunk-b" in log.data for log in logs)
+
+    # Exhaustion posthog event must NOT have been emitted
+    exhaustion_calls = [
+        c
+        for c in mock_posthog.call_args_list
+        if c.args and c.args[0] == "session.log_write_retry_exhausted"
+    ]
+    assert exhaustion_calls == []
+
+
+@pytest.mark.django_db
+def test_bulk_create_exhausts_retries_and_raises(user, mocker):
+    """bulk_create always raises → posthog exhaustion event captured, task re-raises."""
+    session, turn = _make_session_and_turn(user)
+
+    mocker.patch.object(
+        AgentSessionLog.objects,
+        "bulk_create",
+        side_effect=Exception("persistent DB error"),
+    )
+    mocker.patch("agent_on_demand.session_service.tasks.time.sleep")
+    mock_posthog = mocker.patch("posthog.capture")
+
+    def drive_output(*_, **__):
+        writer = mock_cmd.stdout
+        writer.write(b"some chunk\n")
+
+    _, mock_cmd = _patch_sprite(mocker, "success")
+    mock_cmd.run.side_effect = drive_output
+
+    # After exhausting all retries _flush_buffer re-raises, so the task itself raises.
+    with pytest.raises(Exception, match="persistent DB error"):
+        execute_turn(
+            session_id=str(session.id),
+            turn_id=turn.id,
+            prompt="t",
+            mode="run",
+            timeout=10.0,
+        )
+
+    exhaustion_calls = [
+        c
+        for c in mock_posthog.call_args_list
+        if c.args and c.args[0] == "session.log_write_retry_exhausted"
+    ]
+    assert len(exhaustion_calls) == 1
+    props = exhaustion_calls[0].kwargs.get("properties", {})
+    assert props.get("dropped_chunks", 0) > 0
+
+
+@pytest.mark.django_db
+def test_queue_full_drops_chunk_and_counts():
+    """TaggingQueueWriter with full queue increments drop_count and doesn't raise."""
+    q: queue.Queue = queue.Queue(maxsize=1)
+    writer = TaggingQueueWriter(q, "stdout")
+
+    # Fill the queue so the next put will timeout
+    q.put_nowait(object())
+
+    # This write should be dropped, not raise
+    result = writer.write(b"dropped chunk")
+
+    assert writer.drop_count == 1
+    assert result == len(b"dropped chunk")
+
+
+@pytest.mark.django_db
+def test_output_chunks_dropped_posthog_event(user, mocker):
+    """When drop_count > 0 after the turn, session.output_chunks_dropped is captured."""
+    session, turn = _make_session_and_turn(user)
+    mock_posthog = mocker.patch("posthog.capture")
+
+    original_patch_sprite = _patch_sprite(mocker, "success")
+    _, mock_cmd = original_patch_sprite
+
+    original_init = TaggingQueueWriter.__init__
+
+    # Track created writers so we can set drop_count after run
+    writers_created = []
+
+    def tracking_init(self, q, stream):
+        original_init(self, q, stream)
+        writers_created.append(self)
+
+    mocker.patch.object(TaggingQueueWriter, "__init__", tracking_init)
+
+    def drive_and_drop(*_, **__):
+        # Simulate drops by directly incrementing drop_count on the writers
+        for w in writers_created:
+            w.drop_count = 3
+
+    mock_cmd.run.side_effect = drive_and_drop
+
+    execute_turn(
+        session_id=str(session.id),
+        turn_id=turn.id,
+        prompt="t",
+        mode="run",
+        timeout=10.0,
+    )
+
+    drop_calls = [
+        c
+        for c in mock_posthog.call_args_list
+        if c.args and c.args[0] == "session.output_chunks_dropped"
+    ]
+    assert len(drop_calls) == 1
+
+
+@pytest.mark.django_db
+def test_cmd_thread_leak_detected(user, mocker):
+    """When cmd_thread.is_alive() returns True after join, posthog captures session.cmd_thread_leaked."""
+    session, turn = _make_session_and_turn(user)
+    _patch_sprite(mocker, "success")
+    mock_posthog = mocker.patch("posthog.capture")
+
+    mocker.patch.object(threading.Thread, "is_alive", return_value=True)
+
+    execute_turn(
+        session_id=str(session.id),
+        turn_id=turn.id,
+        prompt="t",
+        mode="run",
+        timeout=10.0,
+    )
+
+    leak_calls = [
+        c
+        for c in mock_posthog.call_args_list
+        if c.args and c.args[0] == "session.cmd_thread_leaked"
+    ]
+    assert len(leak_calls) == 1

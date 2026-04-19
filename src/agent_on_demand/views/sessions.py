@@ -305,13 +305,23 @@ def stream_session(request, session_id):
     except (AgentSession.DoesNotExist, ValueError):
         return JsonResponse({"detail": "Session not found"}, status=404)
 
+    raw = request.META.get("HTTP_LAST_EVENT_ID") or request.GET.get("since", "0")
+    try:
+        since = max(0, int(raw))
+    except ValueError:
+        return JsonResponse({"detail": "since must be an integer"}, status=400)
+
     def event_generator():
         yield f"data: {json.dumps({'type': 'start', 'runtime': session.runtime, 'session_id': str(session.id)})}\n\n"
 
-        for event in stream_session_from_db(str(session.id)):
+        for event in stream_session_from_db(str(session.id), since=since):
             if event == "":
                 yield ": heartbeat\n\n"
             else:
+                payload = json.loads(event)
+                log_id = payload.get("id")
+                if log_id:
+                    yield f"id: {log_id}\n"
                 yield f"data: {event}\n\n"
 
     response = StreamingHttpResponse(event_generator(), content_type="text/event-stream")
@@ -456,9 +466,7 @@ def terminate_session(request, session_id):
     session.save(update_fields=["status", "sprite_name", "updated_at"])
 
     if sprite_name:
-        session_service.destroy_session_task.defer(
-            user_id=request.user.id, sprite_name=sprite_name
-        )
+        session_service.destroy_session_task.defer(user_id=request.user.id, sprite_name=sprite_name)
 
     with posthog.new_context():
         posthog.identify_context(str(request.user.id))

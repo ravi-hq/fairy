@@ -350,6 +350,20 @@ paths:
     get:
       tags: [sessions]
       summary: Server-sent events stream of session output
+      description: >
+        Streams session output as Server-Sent Events. Event types: `start`,
+        `turn_start`, `output`, `exit`, `error`, `terminated`, `stale`.
+        Every event except `start` includes an `"id"` field in its JSON payload
+        and an SSE `id:` line. Clients can resume a disconnected stream via
+        the `Last-Event-ID` header or the `since` query parameter.
+      parameters:
+        - name: since
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+          description: "Resume after this event id. Omit for full replay."
       responses:
         "200":
           description: text/event-stream
@@ -357,6 +371,8 @@ paths:
             text/event-stream:
               schema:
                 type: string
+        "400":
+          description: Bad request (e.g. since is not a non-negative integer)
 
 components:
   securitySchemes:

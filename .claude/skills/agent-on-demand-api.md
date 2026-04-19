@@ -174,37 +174,43 @@ If you see `400 {"detail":"No API key configured for runtime: <name>"}` at sessi
 
 `GET /sessions/{id}/stream` — `Content-Type: text/event-stream`, `X-Accel-Buffering: no`.
 
-Event types (`data: <json>\n\n`):
+Event types (`data: <json>\n\n`). Every event except `start` includes an `"id": <log_row_id>` field in the JSON payload and an SSE `id:` line.
 
-| Type         | Payload                                                            |
-| ------------ | ------------------------------------------------------------------ |
-| `start`      | `{"type":"start","runtime":"claude","session_id":"<uuid>"}` (always first) |
-| `output`     | `{"type":"output","stream":"stdout"\|"stderr","data":"..."}`       |
-| `exit`       | `{"type":"exit","code":0}` — terminal                              |
-| `error`      | `{"type":"error","message":"..."}` — terminal (exception path)     |
-| `terminated` | `{"type":"terminated","message":"Session terminated"}` — terminal  |
+| Type         | Payload                                                                          |
+| ------------ | -------------------------------------------------------------------------------- |
+| `start`      | `{"type":"start","runtime":"claude","session_id":"<uuid>"}` (always first, no `id`) |
+| `turn_start` | `{"type":"turn_start","id":<int>,"turn":<int>}` — before first output of each turn |
+| `output`     | `{"type":"output","id":<int>,"stream":"stdout"\|"stderr","data":"...","turn":<int>}` |
+| `exit`       | `{"type":"exit","id":<int>,"code":0}` — terminal                                |
+| `error`      | `{"type":"error","id":<int>,"message":"..."}` — terminal (exception path)       |
+| `terminated` | `{"type":"terminated","id":<int>,"message":"Session terminated"}` — terminal    |
+| `stale`      | `{"type":"stale","id":<int>,"message":"No output for 600s"}` — terminal; session may still be `running` |
 
-Heartbeats are lines starting with `: ` (skip them). Stream always replays **everything** from the start on every connection — then tails live output if still running, or emits terminal event + closes if already terminal. Reconnects are safe and idempotent.
+Heartbeats are lines starting with `: ` (skip them). Stream replays everything from the start by default; supply the last received `id` via `Last-Event-ID` header or `?since=<id>` query param to resume without re-receiving old events. If both are supplied, the header wins. `since=0` or omitting it gives a full replay. Non-integer `since` returns `400`.
 
 Reference client:
 
 ```python
 import json, requests
 
-resp = requests.get(
-    f"{BASE}/sessions/{sid}/stream",
-    headers={"Authorization": f"Bearer {TOKEN}"},
-    stream=True,
-)
-resp.raise_for_status()
-for line in resp.iter_lines(decode_unicode=True):
-    if not line or line.startswith(":"):
-        continue
-    event = json.loads(line[len("data: "):])
-    if event["type"] == "output":
-        print(event["data"], end="")
-    elif event["type"] in ("exit", "error", "terminated"):
-        break
+last_event_id = 0
+while True:
+    headers = {"Authorization": f"Bearer {TOKEN}"}
+    if last_event_id:
+        headers["Last-Event-ID"] = str(last_event_id)
+    with requests.get(f"{BASE}/sessions/{sid}/stream", headers=headers, stream=True) as resp:
+        resp.raise_for_status()
+        for line in resp.iter_lines(decode_unicode=True):
+            if not line or line.startswith(":"):
+                continue
+            if line.startswith("id: "):
+                last_event_id = int(line[4:])
+            elif line.startswith("data: "):
+                event = json.loads(line[6:])
+                if event["type"] == "output":
+                    print(event["data"], end="")
+                elif event["type"] in ("exit", "error", "terminated", "stale"):
+                    return
 ```
 
 ## Minimum Viable curl Recipes
