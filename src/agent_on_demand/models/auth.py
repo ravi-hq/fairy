@@ -73,6 +73,13 @@ class UserRuntimeKey(models.Model):
     def get_api_key(self) -> str:
         return decrypt(bytes(self.encrypted_key))
 
+    @classmethod
+    def get_key_for(cls, user, runtime: str) -> str | None:
+        try:
+            return cls.objects.get(user=user, runtime=runtime).get_api_key()
+        except cls.DoesNotExist:
+            return None
+
 
 class UserSpritesKey(models.Model):
     user = models.OneToOneField(
