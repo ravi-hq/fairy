@@ -371,6 +371,15 @@ def send_prompt(request, session_id):
     if session.status == "terminated":
         return JsonResponse({"detail": "Session has been terminated"}, status=409)
 
+    # A `failed` session may have left its Sprite mid-execution (see Muddy
+    # Zone 8 in thoughts/research/2026-04-18-sprites-script-setup.md). Making
+    # `failed` terminal prevents a resume from colliding with a runaway turn.
+    if session.status == "failed":
+        return JsonResponse(
+            {"detail": "Session has failed and cannot be resumed. Start a new session."},
+            status=409,
+        )
+
     try:
         body = json.loads(request.body)
     except (json.JSONDecodeError, ValueError):
@@ -398,6 +407,11 @@ def send_prompt(request, session_id):
                 return JsonResponse({"detail": "Session is already running"}, status=409)
             if locked.status == "terminated":
                 return JsonResponse({"detail": "Session has been terminated"}, status=409)
+            if locked.status == "failed":
+                return JsonResponse(
+                    {"detail": ("Session has failed and cannot be resumed. Start a new session.")},
+                    status=409,
+                )
 
             next_turn_number = (
                 SessionTurn.objects.filter(session=locked).aggregate(n=Max("turn_number"))["n"] or 0

@@ -6,6 +6,7 @@ import threading
 import time
 from collections.abc import Generator
 
+from django.db import close_old_connections
 from django.utils import timezone
 from sprites import ExecError, Sprite
 
@@ -78,7 +79,28 @@ def run_session_background(
     streams over the Sprites WS stdin frame; the runtime-CLI invocation is
     assembled inline per turn (no on-Sprite dispatcher script). Logs are
     tagged with the turn so consumers can replay per-turn.
+
+    Django's per-request DB-connection lifecycle doesn't apply here since this
+    runs in a daemon thread spawned outside the request cycle; we call
+    `close_old_connections()` on entry and exit so a turn's DB writes don't
+    hold a connection for the worker's full lifetime.
     """
+    close_old_connections()
+    try:
+        _run_session_background_inner(session, turn, sprite, runtime, prompt, mode, timeout)
+    finally:
+        close_old_connections()
+
+
+def _run_session_background_inner(
+    session: AgentSession,
+    turn: SessionTurn,
+    sprite: Sprite,
+    runtime: RuntimeConfig,
+    prompt: str,
+    mode: str,
+    timeout: float,
+):
     output_q: queue.Queue = queue.Queue(maxsize=4096)
     db_buffer: list[AgentSessionLog] = []
     result_holder: list = []
@@ -89,6 +111,8 @@ def run_session_background(
             db_buffer.clear()
 
     def _run_command():
+        # NOTE: if you add DB writes inside this inner thread, wrap the body
+        # in close_old_connections()/finally the same way the outer thread does.
         try:
             cmd = sprite.command(
                 "bash",

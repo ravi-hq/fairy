@@ -624,6 +624,29 @@ def test_send_prompt_to_terminated_session(client: Client, auth_headers, user):
 
 
 @pytest.mark.django_db
+def test_send_prompt_to_failed_session_rejected(client: Client, auth_headers, user):
+    """Failed sessions are terminal: the underlying Sprite may still be running
+    (see Muddy Zone 8). Resuming would risk two concurrent executions on the
+    same Sprite, so we force callers to start a new session instead."""
+    session = AgentSession.objects.create(
+        user=user,
+        runtime="claude",
+        prompt="test",
+        sprite_name="sprite-xyz",
+        status="failed",
+        exit_code=1,
+    )
+    resp = client.post(
+        f"/sessions/{session.id}/prompt",
+        data=json.dumps({"prompt": "retry"}),
+        content_type="application/json",
+        **auth_headers,
+    )
+    assert resp.status_code == 409
+    assert "failed" in resp.json()["detail"].lower()
+
+
+@pytest.mark.django_db
 def test_run_session_background_persists_int_exit_code_on_exec_error(user, mocker):
     """Regression: ExecError.exit_code is a method, not a property. The
     background runner must call it before storing on `session.exit_code`,
@@ -671,6 +694,39 @@ def test_run_session_background_persists_int_exit_code_on_exec_error(user, mocke
     assert turn.status == "failed"
     assert turn.exit_code == 1
     assert turn.ended_at is not None
+
+
+@pytest.mark.django_db
+def test_run_session_background_closes_db_connections(user, mocker):
+    """Django's per-request DB-connection lifecycle doesn't apply to threads
+    spawned outside the request cycle. We call close_old_connections() on
+    entry and exit so a turn's DB writes don't hold a connection for the
+    worker's full lifetime."""
+    from sprites import ExecError
+
+    from agent_on_demand.models import SessionTurn
+    from agent_on_demand.runtimes import RUNTIMES
+
+    session = AgentSession.objects.create(user=user, runtime="claude", prompt="t", status="pending")
+    turn = SessionTurn.objects.create(session=session, turn_number=1, prompt="t", status="pending")
+
+    mock_sprite = mocker.MagicMock()
+    mock_cmd = mocker.MagicMock()
+    mock_cmd.run.side_effect = ExecError("exit status 0", exit_code=0)
+    mock_sprite.command.return_value = mock_cmd
+
+    close_spy = mocker.patch("agent_on_demand.stream.close_old_connections")
+
+    # Re-import after patching so the module uses the spy.
+    from agent_on_demand.stream import run_session_background
+
+    run_session_background(
+        session, turn, mock_sprite, RUNTIMES["claude"], "hi", "run", timeout=10.0
+    )
+
+    # At minimum: called at entry and at exit (finally). >= 2 is defensive —
+    # if the code inadvertently calls it an extra time elsewhere, still fine.
+    assert close_spy.call_count >= 2
 
 
 @pytest.mark.django_db
