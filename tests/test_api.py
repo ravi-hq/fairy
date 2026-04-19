@@ -365,14 +365,13 @@ def test_stream_session_failed_with_no_exit_code(client: Client, auth_headers, u
 
 
 @pytest.mark.django_db
-def test_terminate_session(client: Client, auth_headers, user, mocker):
-    """Terminate destroys the Sprite but keeps the session record."""
-    from tests.fakes.sprite import RecordingSpritesClient
+def test_terminate_session(client: Client, auth_headers, sprites_key, user, fake_sprites):
+    """Terminate flips the DB state and enqueues the Sprite delete.
 
-    fake = RecordingSpritesClient()
-    mocker.patch("agent_on_demand.session_service.client.get_client", return_value=fake)
-    mocker.patch("agent_on_demand.session_service.get_client", return_value=fake)
-
+    The `fake_sprites` fixture runs `destroy_session_task.defer` inline, so
+    we can still assert on the recorded delete — but the view itself returns
+    without blocking on the Sprites API call.
+    """
     session = AgentSession.objects.create(
         user=user, runtime="claude", prompt="test", sprite_name="aod-abc123", status="completed"
     )
@@ -385,7 +384,7 @@ def test_terminate_session(client: Client, auth_headers, user, mocker):
     assert session.status == "terminated"
     assert session.sprite_name == ""
 
-    assert fake.deleted == ["aod-abc123"]
+    assert fake_sprites.deleted == ["aod-abc123"]
 
 
 @pytest.mark.django_db

@@ -1,12 +1,15 @@
 """Procrastinate tasks for session lifecycle.
 
-Two tasks live here, both running in the worker process:
+Three tasks live here, all running in the worker process:
 
 - `provision_session_task` creates the Sprite and runs setup stages, then
   enqueues the first turn. Moving this off the web process is what keeps
   `POST /sessions` snappy — provisioning is the slow step.
 - `execute_turn` drives one turn of the agent: DB state machine, blocking
   SDK call, log chunk persistence, finalize.
+- `destroy_session_task` deletes the Sprite behind `POST /terminate` and
+  `DELETE /sessions/{id}`. The Sprites delete call can take ~1s; moving
+  it off the web process keeps those endpoints snappy.
 
 The inner daemon thread that wraps `sprite.command().run()` in `execute_turn`
 stays here — it's load-bearing for the producer-consumer pattern against the
@@ -17,7 +20,8 @@ Retry policy: **none**. Turn-level retries against a Sprite that may be
 half-torn-down would not heal anything; failures surface as session status
 `failed` and the caller starts a new session. Provision failures follow the
 same rule — a half-provisioned Sprite is torn down and the session is
-marked `failed`.
+marked `failed`. Destroy failures are log-and-swallow, matching the
+pre-existing `best_effort_delete` contract.
 """
 
 from __future__ import annotations
@@ -28,6 +32,7 @@ import queue
 import threading
 
 import posthog
+from django.contrib.auth import get_user_model
 from django.db import close_old_connections
 from django.utils import timezone
 from procrastinate.contrib.django import app as procrastinate_app
@@ -43,7 +48,7 @@ from agent_on_demand.observability import get_tracer
 from agent_on_demand.runtimes import RUNTIMES, RuntimeConfig
 
 from .errors import NoSpritesKeyError, ProvisionError
-from .provisioning import provision_session, resume_session
+from .provisioning import destroy_session, provision_session, resume_session
 from .specs import McpServerSpec, RepoSpec, SessionSpec, SkillSpec
 
 logger = logging.getLogger(__name__)
@@ -425,3 +430,30 @@ def _execute_turn_body(
                 "mode": mode,
             },
         )
+
+
+@procrastinate_app.task(queue="sessions", name="destroy_session", pass_context=False)
+def destroy_session_task(*, user_id: int, sprite_name: str) -> None:
+    """Delete a Sprite on the worker. Best-effort — failures are logged,
+    not retried, matching the pre-existing `destroy_session` contract.
+
+    User resolution lives inside the task (rather than the view passing a
+    client/token) so there's nothing sensitive on the Procrastinate queue.
+    If the user row is gone by the time the worker picks up, we skip
+    cleanup — the Sprite will eventually time out server-side.
+    """
+    close_old_connections()
+    try:
+        User = get_user_model()
+        try:
+            user = User.objects.get(pk=user_id)
+        except User.DoesNotExist:
+            logger.warning(
+                "destroy_session_task: user %s gone, skipping Sprite %s",
+                user_id,
+                sprite_name,
+            )
+            return
+        destroy_session(user, sprite_name)
+    finally:
+        close_old_connections()

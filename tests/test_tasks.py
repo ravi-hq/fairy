@@ -21,7 +21,11 @@ from agent_on_demand.models import (
     UserRuntimeKey,
     UserSpritesKey,
 )
-from agent_on_demand.session_service.tasks import execute_turn, provision_session_task
+from agent_on_demand.session_service.tasks import (
+    destroy_session_task,
+    execute_turn,
+    provision_session_task,
+)
 
 
 @pytest.fixture
@@ -368,3 +372,34 @@ def test_provision_task_marks_failed_when_runtime_key_missing(
     assert session.status == "failed"
     assert fake_sprites.created == []
     assert defer_spy.call_count == 0
+
+
+# --------------------------------------------------------------------------
+# destroy_session_task tests
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_destroy_task_deletes_sprite(provision_user, fake_sprites):
+    destroy_session_task(user_id=provision_user.id, sprite_name="aod-xyz")
+    assert fake_sprites.deleted == ["aod-xyz"]
+
+
+@pytest.mark.django_db
+def test_destroy_task_noop_when_user_gone(fake_sprites):
+    """If the user row is gone by the time the worker picks up, skip
+    cleanup rather than raise. The Sprite will time out server-side."""
+    destroy_session_task(user_id=999_999, sprite_name="aod-xyz")
+    assert fake_sprites.deleted == []
+
+
+@pytest.mark.django_db
+def test_destroy_task_swallows_sprite_errors(provision_user, fake_sprites, mocker):
+    """Matches the pre-existing `best_effort_delete` contract — errors are
+    logged, not raised. Re-raising would let Procrastinate keep retrying a
+    call that might never succeed."""
+    mocker.patch.object(
+        fake_sprites, "delete_sprite", side_effect=SpriteError("transient")
+    )
+    destroy_session_task(user_id=provision_user.id, sprite_name="aod-xyz")
+    # Assertion is "no exception raised".
