@@ -1,3 +1,4 @@
+import atexit
 import os
 
 import posthog
@@ -25,6 +26,12 @@ class AgentOnDemandConfig(AppConfig):
         posthog.api_key = api_key or "disabled"
         posthog.host = os.environ.get("POSTHOG_HOST", DEFAULT_POSTHOG_HOST)
         posthog.disabled = not api_key
+        # Render SIGTERMs both the web and worker processes on deploy. Gunicorn
+        # and Procrastinate each catch SIGTERM, drain, and exit cleanly — atexit
+        # runs on that clean exit and flushes PostHog's async buffer so events
+        # from the final requests/tasks aren't dropped.
+        if api_key:
+            atexit.register(posthog.shutdown)
 
         from django.db.backends.signals import connection_created
 
