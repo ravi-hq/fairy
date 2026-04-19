@@ -175,9 +175,7 @@ def stream_session_from_db(session_id: str) -> Generator[str, None, None]:
             last_id = chunk["id"]
             turn_id = chunk["turn_id"]
             if turn_id is not None and turn_id != last_turn_id:
-                yield json.dumps(
-                    {"type": "turn_start", "turn": chunk["turn__turn_number"]}
-                )
+                yield json.dumps({"type": "turn_start", "turn": chunk["turn__turn_number"]})
                 last_turn_id = turn_id
             yield json.dumps(
                 {

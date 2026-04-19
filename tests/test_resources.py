@@ -12,8 +12,6 @@ from agent_on_demand.models import (
     UserRuntimeKey,
     UserSpritesKey,
 )
-from agent_on_demand.runtimes import RUNTIMES
-from agent_on_demand.sprites_exec import RepoSpec, build_wrapper_script
 
 
 # --- Fixtures ---
@@ -63,102 +61,116 @@ def agent(user):
     )
 
 
-@pytest.fixture
-def mock_sprites(mocker):
-    """Mock the Sprites client so create_session doesn't hit a real API."""
-    mock_sprite = mocker.MagicMock()
-    mock_fs = mocker.MagicMock()
-    mock_sprite.filesystem.return_value = mock_fs
-    mock_fs.__truediv__ = mocker.Mock(return_value=mock_fs)
-    mock_fs.write_text = mocker.Mock()
-    mock_sprite.command.return_value.run = mocker.Mock()
-
-    mock_client = mocker.MagicMock()
-    mock_client.create_sprite.return_value = mock_sprite
-    mocker.patch("agent_on_demand.session_service.get_client", return_value=mock_client)
-    mocker.patch("agent_on_demand.session_service.threading.Thread")
-    return mock_sprite, mock_fs
+# --- Clone-stage mechanics (via recording fake) ---
 
 
-# --- Wrapper script tests ---
+def _clone_commands(sprite) -> list[str]:
+    return [c for c in sprite.command_strings() if c.startswith("git clone")]
 
 
-class TestBuildCloneSection:
-    def test_no_repos_produces_no_clone_lines(self):
-        config = RUNTIMES["claude"]
-        script = build_wrapper_script(config, "sk-test", repos=[])
-        assert "git clone" not in script
-
-    def test_single_public_repo(self):
-        config = RUNTIMES["claude"]
-        repo = RepoSpec(url="https://github.com/org/repo", mount_path="/workspace/repo")
-        script = build_wrapper_script(config, "sk-test", repos=[repo])
-        assert "git clone --depth=1 --quiet" in script
-        assert "/workspace/repo" in script
-        # no token = no credentials file written (the EXIT trap references the
-        # path unconditionally for cleanup, so check for the write operation)
-        assert "cat > /tmp/.git-credentials" not in script
-        assert "credential.helper 'store" not in script
-
-    def test_single_private_repo_with_token(self):
-        config = RUNTIMES["claude"]
-        repo = RepoSpec(
-            url="https://github.com/org/private-repo",
-            mount_path="/workspace/private-repo",
-            token="ghp_testtoken123",
+@pytest.mark.django_db
+class TestCloneStage:
+    def test_no_resources_issues_no_clone(
+        self, client: Client, auth_headers, runtime_key, agent, fake_sprites
+    ):
+        resp = client.post(
+            "/sessions",
+            data=json.dumps({"agent_id": str(agent.id), "prompt": "hello"}),
+            content_type="application/json",
+            **auth_headers,
         )
-        script = build_wrapper_script(config, "sk-test", repos=[repo])
-        assert "git clone --depth=1 --quiet" in script
-        assert "/workspace/private-repo" in script
-        # Token should be in .git-credentials, not in the clone URL
-        assert ".git-credentials" in script
-        assert "ghp_testtoken123" in script
-        assert "credential.helper" in script
-        # Credentials cleaned up after clone
-        assert "rm -f /tmp/.git-credentials" in script
-        assert "--unset credential.helper" in script
+        assert resp.status_code == 202
+        assert _clone_commands(fake_sprites.last_sprite()) == []
 
-    def test_multiple_repos(self):
-        config = RUNTIMES["claude"]
-        repos = [
-            RepoSpec(url="https://github.com/org/frontend", mount_path="/workspace/frontend"),
-            RepoSpec(
-                url="https://github.com/org/backend",
-                mount_path="/workspace/backend",
-                token="ghp_token",
+    def test_public_repo_no_credentials_written(
+        self, client: Client, auth_headers, runtime_key, agent, fake_sprites
+    ):
+        resp = client.post(
+            "/sessions",
+            data=json.dumps(
+                {
+                    "agent_id": str(agent.id),
+                    "prompt": "hello",
+                    "resources": [
+                        {"type": "github_repository", "url": "https://github.com/org/repo"}
+                    ],
+                }
             ),
+            content_type="application/json",
+            **auth_headers,
+        )
+        assert resp.status_code == 202
+        sprite = fake_sprites.last_sprite()
+        assert _clone_commands(sprite) == [
+            "git clone --depth=1 --quiet https://github.com/org/repo /workspace/repo"
         ]
-        script = build_wrapper_script(config, "sk-test", repos=repos)
-        assert script.count("git clone") == 2
-        assert "/workspace/frontend" in script
-        assert "/workspace/backend" in script
+        assert "/tmp/.git-credentials" not in sprite.write_map()
 
-    def test_clone_section_before_exec(self):
-        config = RUNTIMES["claude"]
-        repo = RepoSpec(url="https://github.com/org/repo", mount_path="/workspace/repo")
-        script = build_wrapper_script(config, "sk-test", repos=[repo])
-        clone_pos = script.index("git clone")
-        exec_pos = script.index("exec ")
-        assert clone_pos < exec_pos
+    def test_private_repo_writes_credentials_and_unsets(
+        self, client: Client, auth_headers, runtime_key, agent, fake_sprites
+    ):
+        resp = client.post(
+            "/sessions",
+            data=json.dumps(
+                {
+                    "agent_id": str(agent.id),
+                    "prompt": "hello",
+                    "resources": [
+                        {
+                            "type": "github_repository",
+                            "url": "https://github.com/org/private",
+                            "authorization_token": "ghp_tok",
+                        }
+                    ],
+                }
+            ),
+            content_type="application/json",
+            **auth_headers,
+        )
+        assert resp.status_code == 202
+        sprite = fake_sprites.last_sprite()
+        creds = sprite.write_map().get("/tmp/.git-credentials")
+        assert creds is not None
+        assert "ghp_tok" in creds
+        cmds = sprite.command_strings()
+        assert any("git config --global credential.helper" in c for c in cmds)
+        # Cleanup fires after the clone (same stage, finally block).
+        assert "rm -f /tmp/.git-credentials" in cmds
+        assert "git config --global --unset credential.helper" in cmds
 
-    def test_continue_mode_skips_clones(self):
-        """The mode-dispatching script gates clones behind the init sentinel,
-        so `continue` mode won't re-clone. `--continue` is still reachable via
-        the case-dispatch."""
-        config = RUNTIMES["claude"]
-        repo = RepoSpec(url="https://github.com/org/repo", mount_path="/workspace/repo")
-        script = build_wrapper_script(config, "sk-test", repos=[repo])
-        # Clone lives inside the one-time init block, behind the sentinel.
-        init_block_start = script.index("if [ ! -f /tmp/aod-initialized ]")
-        init_block_end = script.index("touch /tmp/aod-initialized")
-        clone_pos = script.index("git clone")
-        assert init_block_start < clone_pos < init_block_end
-        # Claude resumes via --resume <uuid> in continue-mode; the continue
-        # command must appear in the case dispatch.
-        assert "--resume" in script
+    def test_multiple_repos_all_cloned(
+        self, client: Client, auth_headers, runtime_key, agent, fake_sprites
+    ):
+        resp = client.post(
+            "/sessions",
+            data=json.dumps(
+                {
+                    "agent_id": str(agent.id),
+                    "prompt": "hello",
+                    "resources": [
+                        {
+                            "type": "github_repository",
+                            "url": "https://github.com/org/frontend",
+                        },
+                        {
+                            "type": "github_repository",
+                            "url": "https://github.com/org/backend",
+                            "authorization_token": "ghp_tok",
+                        },
+                    ],
+                }
+            ),
+            content_type="application/json",
+            **auth_headers,
+        )
+        assert resp.status_code == 202
+        clones = _clone_commands(fake_sprites.last_sprite())
+        assert len(clones) == 2
+        assert any("frontend" in c for c in clones)
+        assert any("backend" in c for c in clones)
 
 
-# --- API validation tests ---
+# --- API validation tests (HTTP layer, unchanged) ---
 
 
 @pytest.mark.django_db
@@ -281,7 +293,7 @@ class TestResourceValidation:
 @pytest.mark.django_db
 class TestResourcesIntegration:
     def test_create_session_with_resources(
-        self, client: Client, auth_headers, runtime_key, agent, mock_sprites
+        self, client: Client, auth_headers, runtime_key, agent, fake_sprites
     ):
         resp = client.post(
             "/sessions",
@@ -305,14 +317,12 @@ class TestResourcesIntegration:
         assert resp.status_code == 202
         data = resp.json()
 
-        # Response includes resources without token
         assert len(data["resources"]) == 1
         assert data["resources"][0]["type"] == "github_repository"
         assert data["resources"][0]["url"] == "https://github.com/org/repo"
         assert data["resources"][0]["mount_path"] == "/workspace/repo"
         assert "authorization_token" not in data["resources"][0]
 
-        # Resource persisted in DB with encrypted token
         session = AgentSession.objects.get(pk=data["id"])
         sr = session.resources.first()
         assert sr.url == "https://github.com/org/repo"
@@ -320,7 +330,7 @@ class TestResourcesIntegration:
         assert sr.get_token() == "ghp_secret123"
 
     def test_create_session_without_resources_backward_compatible(
-        self, client: Client, auth_headers, runtime_key, agent, mock_sprites
+        self, client: Client, auth_headers, runtime_key, agent, fake_sprites
     ):
         resp = client.post(
             "/sessions",
@@ -333,7 +343,7 @@ class TestResourcesIntegration:
         assert data["resources"] == []
 
     def test_create_session_default_mount_path(
-        self, client: Client, auth_headers, runtime_key, agent, mock_sprites
+        self, client: Client, auth_headers, runtime_key, agent, fake_sprites
     ):
         resp = client.post(
             "/sessions",
@@ -354,7 +364,7 @@ class TestResourcesIntegration:
         assert data["resources"][0]["mount_path"] == "/workspace/my-repo"
 
     def test_create_session_public_repo_no_token(
-        self, client: Client, auth_headers, runtime_key, agent, mock_sprites
+        self, client: Client, auth_headers, runtime_key, agent, fake_sprites
     ):
         resp = client.post(
             "/sessions",
@@ -392,7 +402,7 @@ class TestResourcesIntegration:
         assert data["resources"][0]["url"] == "https://github.com/org/repo"
 
     def test_url_normalized_strips_dotgit(
-        self, client: Client, auth_headers, runtime_key, agent, mock_sprites
+        self, client: Client, auth_headers, runtime_key, agent, fake_sprites
     ):
         resp = client.post(
             "/sessions",

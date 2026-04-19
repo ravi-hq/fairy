@@ -207,22 +207,10 @@ def test_run_timeout_too_high(client: Client, auth_headers, runtime_key, agent):
 
 
 @pytest.mark.django_db
-def test_run_returns_202_with_session_id(client: Client, auth_headers, runtime_key, agent, mocker):
-    """POST /sessions returns 202 with session info (mock Sprites)."""
-    mock_sprite = mocker.MagicMock()
-    mock_fs = mocker.MagicMock()
-    mock_sprite.filesystem.return_value = mock_fs
-    mock_fs.__truediv__ = mocker.Mock(return_value=mock_fs)
-    mock_fs.write_text = mocker.Mock()
-    mock_sprite.command.return_value.run = mocker.Mock()
-
-    mock_client = mocker.MagicMock()
-    mock_client.create_sprite.return_value = mock_sprite
-    mocker.patch("agent_on_demand.session_service.get_client", return_value=mock_client)
-
-    # Prevent the background thread from actually running
-    mocker.patch("agent_on_demand.session_service.threading.Thread")
-
+def test_run_returns_202_with_session_id(
+    client: Client, auth_headers, runtime_key, agent, fake_sprites
+):
+    """POST /sessions returns 202 with session info (fake Sprites)."""
     resp = client.post(
         "/sessions",
         data=json.dumps({"agent_id": str(agent.id), "prompt": "hello"}),
@@ -236,7 +224,6 @@ def test_run_returns_202_with_session_id(client: Client, auth_headers, runtime_k
     assert "stream_url" in data
     assert data["stream_url"].startswith("/sessions/")
 
-    # Verify session was created in DB with correct user and agent
     session = AgentSession.objects.get(pk=data["id"])
     assert session.runtime == "claude"
     assert session.status == "pending"
@@ -380,8 +367,11 @@ def test_stream_session_failed_with_no_exit_code(client: Client, auth_headers, u
 @pytest.mark.django_db
 def test_terminate_session(client: Client, auth_headers, user, mocker):
     """Terminate destroys the Sprite but keeps the session record."""
-    mock_client = mocker.MagicMock()
-    mocker.patch("agent_on_demand.session_service.get_client", return_value=mock_client)
+    from tests.fakes.sprite import RecordingSpritesClient
+
+    fake = RecordingSpritesClient()
+    mocker.patch("agent_on_demand.session_service.client.get_client", return_value=fake)
+    mocker.patch("agent_on_demand.session_service.get_client", return_value=fake)
 
     session = AgentSession.objects.create(
         user=user, runtime="claude", prompt="test", sprite_name="aod-abc123", status="completed"
@@ -395,7 +385,7 @@ def test_terminate_session(client: Client, auth_headers, user, mocker):
     assert session.status == "terminated"
     assert session.sprite_name == ""
 
-    mock_client.delete_sprite.assert_called_once_with("aod-abc123")
+    assert fake.deleted == ["aod-abc123"]
 
 
 @pytest.mark.django_db
@@ -410,18 +400,9 @@ def test_terminate_already_terminated(client: Client, auth_headers, user):
 
 @pytest.mark.django_db
 def test_create_session_creates_turn_one(
-    client: Client, auth_headers, runtime_key, agent, mocker
+    client: Client, auth_headers, runtime_key, agent, fake_sprites
 ):
     """POST /sessions produces exactly one turn with prompt + pending status."""
-    mock_sprite = mocker.MagicMock()
-    mock_fs = mocker.MagicMock()
-    mock_sprite.filesystem.return_value = mock_fs
-    mock_fs.__truediv__ = mocker.Mock(return_value=mock_fs)
-    mock_client = mocker.MagicMock()
-    mock_client.create_sprite.return_value = mock_sprite
-    mocker.patch("agent_on_demand.session_service.get_client", return_value=mock_client)
-    mocker.patch("agent_on_demand.session_service.threading.Thread")
-
     resp = client.post(
         "/sessions",
         data=json.dumps({"agent_id": str(agent.id), "prompt": "first prompt"}),
@@ -441,20 +422,11 @@ def test_create_session_creates_turn_one(
 
 @pytest.mark.django_db
 def test_create_session_generates_runtime_session_id(
-    client: Client, auth_headers, runtime_key, agent, mocker
+    client: Client, auth_headers, runtime_key, agent, fake_sprites
 ):
     """Each new session gets a pre-generated UUID persisted as
-    runtime_session_id AND baked into the wrapper script as AOD_SESSION_ID."""
+    runtime_session_id AND written into the /tmp/aod-env file as AOD_SESSION_ID."""
     import uuid as _uuid
-
-    mock_sprite = mocker.MagicMock()
-    mock_fs = mocker.MagicMock()
-    mock_sprite.filesystem.return_value = mock_fs
-    mock_fs.__truediv__ = mocker.Mock(return_value=mock_fs)
-    mock_client = mocker.MagicMock()
-    mock_client.create_sprite.return_value = mock_sprite
-    mocker.patch("agent_on_demand.session_service.get_client", return_value=mock_client)
-    mocker.patch("agent_on_demand.session_service.threading.Thread")
 
     resp = client.post(
         "/sessions",
@@ -466,28 +438,19 @@ def test_create_session_generates_runtime_session_id(
 
     session = AgentSession.objects.get(pk=resp.json()["id"])
     assert session.runtime_session_id is not None
-    # Should be a real UUID4
     _uuid.UUID(str(session.runtime_session_id), version=4)
 
-    script = mock_fs.write_text.call_args_list[0][0][0]
-    assert f"export AOD_SESSION_ID={session.runtime_session_id}" in script
+    env_file = fake_sprites.last_sprite().write_map()["/tmp/aod-env"]
+    assert f"AOD_SESSION_ID={session.runtime_session_id}" in env_file
 
 
 @pytest.mark.django_db
 def test_create_session_writes_script_once_and_prompt_file(
-    client: Client, auth_headers, runtime_key, agent, mocker
+    client: Client, auth_headers, runtime_key, agent, fake_sprites
 ):
-    """The wrapper script is written exactly once at create-time, along with
-    the prompt file. /prompt should not rewrite the script."""
-    mock_sprite = mocker.MagicMock()
-    mock_fs = mocker.MagicMock()
-    mock_sprite.filesystem.return_value = mock_fs
-    mock_fs.__truediv__ = mocker.Mock(return_value=mock_fs)
-    mock_client = mocker.MagicMock()
-    mock_client.create_sprite.return_value = mock_sprite
-    mocker.patch("agent_on_demand.session_service.get_client", return_value=mock_client)
-    mocker.patch("agent_on_demand.session_service.threading.Thread")
-
+    """The dispatcher script is written once during provision, plus the env
+    file and (via run_turn) the prompt file. /prompt does not rewrite the
+    script."""
     resp = client.post(
         "/sessions",
         data=json.dumps({"agent_id": str(agent.id), "prompt": "hello"}),
@@ -496,16 +459,16 @@ def test_create_session_writes_script_once_and_prompt_file(
     )
     assert resp.status_code == 202
 
-    calls = mock_fs.write_text.call_args_list
-    assert len(calls) == 2
-    script, prompt = calls[0][0][0], calls[1][0][0]
-    assert script.startswith("#!/bin/bash")
-    assert prompt == "hello"
+    writes = fake_sprites.last_sprite().write_map()
+    assert "/run-agent.sh" in writes
+    assert "/tmp/aod-env" in writes
+    assert writes["/tmp/aod-prompt.txt"] == "hello"
+    assert writes["/run-agent.sh"].startswith("#!/bin/bash")
 
 
 @pytest.mark.django_db
 def test_send_prompt_appends_turn(
-    client: Client, auth_headers, runtime_key, agent, user, mocker
+    client: Client, auth_headers, runtime_key, agent, user, fake_sprites
 ):
     """/prompt creates turn N+1 and writes only the prompt file."""
     session = AgentSession.objects.create(
@@ -519,15 +482,6 @@ def test_send_prompt_appends_turn(
     SessionTurn.objects.create(
         session=session, turn_number=1, prompt="first", status="completed", exit_code=0
     )
-
-    mock_sprite = mocker.MagicMock()
-    mock_fs = mocker.MagicMock()
-    mock_sprite.filesystem.return_value = mock_fs
-    mock_fs.__truediv__ = mocker.Mock(return_value=mock_fs)
-    mock_client = mocker.MagicMock()
-    mock_client.get_sprite.return_value = mock_sprite
-    mocker.patch("agent_on_demand.session_service.get_client", return_value=mock_client)
-    mocker.patch("agent_on_demand.session_service.threading.Thread")
 
     resp = client.post(
         f"/sessions/{session.id}/prompt",
@@ -543,9 +497,10 @@ def test_send_prompt_appends_turn(
     assert turns[1].prompt == "second"
     assert turns[1].status == "pending"
 
-    # Only the prompt file is written — no new script.
-    assert mock_fs.write_text.call_count == 1
-    assert mock_fs.write_text.call_args_list[0][0][0] == "second"
+    sprite = fake_sprites.sprites["sprite-xyz"]
+    assert len(sprite.writes) == 1
+    assert sprite.writes[0].path == "/tmp/aod-prompt.txt"
+    assert sprite.writes[0].text == "second"
 
 
 @pytest.mark.django_db
@@ -553,6 +508,8 @@ def test_send_prompt_invokes_continue_mode(
     client: Client, auth_headers, runtime_key, agent, user, mocker
 ):
     """/prompt invokes `bash /run-agent.sh continue` on the Sprite."""
+    from tests.fakes.sprite import RecordingSpritesClient
+
     session = AgentSession.objects.create(
         user=user,
         agent=agent,
@@ -565,13 +522,9 @@ def test_send_prompt_invokes_continue_mode(
         session=session, turn_number=1, prompt="first", status="completed", exit_code=0
     )
 
-    mock_sprite = mocker.MagicMock()
-    mock_fs = mocker.MagicMock()
-    mock_sprite.filesystem.return_value = mock_fs
-    mock_fs.__truediv__ = mocker.Mock(return_value=mock_fs)
-    mock_client = mocker.MagicMock()
-    mock_client.get_sprite.return_value = mock_sprite
-    mocker.patch("agent_on_demand.session_service.get_client", return_value=mock_client)
+    fake = RecordingSpritesClient()
+    mocker.patch("agent_on_demand.session_service.client.get_client", return_value=fake)
+    mocker.patch("agent_on_demand.session_service.get_client", return_value=fake)
 
     # Capture the run_session_background invocation without running it.
     captured = {}
@@ -580,7 +533,7 @@ def test_send_prompt_invokes_continue_mode(
         captured["args"] = args
         return mocker.MagicMock()
 
-    mocker.patch("agent_on_demand.session_service.threading.Thread", side_effect=fake_thread)
+    mocker.patch("agent_on_demand.session_service.turn.threading.Thread", side_effect=fake_thread)
 
     resp = client.post(
         f"/sessions/{session.id}/prompt",

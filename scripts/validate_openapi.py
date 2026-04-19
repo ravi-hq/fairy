@@ -83,9 +83,7 @@ def _methods_from_decorators(view) -> set[str]:
                 methods |= mset
         m = re.match(r"@require_http_methods\(\[([^\]]+)\]\)", line)
         if m:
-            methods |= {
-                v.strip().strip("\"'").upper() for v in m.group(1).split(",") if v.strip()
-            }
+            methods |= {v.strip().strip("\"'").upper() for v in m.group(1).split(",") if v.strip()}
     return methods
 
 
@@ -148,8 +146,12 @@ def _load_spec() -> dict:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Validate docs/openapi.yaml against Django routes.")
-    parser.add_argument("--export", metavar="PATH", help="Write openapi.yaml as JSON to PATH on success.")
+    parser = argparse.ArgumentParser(
+        description="Validate docs/openapi.yaml against Django routes."
+    )
+    parser.add_argument(
+        "--export", metavar="PATH", help="Write openapi.yaml as JSON to PATH on success."
+    )
     args = parser.parse_args()
 
     _setup_django()

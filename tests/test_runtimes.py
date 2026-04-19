@@ -1,67 +1,62 @@
 from agent_on_demand.runtimes import RUNTIMES
-from agent_on_demand.sprites_exec import build_wrapper_script
+from agent_on_demand.session_service.dispatcher import mcp_cmd_flags, render_dispatcher_script
 
 
 def test_all_runtimes_defined():
     assert set(RUNTIMES) == {"claude", "codex", "gemini", "claude-oauth"}
 
 
-def test_wrapper_script_reads_prompt_from_file():
-    """PROMPT is per-turn state; the script reads it from a file rather than
-    baking it in, so turn 2+ don't need to rewrite the script."""
+def test_dispatcher_reads_prompt_from_file():
+    """PROMPT is per-turn state; the dispatcher reads it from a file rather
+    than baking it in, so turn 2+ don't need to rewrite the script."""
     config = RUNTIMES["claude"]
-    script = build_wrapper_script(config, "sk-test-key")
-    assert "sk-test-key" in script
-    assert config.env_var in script
-    # Prompt is NOT baked into the script; it's loaded from the prompt file.
+    script = render_dispatcher_script(config, has_mcp=False)
     assert "/tmp/aod-prompt.txt" in script
     assert "PROMPT=$(cat" in script
-    # cmd template still references "$PROMPT"
     assert '"$PROMPT"' in script
 
 
-def test_wrapper_script_escapes_api_key():
+def test_dispatcher_sources_env_file():
+    """The dispatcher sources /tmp/aod-env (with `set -a`) so the runtime API
+    key and AOD_SESSION_ID are exported at exec time without being baked into
+    the script body."""
     config = RUNTIMES["claude"]
-    script = build_wrapper_script(config, "key with spaces & $pecial")
-    # The key should be shell-quoted
-    assert "key with spaces" in script
-    assert script.count("export ANTHROPIC_API_KEY=") == 1
+    script = render_dispatcher_script(config, has_mcp=False)
+    assert "source /tmp/aod-env" in script
+    assert "set -a" in script
+    # API key env-var name never appears in the dispatcher — it only lives
+    # in the env file.
+    assert config.env_var not in script
 
 
-def test_wrapper_script_dispatches_by_mode():
-    """Script takes $1 = run|continue so the same script serves every turn."""
+def test_dispatcher_has_no_setup_sections():
+    """All setup (packages, clone, MCP, skills) ran during provision_session.
+    The dispatcher does not re-do any of it, and it carries no sentinel."""
     config = RUNTIMES["claude"]
-    script = build_wrapper_script(config, "sk-test")
+    script = render_dispatcher_script(config, has_mcp=True)
+    assert "apt-get" not in script
+    assert "pip install" not in script
+    assert "git clone" not in script
+    assert "mkdir -p /home/sprite/.claude/skills" not in script
+    assert "SKILL_EOF" not in script
+    assert "MCP_EOF" not in script
+    assert "/tmp/aod-initialized" not in script
+
+
+def test_dispatcher_dispatches_by_mode():
+    """Dispatcher takes $1 = run|continue so the same script serves every turn."""
+    config = RUNTIMES["claude"]
+    script = render_dispatcher_script(config, has_mcp=False)
     assert 'MODE="${1:-run}"' in script
-    assert "case \"$MODE\" in" in script
+    assert 'case "$MODE" in' in script
     assert config.cmd in script
     assert config.continue_cmd in script
 
 
-def test_wrapper_script_exports_session_id_when_provided():
-    """runtime_session_id is baked into the script as AOD_SESSION_ID so the
-    claude cmd can reference --session-id / --resume by UUID."""
-    config = RUNTIMES["claude"]
-    sid = "11111111-2222-3333-4444-555555555555"
-    script = build_wrapper_script(config, "sk-test", runtime_session_id=sid)
-    assert f"export AOD_SESSION_ID={sid}" in script
-
-
-def test_wrapper_script_no_session_id_when_none():
-    """Omitting runtime_session_id leaves AOD_SESSION_ID unset (old sessions,
-    or runtimes that don't need it)."""
-    config = RUNTIMES["codex"]
-    script = build_wrapper_script(config, "sk-test")
-    assert "AOD_SESSION_ID" not in script
-
-
 def test_claude_runtime_uses_session_id_and_resume():
-    """Claude's cmd templates use --session-id on run and --resume on continue
-    (both referencing $AOD_SESSION_ID)."""
     claude = RUNTIMES["claude"]
     assert '--session-id "$AOD_SESSION_ID"' in claude.cmd
     assert '--resume "$AOD_SESSION_ID"' in claude.continue_cmd
-    # Ditto for the OAuth variant, which shares the claude CLI
     oauth = RUNTIMES["claude-oauth"]
     assert '--session-id "$AOD_SESSION_ID"' in oauth.cmd
     assert '--resume "$AOD_SESSION_ID"' in oauth.continue_cmd
@@ -72,23 +67,33 @@ def test_each_runtime_has_unique_env_var():
     assert len(env_vars) == len(set(env_vars))
 
 
-def test_wrapper_script_emits_structured_failure_marker():
-    """Any bash command that fails under `set -e` triggers the ERR trap,
-    which writes a single AOD_STAGE_FAILED line to stderr identifying the
-    failing command. This is the operator's structured handle on "which
-    step blew up" — without it, debugging means grepping raw stderr."""
+def test_dispatcher_emits_structured_failure_marker():
+    """The ERR trap writes a single AOD_STAGE_FAILED line to stderr when any
+    command in the dispatcher fails under `set -e`. This is what operators
+    grep for when the runtime CLI blows up mid-turn."""
     config = RUNTIMES["claude"]
-    script = build_wrapper_script(config, "sk-test")
+    script = render_dispatcher_script(config, has_mcp=False)
     assert "trap '__aod_on_err" in script
     assert "AOD_STAGE_FAILED" in script
-    # -E is what makes the ERR trap fire inside functions/subshells too.
     assert "set -Eeuo pipefail" in script
 
 
-def test_wrapper_script_cleans_credentials_on_exit():
-    """The EXIT trap unconditionally clears /tmp/.git-credentials so a crash
-    mid-clone doesn't leave a GitHub token on the Sprite filesystem."""
+def test_mcp_cmd_flags_only_for_claude():
+    assert mcp_cmd_flags("claude", has_mcp=True).startswith(" --mcp-config")
+    assert mcp_cmd_flags("claude-oauth", has_mcp=True).startswith(" --mcp-config")
+    assert mcp_cmd_flags("codex", has_mcp=True) == ""
+    assert mcp_cmd_flags("gemini", has_mcp=True) == ""
+    assert mcp_cmd_flags("claude", has_mcp=False) == ""
+
+
+def test_mcp_flags_appear_in_dispatcher_when_has_mcp():
     config = RUNTIMES["claude"]
-    script = build_wrapper_script(config, "sk-test")
-    assert "trap __aod_cleanup EXIT" in script
-    assert "rm -f /tmp/.git-credentials" in script
+    script = render_dispatcher_script(config, has_mcp=True)
+    assert "--mcp-config /tmp/mcp.json" in script
+    assert "--strict-mcp-config" in script
+
+
+def test_no_mcp_flags_when_has_mcp_false():
+    config = RUNTIMES["claude"]
+    script = render_dispatcher_script(config, has_mcp=False)
+    assert "--mcp-config" not in script

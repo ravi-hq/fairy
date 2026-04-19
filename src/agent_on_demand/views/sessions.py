@@ -23,12 +23,11 @@ from agent_on_demand.models import (
     SessionTurn,
 )
 from agent_on_demand.runtimes import RUNTIMES
-from agent_on_demand.sprites_exec import (
-    EnvironmentSetup,
+from agent_on_demand.session_service import (
     McpServerSpec,
     RepoSpec,
+    SessionSpec,
     SkillSpec,
-    build_wrapper_script,
 )
 from agent_on_demand.stream import stream_session_from_db
 from agent_on_demand.views._shared import _get_runtime_key
@@ -250,35 +249,23 @@ def _create_session(request):
     if agent_obj.system:
         effective_prompt = f"{agent_obj.system}\n\n{req.prompt}"
 
-    env_setup = None
-    if environment_obj:
-        env_setup = EnvironmentSetup(
-            packages=environment_obj.packages,
-            env_vars=environment_obj.env_vars,
-            setup_script=environment_obj.setup_script,
-        )
-
-    script = build_wrapper_script(
-        config,
-        api_key,
+    spec = SessionSpec(
+        name=name,
+        runtime=config,
+        api_key=api_key,
         runtime_session_id=runtime_session_id,
+        environment=environment_obj,
         repos=_resources_to_repo_specs(req.resources),
-        environment=env_setup,
         mcp_servers=_mcp_servers_to_specs(agent_obj.mcp_servers),
         skills=_skills_to_specs(agent_obj.skills),
     )
 
     try:
-        sprite = session_service.provision_session(
-            request.user,
-            name=name,
-            environment=environment_obj,
-            wrapper_script=script,
-            prompt=effective_prompt,
-        )
+        sprite = session_service.provision_session(request.user, spec)
     except session_service.NoSpritesKeyError as e:
         return JsonResponse({"detail": str(e)}, status=400)
     except session_service.ProvisionError as e:
+        logger.warning("provision failed at stage=%s: %s", e.stage, e)
         return JsonResponse({"detail": str(e)}, status=502)
 
     with transaction.atomic():
@@ -310,7 +297,11 @@ def _create_session(request):
                 sr.set_token(resource.authorization_token)
             sr.save()
 
-    session_service.start_turn(session, turn, sprite, "run", float(req.timeout))
+    try:
+        session_service.run_turn(session, turn, sprite, effective_prompt, "run", float(req.timeout))
+    except session_service.ProvisionError as e:
+        logger.warning("run_turn failed at stage=%s: %s", e.stage, e)
+        return JsonResponse({"detail": str(e)}, status=502)
 
     return JsonResponse(
         {
@@ -430,11 +421,10 @@ def send_prompt(request, session_id):
         return JsonResponse({"detail": "Session not found"}, status=404)
 
     try:
-        session_service.write_prompt(sprite, req.prompt)
+        session_service.run_turn(session, turn, sprite, req.prompt, "continue", float(req.timeout))
     except session_service.ProvisionError as e:
+        logger.warning("run_turn failed at stage=%s: %s", e.stage, e)
         return JsonResponse({"detail": str(e)}, status=502)
-
-    session_service.start_turn(session, turn, sprite, "continue", float(req.timeout))
 
     return JsonResponse(
         {

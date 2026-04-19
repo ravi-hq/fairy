@@ -37,7 +37,6 @@ def backfill_turn_one(apps, schema_editor):
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("fairy", "0010_userspriteskey"),
     ]
@@ -101,9 +100,7 @@ class Migration(migrations.Migration):
         ),
         migrations.AddIndex(
             model_name="agentsessionlog",
-            index=models.Index(
-                fields=["turn", "id"], name="agent_sessi_turn_id_c5c936_idx"
-            ),
+            index=models.Index(fields=["turn", "id"], name="agent_sessi_turn_id_c5c936_idx"),
         ),
         migrations.AddConstraint(
             model_name="sessionturn",
