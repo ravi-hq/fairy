@@ -1,25 +1,27 @@
-"""Unit tests for `session_service.tasks.execute_turn`.
+"""Unit tests for `session_service.tasks`.
 
-These invoke the task body as a plain function (Procrastinate tasks are
-callable in-process — they only hit the broker when `.defer()` is used).
-That lets us cover the per-turn state-machine contract without spinning up
-a worker or needing Postgres locally.
+These invoke task bodies as plain functions (Procrastinate tasks are callable
+in-process — they only hit the broker when `.defer()` is used). That lets us
+cover the per-turn state-machine contract and the provision-then-enqueue
+contract without spinning up a worker or needing Postgres locally.
 """
 
 from __future__ import annotations
 
 import pytest
 from django.contrib.auth.models import User
-from sprites import ExecError
+from sprites import ExecError, SpriteError
 
 from agent_on_demand.models import (
+    Agent,
     AgentSession,
     AgentSessionLog,
     APIKey,
     SessionTurn,
+    UserRuntimeKey,
     UserSpritesKey,
 )
-from agent_on_demand.session_service.tasks import execute_turn
+from agent_on_demand.session_service.tasks import execute_turn, provision_session_task
 
 
 @pytest.fixture
@@ -228,3 +230,141 @@ def test_execute_turn_writes_log_chunks_via_tagging_writer(user, mocker):
     assert any("first chunk" in log.data for log in logs)
     assert any("second chunk" in log.data for log in logs)
     assert all(log.turn_id == turn.id for log in logs)
+
+
+# --------------------------------------------------------------------------
+# provision_session_task tests
+# --------------------------------------------------------------------------
+
+
+@pytest.fixture
+def provision_user(db):
+    u = User.objects.create_user(username="prov", password="p")
+    APIKey.create_key(u, "test-key")
+    usk = UserSpritesKey(user=u)
+    usk.set_api_key("fake-sprites-token")
+    usk.save()
+    urk = UserRuntimeKey(user=u, runtime="claude")
+    urk.set_api_key("fake-anthropic-key")
+    urk.save()
+    return u
+
+
+def _make_pending_session(user):
+    agent = Agent.objects.create(
+        user=user, name="a", model="claude-sonnet-4-6", runtime="claude", version=1
+    )
+    session = AgentSession.objects.create(
+        user=user,
+        agent=agent,
+        runtime="claude",
+        prompt="hi",
+        sprite_name="sprite-prov",
+        runtime_session_id="11111111-2222-3333-4444-555555555555",
+        status="pending",
+    )
+    turn = SessionTurn.objects.create(
+        session=session, turn_number=1, prompt="hi", status="pending"
+    )
+    return session, turn
+
+
+@pytest.mark.django_db
+def test_provision_task_enqueues_execute_turn_on_success(
+    provision_user, fake_sprites, mocker
+):
+    session, turn = _make_pending_session(provision_user)
+    defer_spy = mocker.patch("agent_on_demand.session_service.tasks.execute_turn.defer")
+
+    provision_session_task(
+        session_id=str(session.id),
+        turn_id=turn.id,
+        prompt="hi",
+        mode="run",
+        timeout=10.0,
+    )
+
+    # Sprite was created and set up.
+    assert "sprite-prov" in fake_sprites.sprites
+    # Downstream turn task was enqueued with the same args.
+    kwargs = defer_spy.call_args.kwargs
+    assert kwargs["session_id"] == str(session.id)
+    assert kwargs["turn_id"] == turn.id
+    assert kwargs["prompt"] == "hi"
+    assert kwargs["mode"] == "run"
+
+    session.refresh_from_db()
+    assert session.status == "pending"  # worker hands off to execute_turn
+
+
+@pytest.mark.django_db
+def test_provision_task_marks_failed_on_sprite_error(provision_user, fake_sprites, mocker):
+    session, turn = _make_pending_session(provision_user)
+    fake_sprites.raise_on_create(SpriteError("boom"))
+    defer_spy = mocker.patch("agent_on_demand.session_service.tasks.execute_turn.defer")
+
+    provision_session_task(
+        session_id=str(session.id),
+        turn_id=turn.id,
+        prompt="hi",
+        mode="run",
+        timeout=10.0,
+    )
+
+    session.refresh_from_db()
+    turn.refresh_from_db()
+    assert session.status == "failed"
+    # sprite_name is cleared so DELETE /sessions doesn't try to delete a
+    # Sprite that was never created.
+    assert session.sprite_name == ""
+    assert turn.status == "failed"
+    assert turn.ended_at is not None
+    assert defer_spy.call_count == 0
+
+    # An stderr log chunk captures the message for the stream endpoint.
+    logs = AgentSessionLog.objects.filter(session=session, stream="stderr")
+    assert logs.exists()
+
+
+@pytest.mark.django_db
+def test_provision_task_skips_if_session_terminated(provision_user, fake_sprites, mocker):
+    session, turn = _make_pending_session(provision_user)
+    session.status = "terminated"
+    session.save(update_fields=["status"])
+    defer_spy = mocker.patch("agent_on_demand.session_service.tasks.execute_turn.defer")
+
+    provision_session_task(
+        session_id=str(session.id),
+        turn_id=turn.id,
+        prompt="hi",
+        mode="run",
+        timeout=10.0,
+    )
+
+    # Nothing provisioned, nothing enqueued.
+    assert fake_sprites.created == []
+    assert defer_spy.call_count == 0
+
+
+@pytest.mark.django_db
+def test_provision_task_marks_failed_when_runtime_key_missing(
+    provision_user, fake_sprites, mocker
+):
+    """If the user's runtime key was deleted between create and provision,
+    the task surfaces that as a failed session rather than raising."""
+    session, turn = _make_pending_session(provision_user)
+    UserRuntimeKey.objects.filter(user=provision_user, runtime="claude").delete()
+    defer_spy = mocker.patch("agent_on_demand.session_service.tasks.execute_turn.defer")
+
+    provision_session_task(
+        session_id=str(session.id),
+        turn_id=turn.id,
+        prompt="hi",
+        mode="run",
+        timeout=10.0,
+    )
+
+    session.refresh_from_db()
+    assert session.status == "failed"
+    assert fake_sprites.created == []
+    assert defer_spy.call_count == 0
