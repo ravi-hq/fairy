@@ -1,29 +1,29 @@
 from django.urls import include, path
 
-from agent_on_demand import views
 from agent_on_demand.ui import views as ui_views
+from agent_on_demand.views import agents, environments, health, sessions
 
 urlpatterns = [
     path("", ui_views.landing, name="landing"),
     path("ui/", include("agent_on_demand.ui.urls")),
-    path("health", views.health),
+    path("health", health.health),
     # Environments
-    path("environments", views.environments_list_create),
-    path("environments/<uuid:environment_id>", views.environment_detail),
-    path("environments/<uuid:environment_id>/archive", views.environment_archive),
-    path("environments/<uuid:environment_id>/delete", views.environment_delete),
-    path("environments/<uuid:environment_id>/versions", views.environment_versions),
+    path("environments", environments.environments_list_create),
+    path("environments/<uuid:environment_id>", environments.environment_detail),
+    path("environments/<uuid:environment_id>/archive", environments.environment_archive),
+    path("environments/<uuid:environment_id>/delete", environments.environment_delete),
+    path("environments/<uuid:environment_id>/versions", environments.environment_versions),
     # Agents
-    path("agents", views.agents_list_create),
-    path("agents/<uuid:agent_id>", views.agent_detail),
-    path("agents/<uuid:agent_id>/archive", views.agent_archive),
-    path("agents/<uuid:agent_id>/versions", views.agent_versions),
+    path("agents", agents.agents_list_create),
+    path("agents/<uuid:agent_id>", agents.agent_detail),
+    path("agents/<uuid:agent_id>/archive", agents.agent_archive),
+    path("agents/<uuid:agent_id>/versions", agents.agent_versions),
     # Sessions
-    path("sessions", views.sessions_list_create),
-    path("sessions/<uuid:session_id>", views.get_session),
-    path("sessions/<uuid:session_id>/prompt", views.send_prompt),
-    path("sessions/<uuid:session_id>/turns", views.list_session_turns),
-    path("sessions/<uuid:session_id>/terminate", views.terminate_session),
-    path("sessions/<uuid:session_id>/delete", views.delete_session),
-    path("sessions/<uuid:session_id>/stream", views.stream_session),
+    path("sessions", sessions.sessions_list_create),
+    path("sessions/<uuid:session_id>", sessions.get_session),
+    path("sessions/<uuid:session_id>/prompt", sessions.send_prompt),
+    path("sessions/<uuid:session_id>/turns", sessions.list_session_turns),
+    path("sessions/<uuid:session_id>/terminate", sessions.terminate_session),
+    path("sessions/<uuid:session_id>/delete", sessions.delete_session),
+    path("sessions/<uuid:session_id>/stream", sessions.stream_session),
 ]

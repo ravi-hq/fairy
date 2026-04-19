@@ -70,8 +70,8 @@ def mock_sprites(mocker):
 
     mock_client = mocker.MagicMock()
     mock_client.create_sprite.return_value = mock_sprite
-    mocker.patch("agent_on_demand.views._get_client", return_value=mock_client)
-    mocker.patch("agent_on_demand.views.threading.Thread")
+    mocker.patch("agent_on_demand.views.sessions._get_client", return_value=mock_client)
+    mocker.patch("agent_on_demand.views.sessions.threading.Thread")
     return mock_client, mock_sprite
 
 
