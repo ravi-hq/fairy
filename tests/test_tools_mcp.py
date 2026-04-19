@@ -276,12 +276,12 @@ class TestSessionMcpIntegration:
         cfg = _mcp_json(fake_sprites.last_sprite())
         assert set(cfg["mcpServers"].keys()) == {"github", "slack"}
 
-    def test_continue_session_only_writes_prompt_file(
+    def test_continue_session_touches_no_filesystem(
         self, client: Client, auth_headers, runtime_key, user, fake_sprites
     ):
-        """Follow-up /prompt is a minimal operation: it updates the prompt
-        file on the Sprite and invokes the existing dispatcher in `continue`
-        mode. Nothing else should be written."""
+        """Follow-up /prompt is fire-and-forget: no filesystem writes on the
+        Sprite. The prompt streams over stdin when the background thread runs
+        the dispatcher in `continue` mode."""
         from agent_on_demand.models import AgentSession
 
         agent = Agent.objects.create(
@@ -310,9 +310,7 @@ class TestSessionMcpIntegration:
         )
         assert resp.status_code == 202
         sprite = fake_sprites.sprites["sprite-xyz"]
-        assert len(sprite.writes) == 1
-        assert sprite.writes[0].path == "/tmp/aod-prompt.txt"
-        assert sprite.writes[0].text == "follow-up"
+        assert sprite.writes == []
 
 
 # --- Agent CRUD with mcp_servers (HTTP layer only, unchanged) ---

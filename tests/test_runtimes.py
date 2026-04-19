@@ -6,13 +6,14 @@ def test_all_runtimes_defined():
     assert set(RUNTIMES) == {"claude", "codex", "gemini", "claude-oauth"}
 
 
-def test_dispatcher_reads_prompt_from_file():
-    """PROMPT is per-turn state; the dispatcher reads it from a file rather
-    than baking it in, so turn 2+ don't need to rewrite the script."""
+def test_dispatcher_reads_prompt_from_stdin():
+    """PROMPT is per-turn state; the dispatcher slurps it from stdin so it
+    never touches the Sprite filesystem and never leaks into WS URL query
+    params (which is what env= / argv would do)."""
     config = RUNTIMES["claude"]
     script = render_dispatcher_script(config, has_mcp=False)
-    assert "/tmp/aod-prompt.txt" in script
-    assert "PROMPT=$(cat" in script
+    assert "PROMPT=$(cat)" in script
+    assert "/tmp/aod-prompt.txt" not in script
     assert '"$PROMPT"' in script
 
 

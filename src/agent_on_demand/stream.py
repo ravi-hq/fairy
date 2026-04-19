@@ -52,14 +52,16 @@ def run_session_background(
     session: AgentSession,
     turn: SessionTurn,
     sprite: Sprite,
+    prompt: str,
     mode: str,
     timeout: float,
 ):
     """Run one turn of an agent session in a background thread.
 
-    `mode` is "run" for turn 1 and "continue" for subsequent turns. Logs are
-    tagged with the turn so consumers can replay per-turn. The session's
-    status tracks the latest turn for backward-compat.
+    `mode` is "run" for turn 1 and "continue" for subsequent turns. The prompt
+    is streamed to the dispatcher via the Sprites WS stdin frame — no prompt
+    file on disk, no leak into URL query params. Logs are tagged with the turn
+    so consumers can replay per-turn.
     """
     output_q: queue.Queue = queue.Queue(maxsize=4096)
     db_buffer: list[AgentSessionLog] = []
@@ -73,6 +75,7 @@ def run_session_background(
     def _run_command():
         try:
             cmd = sprite.command("bash", "/run-agent.sh", mode, timeout=timeout)
+            cmd.stdin = io.BytesIO(prompt.encode("utf-8"))
             cmd.stdout = TaggingQueueWriter(output_q, "stdout")
             cmd.stderr = TaggingQueueWriter(output_q, "stderr")
             cmd.run()
