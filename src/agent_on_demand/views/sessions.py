@@ -295,13 +295,10 @@ def get_session(request, session_id):
 
 @require_GET
 @require_api_key
-def stream_session(request, session_id):
-    """Stream session logs via SSE.
-
-    Works during execution (live tail) and after completion (full replay).
-    """
+async def stream_session(request, session_id):
+    """Stream session logs via SSE (live tail + full replay)."""
     try:
-        session = AgentSession.objects.get(pk=session_id, user=request.user)
+        session = await AgentSession.objects.aget(pk=session_id, user=request.user)
     except (AgentSession.DoesNotExist, ValueError):
         return JsonResponse({"detail": "Session not found"}, status=404)
 
@@ -311,10 +308,10 @@ def stream_session(request, session_id):
     except ValueError:
         return JsonResponse({"detail": "since must be an integer"}, status=400)
 
-    def event_generator():
+    async def event_generator():
         yield f"data: {json.dumps({'type': 'start', 'runtime': session.runtime, 'session_id': str(session.id)})}\n\n"
 
-        for event in stream_session_from_db(str(session.id), since=since):
+        async for event in stream_session_from_db(str(session.id), since=since):
             if event == "":
                 yield ": heartbeat\n\n"
             else:
