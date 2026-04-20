@@ -26,6 +26,14 @@ class AgentOnDemandConfig(AppConfig):
         posthog.api_key = api_key or "disabled"
         posthog.host = os.environ.get("POSTHOG_HOST", DEFAULT_POSTHOG_HOST)
         posthog.disabled = not api_key
+        # Install sys.excepthook + threading.excepthook so unhandled exceptions
+        # outside a request/task context (management commands, signal handlers,
+        # startup) still land in PostHog error tracking. The hook is wired when
+        # the default client is constructed; posthog.setup() forces that here
+        # instead of deferring to the first capture() call.
+        posthog.enable_exception_autocapture = bool(api_key)
+        if api_key:
+            posthog.setup()
         # Render SIGTERMs both the web and worker processes on deploy. Gunicorn
         # and Procrastinate each catch SIGTERM, drain, and exit cleanly — atexit
         # runs on that clean exit and flushes PostHog's async buffer so events

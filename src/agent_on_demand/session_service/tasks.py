@@ -127,13 +127,17 @@ def provision_session_task(
     """
     close_old_connections()
     try:
-        _provision_session_inner(
-            session_id=session_id,
-            turn_id=turn_id,
-            prompt=prompt,
-            mode=mode,
-            timeout=timeout,
-        )
+        with posthog.new_context(capture_exceptions=True):
+            posthog.tag("task", "provision_session")
+            posthog.tag("session_id", session_id)
+            posthog.tag("turn_id", turn_id)
+            _provision_session_inner(
+                session_id=session_id,
+                turn_id=turn_id,
+                prompt=prompt,
+                mode=mode,
+                timeout=timeout,
+            )
     finally:
         close_old_connections()
 
@@ -283,13 +287,17 @@ def execute_turn(
     """
     close_old_connections()
     try:
-        _execute_turn_inner(
-            session_id=session_id,
-            turn_id=turn_id,
-            prompt=prompt,
-            mode=mode,
-            timeout=timeout,
-        )
+        with posthog.new_context(capture_exceptions=True):
+            posthog.tag("task", "execute_turn")
+            posthog.tag("session_id", session_id)
+            posthog.tag("turn_id", turn_id)
+            _execute_turn_inner(
+                session_id=session_id,
+                turn_id=turn_id,
+                prompt=prompt,
+                mode=mode,
+                timeout=timeout,
+            )
     finally:
         close_old_connections()
 
@@ -500,16 +508,20 @@ def destroy_session_task(*, user_id: int, sprite_name: str) -> None:
     """
     close_old_connections()
     try:
-        User = get_user_model()
-        try:
-            user = User.objects.get(pk=user_id)
-        except User.DoesNotExist:
-            logger.warning(
-                "destroy_session_task: user %s gone, skipping Sprite %s",
-                user_id,
-                sprite_name,
-            )
-            return
-        destroy_session(user, sprite_name)
+        with posthog.new_context(capture_exceptions=True):
+            posthog.tag("task", "destroy_session")
+            posthog.tag("user_id", user_id)
+            posthog.tag("sprite_name", sprite_name)
+            User = get_user_model()
+            try:
+                user = User.objects.get(pk=user_id)
+            except User.DoesNotExist:
+                logger.warning(
+                    "destroy_session_task: user %s gone, skipping Sprite %s",
+                    user_id,
+                    sprite_name,
+                )
+                return
+            destroy_session(user, sprite_name)
     finally:
         close_old_connections()
