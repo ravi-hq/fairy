@@ -1,5 +1,5 @@
-import asyncio
 import functools
+import inspect
 
 from django.http import JsonResponse
 from django.utils import timezone as tz
@@ -44,7 +44,7 @@ async def _check_api_key_async(request):
 
 def require_api_key(view_func):
     """Authenticate requests via Bearer token. Dispatches sync or async based on view type."""
-    if asyncio.iscoroutinefunction(view_func):
+    if inspect.iscoroutinefunction(view_func):
 
         @functools.wraps(view_func)
         async def async_wrapper(request, *args, **kwargs):

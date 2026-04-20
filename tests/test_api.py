@@ -3,7 +3,7 @@ import uuid
 
 import pytest
 from django.contrib.auth.models import User
-from django.test import Client
+from django.test import AsyncClient, Client
 
 from agent_on_demand.models import (
     Agent,
@@ -14,6 +14,24 @@ from agent_on_demand.models import (
     UserRuntimeKey,
     UserSpritesKey,
 )
+
+
+async def _create_stream_user():
+    """Create a user+API key for async streaming tests. Returns (user, raw_key)."""
+    import secrets
+
+    user = await User.objects.acreate(
+        username=f"streamtest_{secrets.token_hex(4)}",
+        password="!unusable",
+    )
+    raw_key = f"aod_{secrets.token_urlsafe(32)}"
+    await APIKey.objects.acreate(
+        user=user,
+        key_hash=APIKey.hash_key(raw_key),
+        key_prefix=raw_key[:12],
+        name="test-key",
+    )
+    return user, raw_key
 
 
 @pytest.fixture
@@ -325,20 +343,24 @@ def test_list_sessions_scoped_to_user(client: Client, auth_headers, user):
     assert AgentSession.objects.get(pk=data[0]["id"]).user == user
 
 
-@pytest.mark.django_db
-def test_stream_session_replays_completed(client: Client, auth_headers, user):
+@pytest.mark.django_db(transaction=True)
+async def test_stream_session_replays_completed(async_client: AsyncClient):
     """Stream endpoint replays logs from a completed session."""
-    session = AgentSession.objects.create(
+    user, raw_key = await _create_stream_user()
+    session = await AgentSession.objects.acreate(
         user=user, runtime="claude", prompt="test", status="completed", exit_code=0
     )
-    AgentSessionLog.objects.create(session=session, stream="stdout", data="hello world")
-    AgentSessionLog.objects.create(session=session, stream="stderr", data="warning msg")
+    await AgentSessionLog.objects.acreate(session=session, stream="stdout", data="hello world")
+    await AgentSessionLog.objects.acreate(session=session, stream="stderr", data="warning msg")
 
-    resp = client.get(f"/sessions/{session.id}/stream", **auth_headers)
+    resp = await async_client.get(
+        f"/sessions/{session.id}/stream",
+        headers={"Authorization": f"Bearer {raw_key}"},
+    )
     assert resp.status_code == 200
     assert resp["Content-Type"] == "text/event-stream"
 
-    content = b"".join(resp.streaming_content).decode()
+    content = b"".join([chunk async for chunk in resp.streaming_content]).decode()
     assert '"type": "start"' in content
     assert "hello world" in content
     assert "warning msg" in content
@@ -351,15 +373,19 @@ def test_stream_session_not_found(client: Client, auth_headers):
     assert resp.status_code == 404
 
 
-@pytest.mark.django_db
-def test_stream_session_failed_with_no_exit_code(client: Client, auth_headers, user):
+@pytest.mark.django_db(transaction=True)
+async def test_stream_session_failed_with_no_exit_code(async_client: AsyncClient):
     """Failed session with no exit code yields error event."""
-    session = AgentSession.objects.create(
+    user, raw_key = await _create_stream_user()
+    session = await AgentSession.objects.acreate(
         user=user, runtime="claude", prompt="test", status="failed", exit_code=None
     )
 
-    resp = client.get(f"/sessions/{session.id}/stream", **auth_headers)
-    content = b"".join(resp.streaming_content).decode()
+    resp = await async_client.get(
+        f"/sessions/{session.id}/stream",
+        headers={"Authorization": f"Bearer {raw_key}"},
+    )
+    content = b"".join([chunk async for chunk in resp.streaming_content]).decode()
     assert '"type": "error"' in content
     assert "Session failed" in content
 
@@ -577,24 +603,28 @@ def test_session_read_exposes_turn_count(client: Client, auth_headers, user):
     assert body["current_turn"] == 2
 
 
-@pytest.mark.django_db
-def test_stream_emits_turn_start_boundaries(client: Client, auth_headers, user):
+@pytest.mark.django_db(transaction=True)
+async def test_stream_emits_turn_start_boundaries(async_client: AsyncClient):
     """Logs are tagged with their turn; stream emits a turn_start event when
     the turn boundary changes."""
-    session = AgentSession.objects.create(
+    user, raw_key = await _create_stream_user()
+    session = await AgentSession.objects.acreate(
         user=user, runtime="claude", prompt="t2", status="completed", exit_code=0
     )
-    t1 = SessionTurn.objects.create(
+    t1 = await SessionTurn.objects.acreate(
         session=session, turn_number=1, prompt="t1", status="completed", exit_code=0
     )
-    t2 = SessionTurn.objects.create(
+    t2 = await SessionTurn.objects.acreate(
         session=session, turn_number=2, prompt="t2", status="completed", exit_code=0
     )
-    AgentSessionLog.objects.create(session=session, turn=t1, stream="stdout", data="a")
-    AgentSessionLog.objects.create(session=session, turn=t2, stream="stdout", data="b")
+    await AgentSessionLog.objects.acreate(session=session, turn=t1, stream="stdout", data="a")
+    await AgentSessionLog.objects.acreate(session=session, turn=t2, stream="stdout", data="b")
 
-    resp = client.get(f"/sessions/{session.id}/stream", **auth_headers)
-    content = b"".join(resp.streaming_content).decode()
+    resp = await async_client.get(
+        f"/sessions/{session.id}/stream",
+        headers={"Authorization": f"Bearer {raw_key}"},
+    )
+    content = b"".join([chunk async for chunk in resp.streaming_content]).decode()
     # Two turn_start events in order: 1 then 2.
     turn_start_events = [
         json.loads(line[6:])
@@ -644,12 +674,16 @@ def test_send_prompt_to_failed_session_rejected(client: Client, auth_headers, us
     assert "failed" in resp.json()["detail"].lower()
 
 
-@pytest.mark.django_db
-def test_stream_terminated_session(client: Client, auth_headers, user):
+@pytest.mark.django_db(transaction=True)
+async def test_stream_terminated_session(async_client: AsyncClient):
     """Stream endpoint yields terminated event for terminated sessions."""
-    session = AgentSession.objects.create(
+    user, raw_key = await _create_stream_user()
+    session = await AgentSession.objects.acreate(
         user=user, runtime="claude", prompt="test", status="terminated"
     )
-    resp = client.get(f"/sessions/{session.id}/stream", **auth_headers)
-    content = b"".join(resp.streaming_content).decode()
+    resp = await async_client.get(
+        f"/sessions/{session.id}/stream",
+        headers={"Authorization": f"Bearer {raw_key}"},
+    )
+    content = b"".join([chunk async for chunk in resp.streaming_content]).decode()
     assert '"type": "terminated"' in content

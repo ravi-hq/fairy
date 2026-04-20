@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import json
+from unittest.mock import AsyncMock
 
 import pytest
 from django.contrib.auth.models import User
-from django.test import Client
+from django.test import AsyncClient, Client
 
 from agent_on_demand.models import (
     APIKey,
@@ -52,11 +53,47 @@ def completed_session(user):
     return session, turn
 
 
+async def _create_user_and_headers():
+    """Create a user+API key and return (user, async_headers dict) using async ORM.
+
+    Returns headers in ASGI format for AsyncClient (not WSGI HTTP_* format).
+    """
+    import secrets
+
+    user = await User.objects.acreate(
+        username=f"asyncuser_{secrets.token_hex(4)}",
+        password="!unusable",
+    )
+    raw_key = f"aod_{secrets.token_urlsafe(32)}"
+    await APIKey.objects.acreate(
+        user=user,
+        key_hash=APIKey.hash_key(raw_key),
+        key_prefix=raw_key[:12],
+        name="test-key",
+    )
+    # AsyncClient uses headers= kwarg (ASGI format), not HTTP_* WSGI format
+    return user, {"headers": {"Authorization": f"Bearer {raw_key}"}}
+
+
 def _seed_logs(session, turn, count=10, start_id_offset=None):
-    """Create `count` log rows and return the created objects."""
+    """Create `count` log rows and return the created objects (sync)."""
     logs = []
     for i in range(count):
         log = AgentSessionLog.objects.create(
+            session=session,
+            turn=turn,
+            stream="stdout",
+            data=f"chunk-{i + 1}",
+        )
+        logs.append(log)
+    return logs
+
+
+async def _seed_logs_async(session, turn, count=10):
+    """Create `count` log rows and return the created objects (async)."""
+    logs = []
+    for i in range(count):
+        log = await AgentSessionLog.objects.acreate(
             session=session,
             turn=turn,
             stream="stdout",
@@ -71,14 +108,19 @@ def _seed_logs(session, turn, count=10, start_id_offset=None):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.django_db
-def test_stream_replays_from_since_cursor(completed_session):
+@pytest.mark.django_db(transaction=True)
+async def test_stream_replays_from_since_cursor(user):
     """since=5 → only events with id > 5 are emitted."""
-    session, turn = completed_session
-    logs = _seed_logs(session, turn, count=10)
+    session = await AgentSession.objects.acreate(
+        user=user, runtime="claude", prompt="test", status="completed", exit_code=0
+    )
+    turn = await SessionTurn.objects.acreate(
+        session=session, turn_number=1, prompt="test", status="completed"
+    )
+    logs = await _seed_logs_async(session, turn, count=10)
     cutoff = logs[4].id  # 5th row (0-indexed)
 
-    events = list(stream_session_from_db(str(session.id), since=cutoff))
+    events = [e async for e in stream_session_from_db(str(session.id), since=cutoff)]
 
     # Filter to output events only (exclude exit)
     output_events = [e for e in events if json.loads(e).get("type") == "output"]
@@ -88,13 +130,18 @@ def test_stream_replays_from_since_cursor(completed_session):
     assert min(emitted_ids) == logs[5].id
 
 
-@pytest.mark.django_db
-def test_stream_full_replay_when_since_zero(completed_session):
+@pytest.mark.django_db(transaction=True)
+async def test_stream_full_replay_when_since_zero(user):
     """since=0 → all 10 rows replayed."""
-    session, turn = completed_session
-    logs = _seed_logs(session, turn, count=10)
+    session = await AgentSession.objects.acreate(
+        user=user, runtime="claude", prompt="test", status="completed", exit_code=0
+    )
+    turn = await SessionTurn.objects.acreate(
+        session=session, turn_number=1, prompt="test", status="completed"
+    )
+    logs = await _seed_logs_async(session, turn, count=10)
 
-    events = list(stream_session_from_db(str(session.id), since=0))
+    events = [e async for e in stream_session_from_db(str(session.id), since=0)]
 
     output_events = [e for e in events if json.loads(e).get("type") == "output"]
     assert len(output_events) == 10
@@ -102,39 +149,45 @@ def test_stream_full_replay_when_since_zero(completed_session):
     assert emitted_ids[0] == logs[0].id
 
 
-@pytest.mark.django_db
-def test_stream_lenient_on_stale_cursor(completed_session):
+@pytest.mark.django_db(transaction=True)
+async def test_stream_lenient_on_stale_cursor(user):
     """since < min(log_id) → all rows still emitted (no error, no replay from 0)."""
-    session, turn = completed_session
+    session = await AgentSession.objects.acreate(
+        user=user, runtime="claude", prompt="test", status="completed", exit_code=0
+    )
+    turn = await SessionTurn.objects.acreate(
+        session=session, turn_number=1, prompt="test", status="completed"
+    )
     # Seed 10 rows; their IDs will be > 50 since DB auto-increments
-    logs = _seed_logs(session, turn, count=10)
+    logs = await _seed_logs_async(session, turn, count=10)
     min_id = logs[0].id
     stale_cursor = max(0, min_id - 100)  # well below range
 
-    events = list(stream_session_from_db(str(session.id), since=stale_cursor))
+    events = [e async for e in stream_session_from_db(str(session.id), since=stale_cursor)]
 
     output_events = [e for e in events if json.loads(e).get("type") == "output"]
     assert len(output_events) == 10
 
 
-@pytest.mark.django_db
-def test_stream_emits_stale_event_on_idle_timeout(user, mocker):
+@pytest.mark.django_db(transaction=True)
+async def test_stream_emits_stale_event_on_idle_timeout(user, mocker):
     """When STREAM_IDLE_LIMIT seconds pass with no new chunks, generator emits stale and stops."""
-    session = AgentSession.objects.create(
+    session = await AgentSession.objects.acreate(
         user=user,
         runtime="claude",
         prompt="test",
         status="running",
     )
 
+    mocker.patch("agent_on_demand.stream.asyncio.sleep", new=AsyncMock(return_value=None))
+
     # Patch the `time` module as imported in `agent_on_demand.stream`
-    # so time.time() jumps past STREAM_IDLE_LIMIT immediately.
+    # so time.monotonic() jumps past STREAM_IDLE_LIMIT immediately.
     mock_time = mocker.patch("agent_on_demand.stream.time")
-    mock_time.sleep = lambda x: None
 
     call_count = 0
 
-    def fast_time():
+    def fast_monotonic():
         nonlocal call_count
         call_count += 1
         # First two calls (last_heartbeat, last_chunk_time init) return 0.
@@ -143,9 +196,9 @@ def test_stream_emits_stale_event_on_idle_timeout(user, mocker):
             return 0.0
         return 700.0
 
-    mock_time.time.side_effect = fast_time
+    mock_time.monotonic.side_effect = fast_monotonic
 
-    events = list(stream_session_from_db(str(session.id), since=0))
+    events = [e async for e in stream_session_from_db(str(session.id), since=0)]
 
     event_types = [json.loads(e)["type"] for e in events]
     assert "stale" in event_types
@@ -158,24 +211,33 @@ def test_stream_emits_stale_event_on_idle_timeout(user, mocker):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.django_db
-def test_stream_emits_id_field_via_view(client: Client, auth_headers, user):
+async def _read_streaming(resp) -> str:
+    """Consume an async streaming response and return the decoded content."""
+    chunks = []
+    async for chunk in resp.streaming_content:
+        chunks.append(chunk)
+    return b"".join(chunks).decode()
+
+
+@pytest.mark.django_db(transaction=True)
+async def test_stream_emits_id_field_via_view(async_client: AsyncClient):
     """Wire format must include `id: N` before each non-start data line."""
-    session = AgentSession.objects.create(
+    user, headers = await _create_user_and_headers()
+    session = await AgentSession.objects.acreate(
         user=user,
         runtime="claude",
         prompt="test",
         status="completed",
         exit_code=0,
     )
-    turn = SessionTurn.objects.create(
+    turn = await SessionTurn.objects.acreate(
         session=session, turn_number=1, prompt="test", status="completed"
     )
-    AgentSessionLog.objects.create(session=session, turn=turn, stream="stdout", data="hello")
+    await AgentSessionLog.objects.acreate(session=session, turn=turn, stream="stdout", data="hello")
 
-    resp = client.get(f"/sessions/{session.id}/stream", **auth_headers)
+    resp = await async_client.get(f"/sessions/{session.id}/stream", **headers)
     assert resp.status_code == 200
-    content = b"".join(resp.streaming_content).decode()
+    content = await _read_streaming(resp)
 
     lines = content.splitlines()
     # Find lines that carry an id: prefix
@@ -191,29 +253,31 @@ def test_stream_emits_id_field_via_view(client: Client, auth_headers, user):
             )
 
 
-@pytest.mark.django_db
-def test_stream_view_parses_last_event_id_header(client: Client, auth_headers, user):
-    """HTTP_LAST_EVENT_ID=3 → only rows with id > 3 emitted."""
-    session = AgentSession.objects.create(
+@pytest.mark.django_db(transaction=True)
+async def test_stream_view_parses_last_event_id_header(async_client: AsyncClient):
+    """Last-Event-ID header → only rows with id > header value emitted."""
+    user, headers = await _create_user_and_headers()
+    session = await AgentSession.objects.acreate(
         user=user,
         runtime="claude",
         prompt="test",
         status="completed",
         exit_code=0,
     )
-    turn = SessionTurn.objects.create(
+    turn = await SessionTurn.objects.acreate(
         session=session, turn_number=1, prompt="test", status="completed"
     )
-    logs = _seed_logs(session, turn, count=5)
+    logs = await _seed_logs_async(session, turn, count=5)
     cutoff = logs[2].id  # after 3rd log
 
-    resp = client.get(
+    # Merge Last-Event-ID into the headers dict for AsyncClient
+    merged_headers = {**headers["headers"], "Last-Event-Id": str(cutoff)}
+    resp = await async_client.get(
         f"/sessions/{session.id}/stream",
-        HTTP_LAST_EVENT_ID=str(cutoff),
-        **auth_headers,
+        headers=merged_headers,
     )
     assert resp.status_code == 200
-    content = b"".join(resp.streaming_content).decode()
+    content = await _read_streaming(resp)
 
     # Parse data lines
     data_payloads = [
@@ -226,28 +290,29 @@ def test_stream_view_parses_last_event_id_header(client: Client, auth_headers, u
     assert len(output_ids) == 2
 
 
-@pytest.mark.django_db
-def test_stream_view_parses_since_query_param(client: Client, auth_headers, user):
+@pytest.mark.django_db(transaction=True)
+async def test_stream_view_parses_since_query_param(async_client: AsyncClient):
     """?since=N → only rows with id > N emitted."""
-    session = AgentSession.objects.create(
+    user, headers = await _create_user_and_headers()
+    session = await AgentSession.objects.acreate(
         user=user,
         runtime="claude",
         prompt="test",
         status="completed",
         exit_code=0,
     )
-    turn = SessionTurn.objects.create(
+    turn = await SessionTurn.objects.acreate(
         session=session, turn_number=1, prompt="test", status="completed"
     )
-    logs = _seed_logs(session, turn, count=5)
+    logs = await _seed_logs_async(session, turn, count=5)
     cutoff = logs[2].id
 
-    resp = client.get(
+    resp = await async_client.get(
         f"/sessions/{session.id}/stream?since={cutoff}",
-        **auth_headers,
+        **headers,
     )
     assert resp.status_code == 200
-    content = b"".join(resp.streaming_content).decode()
+    content = await _read_streaming(resp)
 
     data_payloads = [
         json.loads(line[6:]) for line in content.splitlines() if line.startswith("data: ")
@@ -257,31 +322,32 @@ def test_stream_view_parses_since_query_param(client: Client, auth_headers, user
     assert all(eid > cutoff for eid in output_ids)
 
 
-@pytest.mark.django_db
-def test_stream_view_header_precedence(client: Client, auth_headers, user):
+@pytest.mark.django_db(transaction=True)
+async def test_stream_view_header_precedence(async_client: AsyncClient):
     """When both Last-Event-ID header and ?since= param are present, header wins."""
-    session = AgentSession.objects.create(
+    user, headers = await _create_user_and_headers()
+    session = await AgentSession.objects.acreate(
         user=user,
         runtime="claude",
         prompt="test",
         status="completed",
         exit_code=0,
     )
-    turn = SessionTurn.objects.create(
+    turn = await SessionTurn.objects.acreate(
         session=session, turn_number=1, prompt="test", status="completed"
     )
-    logs = _seed_logs(session, turn, count=5)
+    logs = await _seed_logs_async(session, turn, count=5)
     # Header says skip first 5, param says skip first 2 — header should win
     header_cutoff = logs[4].id  # skip all 5
     param_cutoff = logs[1].id  # would keep 3
 
-    resp = client.get(
+    merged_headers = {**headers["headers"], "Last-Event-Id": str(header_cutoff)}
+    resp = await async_client.get(
         f"/sessions/{session.id}/stream?since={param_cutoff}",
-        HTTP_LAST_EVENT_ID=str(header_cutoff),
-        **auth_headers,
+        headers=merged_headers,
     )
     assert resp.status_code == 200
-    content = b"".join(resp.streaming_content).decode()
+    content = await _read_streaming(resp)
 
     data_payloads = [
         json.loads(line[6:]) for line in content.splitlines() if line.startswith("data: ")
@@ -306,24 +372,25 @@ def test_stream_view_rejects_non_integer_since(client: Client, auth_headers, use
     assert resp.json()["detail"] == "since must be an integer"
 
 
-@pytest.mark.django_db
-def test_stream_view_clamps_negative_since_to_zero(client: Client, auth_headers, user):
+@pytest.mark.django_db(transaction=True)
+async def test_stream_view_clamps_negative_since_to_zero(async_client: AsyncClient):
     """?since=-5 → treated as 0, full replay."""
-    session = AgentSession.objects.create(
+    user, headers = await _create_user_and_headers()
+    session = await AgentSession.objects.acreate(
         user=user,
         runtime="claude",
         prompt="test",
         status="completed",
         exit_code=0,
     )
-    turn = SessionTurn.objects.create(
+    turn = await SessionTurn.objects.acreate(
         session=session, turn_number=1, prompt="test", status="completed"
     )
-    _seed_logs(session, turn, count=3)
+    await _seed_logs_async(session, turn, count=3)
 
-    resp = client.get(f"/sessions/{session.id}/stream?since=-5", **auth_headers)
+    resp = await async_client.get(f"/sessions/{session.id}/stream?since=-5", **headers)
     assert resp.status_code == 200
-    content = b"".join(resp.streaming_content).decode()
+    content = await _read_streaming(resp)
 
     data_payloads = [
         json.loads(line[6:]) for line in content.splitlines() if line.startswith("data: ")
