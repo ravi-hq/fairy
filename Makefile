@@ -18,7 +18,7 @@ db-reset:
 	$(MAKE) db-up
 
 dev:
-	uv run python manage.py runserver 0.0.0.0:8777
+	PYTHONPATH=src uv run uvicorn config.asgi:application --host 0.0.0.0 --port 8777 --reload
 
 # Procrastinate worker. Session execution runs here; `make dev` only handles HTTP.
 # Requires the Postgres container to be up (`make db-up`).

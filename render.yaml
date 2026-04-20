@@ -16,15 +16,11 @@ projects:
             buildCommand: pip install uv && uv sync && uv run python manage.py collectstatic --noinput
             preDeployCommand: uv run python manage.py migrate --noinput
             startCommand: >-
-              uv run gunicorn config.wsgi:application
-              --bind 0.0.0.0:$PORT
+              uv run uvicorn config.asgi:application
+              --host 0.0.0.0
+              --port $PORT
               --workers 3
-              --worker-class gthread
-              --threads 8
-              --graceful-timeout 650
-              --timeout 700
-              --max-requests 1000
-              --max-requests-jitter 50
+              --timeout-graceful-shutdown 650
             healthCheckPath: /health
             envVars:
               - key: DATABASE_URL
