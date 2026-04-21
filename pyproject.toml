@@ -20,7 +20,7 @@ dependencies = [
     "cryptography>=43.0",
     "dj-database-url>=2.1",
     "psycopg[binary]>=3.1",
-    "gunicorn>=23.0",
+    "uvicorn[standard]>=0.30",
     "whitenoise>=6.7",
     "procrastinate[django]>=3.0",
     "posthog>=3.7",
@@ -39,6 +39,7 @@ docs = [
 ]
 dev = [
     "pytest>=8.0.0",
+    "pytest-asyncio>=0.23",
     "pytest-django>=4.8.0",
     "pytest-mock>=3.14.0",
     "pytest-xdist>=3.6.0",
@@ -61,6 +62,7 @@ line-length = 100
 DJANGO_SETTINGS_MODULE = "config.settings"
 pythonpath = ["src"]
 norecursedirs = ["tests/e2e", ".venv"]
+asyncio_mode = "auto"
 markers = [
     "slow: tests that create real agent sessions (may take minutes)",
     "mcp_matrix: verifies MCP server config reaches each runtime",
