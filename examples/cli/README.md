@@ -1,11 +1,13 @@
 # example-cli
 
-A minimal Python CLI (stdlib only, no pip install) that runs one prompt
-through Agent on Demand and streams the output. Meant to replace team aliases
-like `claude --dangerously-skip-permissions -p "<prompt>"` with a version that
-runs inside a Sprite sandbox against a pinned agent, tool set, and repo list.
+A minimal Python CLI built on [`aod-sdk`](../../clients/python/) that runs one
+prompt through Agent on Demand and streams the output. Meant to replace team
+aliases like `claude --dangerously-skip-permissions -p "<prompt>"` with a
+version that runs inside a Sprite sandbox against a pinned agent, tool set,
+and repo list.
 
 ```
+$ pip install aod-sdk                                    # or: pip install -e ../../clients/python
 $ export AOD_API_URL=https://aod.example.com
 $ export AOD_API_TOKEN=aod_xxxxxxxx
 $ ./example-cli.py "what does /workspace/fairy do?"     # new session
@@ -38,8 +40,8 @@ $ ./example-cli.py --session <uuid> "open a PR"          # continue that session
 | File | Role |
 |---|---|
 | [`example-cli.py`](./example-cli.py) | Config + `main()`. The file you fork per team. |
-| [`aod_client.py`](./aod_client.py) | `AodClient` — stdlib HTTP + SSE wrapper over the AoD API. Reusable across examples. |
-| [`claude_format.py`](./claude_format.py) | Pretty-prints Claude `stream-json` events (tool uses, thinking, final text, result) as one-liners with emoji prefixes. Claude-runtime-specific. |
+
+HTTP + SSE are handled by [`aod-sdk`](../../clients/python/) (`Client`, `client.sessions.stream(...)`). Claude `stream-json` is parsed by `aod.pretty.claude.ClaudeFormatter` — the SDK's runtime-scoped pretty-printer.
 
 The CLI also consumes AoD's `stage` SSE events to show provisioning progress on stderr (see [streaming.md](../../site/docs/api/streaming.md#provisioning-stages)). As each stage runs the spinner updates in place; when a stage finishes, a `✓ <label> · <duration>s` line is left in the scrollback.
 
@@ -59,17 +61,17 @@ Fork the file per team or per workflow — one binary, one alias.
 
 On every **new-session** run the CLI:
 
-1. `GET /environments` — if a non-archived environment with the configured
-   name exists, reuse its id; otherwise `POST /environments` to create it.
-2. Same for the agent via `GET /agents` / `POST /agents`.
-3. `POST /sessions` with `agent_id`, the prompt, and the repo list, then
-   streams `GET /sessions/{id}/stream` to stdout.
+1. `client.environments.list()` — if a non-archived environment with the
+   configured name exists, reuse its id; otherwise `client.environments.create(...)`.
+2. Same for the agent via `client.agents.list()` / `client.agents.create(...)`.
+3. `client.sessions.create(...)` with `agent_id`, the prompt, and the repo
+   list, then streams `client.sessions.stream(session_id)` to stdout.
 
 When `--session <id>` is passed, the ensure steps are skipped and the CLI
-calls `POST /sessions/{id}/prompt` directly to queue another turn against
-the same Sprite (same filesystem, same runtime history). The session must
-be in a `pending` or `completed` state — `running`, `failed`, and
-`terminated` all return `409`.
+calls `client.sessions.prompt(id, prompt=..., timeout=...)` directly to queue
+another turn against the same Sprite (same filesystem, same runtime history).
+The session must be in a `pending` or `completed` state — `running`,
+`failed`, and `terminated` all raise `ConflictError` (HTTP 409).
 
 The CLI does **not** reconcile drift. If the named agent already exists with
 a different model or system prompt, it's reused as-is. To roll out a config
@@ -86,10 +88,10 @@ Safe to chain: `./example-cli.py "fix the lint" && git diff`.
 
 - A valid API token (`AOD_API_TOKEN`, `aod_...`).
 - A runtime API key configured on your user for the agent's runtime —
-  without it, `POST /sessions` returns `400 "No API key configured for
+  without it, session creation fails with `400 "No API key configured for
   runtime: claude"`.
-- Sprites credentials configured on your user — otherwise `POST /sessions`
-  returns `400 "No Sprites API key configured"`.
+- Sprites credentials configured on your user — otherwise session creation
+  fails with `400 "No Sprites API key configured"`.
 
 ## Optional environment variables
 

@@ -1,0 +1,148 @@
+from __future__ import annotations
+
+from uuid import uuid4
+
+import pytest
+
+from aod import ConflictError, RateLimitError, Session, SessionAck, SessionTurn
+
+
+def test_list(client, server, make_session):
+    s = make_session()
+    server.json("GET", "/sessions", 200, {"data": [s]})
+    sessions = client.sessions.list()
+    assert isinstance(sessions[0], Session)
+
+
+def test_create_returns_ack_shape(client, server):
+    ack_id = str(uuid4())
+    server.json(
+        "POST",
+        "/sessions",
+        202,
+        {
+            "id": ack_id,
+            "status": "pending",
+            "stream_url": f"/sessions/{ack_id}/stream",
+            "environment_id": None,
+            "resources": [],
+            "current_turn": 1,
+        },
+    )
+
+    ack = client.sessions.create(agent_id=uuid4(), prompt="hi", timeout=30)
+    assert isinstance(ack, SessionAck)
+    assert ack.current_turn == 1
+    assert ack.status == "pending"
+
+
+def test_create_rate_limited_raises_with_limit_active(client, server):
+    server.json(
+        "POST",
+        "/sessions",
+        429,
+        {"detail": "limit reached", "limit": 3, "active": 3},
+    )
+    with pytest.raises(RateLimitError) as excinfo:
+        client.sessions.create(agent_id=uuid4(), prompt="hi")
+    assert excinfo.value.limit == 3
+    assert excinfo.value.active == 3
+
+
+def test_get(client, server, make_session):
+    s = make_session()
+    server.json("GET", f"/sessions/{s['id']}", 200, s)
+    result = client.sessions.get(s["id"])
+    assert result.status == "completed"
+
+
+def test_prompt_on_running_session_conflicts(client, server):
+    sid = str(uuid4())
+    server.json(
+        "POST",
+        f"/sessions/{sid}/prompt",
+        409,
+        {"detail": "Session is already running"},
+    )
+    with pytest.raises(ConflictError):
+        client.sessions.prompt(sid, prompt="again", timeout=30)
+
+
+def test_prompt_happy_path(client, server):
+    sid = str(uuid4())
+    server.json(
+        "POST",
+        f"/sessions/{sid}/prompt",
+        202,
+        {
+            "id": sid,
+            "status": "pending",
+            "stream_url": f"/sessions/{sid}/stream",
+            "current_turn": 2,
+        },
+    )
+    ack = client.sessions.prompt(sid, prompt="next", timeout=60)
+    assert ack.current_turn == 2
+    assert server.requests[-1].body == {"prompt": "next", "timeout": 60}
+
+
+def test_turns(client, server):
+    from datetime import datetime, timezone
+
+    sid = str(uuid4())
+    turn = {
+        "turn_number": 1,
+        "prompt": "hi",
+        "status": "completed",
+        "exit_code": 0,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "started_at": datetime.now(timezone.utc).isoformat(),
+        "ended_at": datetime.now(timezone.utc).isoformat(),
+    }
+    server.json("GET", f"/sessions/{sid}/turns", 200, {"data": [turn]})
+    result = client.sessions.turns(sid)
+    assert isinstance(result[0], SessionTurn)
+    assert result[0].exit_code == 0
+
+
+def test_terminate(client, server):
+    sid = str(uuid4())
+    server.json("POST", f"/sessions/{sid}/terminate", 200, {"id": sid, "status": "terminated"})
+    ack = client.sessions.terminate(sid)
+    assert ack.status == "terminated"
+
+
+def test_terminate_already_terminated(client, server):
+    sid = str(uuid4())
+    server.json(
+        "POST",
+        f"/sessions/{sid}/terminate",
+        409,
+        {"detail": "Session is already terminated"},
+    )
+    with pytest.raises(ConflictError):
+        client.sessions.terminate(sid)
+
+
+def test_delete(client, server):
+    sid = str(uuid4())
+    server.json("DELETE", f"/sessions/{sid}/delete", 200, {"detail": "Session deleted"})
+    assert client.sessions.delete(sid) is None
+
+
+def test_stream_passes_since_param(client, server):
+    sid = str(uuid4())
+
+    def responder(request):
+        import httpx
+
+        body = b'data: {"type":"start","session_id":"' + sid.encode() + b'"}\n\n'
+        return httpx.Response(200, content=body, headers={"content-type": "text/event-stream"})
+
+    server.register("GET", f"/sessions/{sid}/stream", responder)
+
+    with client.sessions.stream(sid, since=42) as events:
+        collected = list(events)
+
+    assert collected[0].type == "start"
+    assert server.requests[-1].params.get("since") == ["42"]

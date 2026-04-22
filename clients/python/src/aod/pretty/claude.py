@@ -1,21 +1,40 @@
-"""Pretty-print Claude stream-json output for CLI display.
+"""Pretty-print Claude `stream-json` output for CLI display.
 
-The `claude` runtime runs with `--output-format stream-json`, writing one JSON
-object per line to stdout. Each line is one of:
+The `claude` runtime runs with `--output-format stream-json`, writing one
+JSON object per line to stdout. Each line is one of:
   - system.init / system.task_started / system.task_progress
   - assistant.message with content blocks (thinking, tool_use, text)
   - user.message with content blocks (usually tool_result — skipped)
   - result (terminal)
 
-`ClaudeFormatter` accumulates stdout bytes from the AoD SSE stream, splits on
-newline, parses each line, and yields a one-liner per event ready to print.
-Tool-result and task_progress noise is dropped; subagent activity is indented.
+`ClaudeFormatter` accumulates stdout bytes, splits on newline, parses each
+line, and yields a one-liner per event ready to print. Tool-result and
+task_progress noise is dropped; subagent activity is indented.
+
+Use `.consume(event)` when iterating a session stream — it filters to
+`output` events on the `stdout` stream automatically:
+
+    from aod import Client
+    from aod.pretty.claude import ClaudeFormatter
+
+    fmt = ClaudeFormatter()
+    with client.sessions.stream(session_id) as events:
+        for event in events:
+            for line in fmt.consume(event):
+                print(line)
+        for line in fmt.flush():
+            print(line)
+
+Use `.feed(chunk)` directly for lower-level integrations (e.g. when you've
+already extracted the stdout bytes yourself).
 """
 
 from __future__ import annotations
 
 import json
-from typing import Iterator
+from collections.abc import Iterator
+
+from ..models import StreamEvent
 
 _TOOL_EMOJI = {
     "Bash": "🔧",
@@ -38,8 +57,26 @@ _DEFAULT_TOOL_EMOJI = "🛠️ "
 
 
 class ClaudeFormatter:
+    """Stateful formatter that turns Claude stream-json into display lines."""
+
     def __init__(self) -> None:
         self._buf = ""
+
+    def consume(self, event: StreamEvent) -> Iterator[str]:
+        """Yield formatted lines for a session stream event.
+
+        Skips non-`output` events and `stderr` output — those are surfaced
+        verbatim by the caller (e.g. for progress bars or error messages
+        the agent writes to stderr).
+        """
+        if event.type != "output":
+            return
+        if event.extra.get("stream") != "stdout":
+            return
+        data = event.extra.get("data")
+        if not isinstance(data, str):
+            return
+        yield from self.feed(data)
 
     def feed(self, chunk: str) -> Iterator[str]:
         self._buf += chunk
