@@ -61,3 +61,15 @@ Safe to chain: `./example-cli.py "fix the lint" && git diff`.
   runtime: claude"`.
 - Sprites credentials configured on your user — otherwise `POST /sessions`
   returns `400 "No Sprites API key configured"`.
+
+## Optional environment variables
+
+- `GITHUB_TOKEN` — if set, passed through to every repo in `REPOS` as the
+  clone credential. Required for private repos; leave unset for public ones.
+
+## What's in the agent
+
+- **Model + runtime**: `claude-sonnet-4-6` via the `claude` runtime.
+- **MCP servers**: [Context7](https://context7.com) (`https://mcp.context7.com/mcp`)
+  for up-to-date library docs. Add more entries to the `mcp_servers` list in
+  the `AGENT` block.

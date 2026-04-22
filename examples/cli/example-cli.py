@@ -30,6 +30,9 @@ AGENT = {
         "Investigate thoroughly before editing. Keep changes minimal and "
         "focused on the task you were given."
     ),
+    "mcp_servers": [
+        {"name": "context7", "type": "url", "url": "https://mcp.context7.com/mcp"},
+    ],
 }
 
 ENVIRONMENT = {
@@ -79,11 +82,19 @@ def main() -> int:
     try:
         env_id = client.ensure("environments", ENVIRONMENT["name"], ENVIRONMENT)
         agent_id = client.ensure("agents", AGENT["name"], {**AGENT, "environment_id": env_id})
+        gh_token = os.environ.get("GITHUB_TOKEN")
         session = client.create_session(
             agent_id=agent_id,
             prompt=prompt,
             timeout=TIMEOUT,
-            resources=[{"type": "github_repository", "url": url} for url in REPOS],
+            resources=[
+                {
+                    "type": "github_repository",
+                    "url": url,
+                    "authorization_token": gh_token,
+                }
+                for url in REPOS
+            ],
         )
         print(f"# session {session['id']}", file=sys.stderr)
         return _handle_stream(client, session["id"])
