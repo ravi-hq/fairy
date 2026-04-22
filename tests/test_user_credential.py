@@ -22,15 +22,15 @@ def test_credential_env_var_importable():
 
 def test_user_credential_create_and_retrieve(user):
     cred = UserCredential(user=user, kind="provider:anthropic")
-    cred.set_value("sk-test-key")
+    cred.set_value("test-api-key-value")
     cred.save()
 
     fetched = UserCredential.objects.get(user=user, kind="provider:anthropic")
-    assert fetched.get_value() == "sk-test-key"
+    assert fetched.get_value() == "test-api-key-value"
 
 
 def test_user_credential_encryption_round_trip(user):
-    raw = "super-secret-token-abc123"
+    raw = "dummy-credential-for-testing"
     cred = UserCredential(user=user, kind="provider:openai")
     cred.set_value(raw)
     cred.save()
@@ -44,22 +44,22 @@ def test_user_credential_encryption_round_trip(user):
 
 def test_user_credential_uniqueness_constraint(user):
     cred1 = UserCredential(user=user, kind="provider:anthropic")
-    cred1.set_value("key-one")
+    cred1.set_value("test-value-one")
     cred1.save()
 
     cred2 = UserCredential(user=user, kind="provider:anthropic")
-    cred2.set_value("key-two")
+    cred2.set_value("test-value-two")
     with pytest.raises(IntegrityError):
         cred2.save()
 
 
 def test_get_value_for_returns_value(user):
     cred = UserCredential(user=user, kind="runtime_token:claude-oauth")
-    cred.set_value("oauth-tok")
+    cred.set_value("test-oauth-value")
     cred.save()
 
     result = UserCredential.get_value_for(user, "runtime_token:claude-oauth")
-    assert result == "oauth-tok"
+    assert result == "test-oauth-value"
 
 
 def test_get_value_for_returns_none_when_missing(user):
