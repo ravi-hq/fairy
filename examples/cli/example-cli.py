@@ -100,6 +100,9 @@ class _Spinner:
     def start(self) -> None:
         if self._thread or not sys.stderr.isatty():
             return
+        # Clear any stop flag left over from a previous stop(): without this
+        # the new worker sees _stop already set and exits on its first tick.
+        self._stop.clear()
         self._started_at = time.monotonic()
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
