@@ -107,3 +107,7 @@ LOGOUT_REDIRECT_URL = "/ui/login"
 SPRITES_BASE_URL = os.environ.get("SPRITES_BASE_URL", "https://api.sprites.dev")
 SPRITE_NAME_PREFIX = os.environ.get("SPRITE_NAME_PREFIX", "aod")
 DEFAULT_TIMEOUT = int(os.environ.get("DEFAULT_TIMEOUT", "600"))
+
+# Per-user cap on concurrent (pending + running) sessions. Users can be granted
+# a higher (or lower) limit via UserQuota.max_concurrent_sessions.
+DEFAULT_MAX_CONCURRENT_SESSIONS = int(os.environ.get("DEFAULT_MAX_CONCURRENT_SESSIONS", "10"))

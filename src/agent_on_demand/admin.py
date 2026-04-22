@@ -13,6 +13,7 @@ from agent_on_demand.models import (
     AgentSessionLog,
     Environment,
     EnvironmentVersion,
+    UserQuota,
     UserRuntimeKey,
     UserSpritesKey,
 )
@@ -39,6 +40,13 @@ class UserSpritesKeyInline(admin.TabularInline):
     readonly_fields = ("created_at", "updated_at")
 
 
+class UserQuotaInline(admin.StackedInline):
+    model = UserQuota
+    extra = 0
+    fields = ("max_concurrent_sessions", "created_at", "updated_at")
+    readonly_fields = ("created_at", "updated_at")
+
+
 admin.site.unregister(User)
 
 
@@ -48,6 +56,7 @@ class UserAdmin(BaseUserAdmin):
         APIKeyInline,
         UserRuntimeKeyInline,
         UserSpritesKeyInline,
+        UserQuotaInline,
     ]
 
 

@@ -283,6 +283,19 @@ paths:
                 $ref: "#/components/schemas/Session"
         "422":
           $ref: "#/components/responses/ValidationError"
+        "429":
+          description: Per-user concurrent session limit reached
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  detail:
+                    type: string
+                  limit:
+                    type: integer
+                  active:
+                    type: integer
 
   /sessions/{session_id}:
     parameters:
