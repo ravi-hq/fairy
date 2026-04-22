@@ -61,9 +61,7 @@ class OpencodeRuntime:
             ),
         ).run()
 
-    def build_command(
-        self, spec: "SessionSpec", mode: Literal["run", "continue"]
-    ) -> list[str]:
+    def build_command(self, spec: "SessionSpec", mode: Literal["run", "continue"]) -> list[str]:
         argv = ["opencode", "run", "--model", spec.model, "--format", "json"]
         if mode == "continue":
             argv.append("--continue")

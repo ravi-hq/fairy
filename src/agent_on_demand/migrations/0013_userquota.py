@@ -6,7 +6,6 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("fairy", "0012_add_runtime_session_id"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),

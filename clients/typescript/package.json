@@ -1,6 +1,6 @@
 {
   "name": "@ravi-hq/aod-sdk",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "TypeScript SDK for the Agent on Demand API",
   "license": "Apache-2.0",
   "author": "Ravi",

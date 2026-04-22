@@ -234,7 +234,7 @@ class AgentSessionAdmin(admin.ModelAdmin):
     def terminate_sessions(self, request, queryset):
         from django.conf import settings
 
-        clients: dict[int, SpritesClient] = {}
+        clients: dict[int, SpritesClient | None] = {}
 
         def client_for(user) -> SpritesClient | None:
             if user.pk in clients:
