@@ -63,7 +63,7 @@ line-length = 100
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "config.settings"
 pythonpath = ["src"]
-norecursedirs = ["tests/e2e", ".venv", "clients"]
+norecursedirs = ["tests/e2e", ".venv"]
 asyncio_mode = "auto"
 markers = [
     "slow: tests that create real agent sessions (may take minutes)",
