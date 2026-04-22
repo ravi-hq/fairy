@@ -23,6 +23,7 @@ External dependencies:
 
 | Signal                         | Where |
 | ------------------------------ | ----- |
+| Alerts                         | Slack `#alerts` |
 | Request rate, error rate, p95  | Honeycomb `aod-web` |
 | Worker task durations, failures | Honeycomb `aod-worker` — look for `session.provision_task` and `session.execute_turn` spans |
 | Session outcomes by runtime    | PostHog — event names above |
