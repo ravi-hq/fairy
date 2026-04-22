@@ -1,0 +1,3 @@
+Summarise the README in /workspace in two sentences.
+List the top-level files in /workspace and describe what each one does in one line.
+What programming language and framework does this project use? Answer in one line.

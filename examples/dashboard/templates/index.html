@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Agent on Demand — Dashboard</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  body { max-width: 960px; margin: 2rem auto; padding: 0 1rem; line-height: 1.4; }
+  h1 { font-size: 1.3rem; margin-bottom: 0; }
+  .sub { color: #888; font-size: 0.9rem; margin-top: 0.2rem; }
+  form { display: flex; gap: 0.5rem; margin: 1rem 0; }
+  input, button { font: inherit; padding: 0.5rem 0.75rem; }
+  input { flex: 1; }
+  button { cursor: pointer; }
+  section { margin-top: 1.5rem; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+  th, td { text-align: left; padding: 0.4rem 0.5rem; border-bottom: 1px solid rgba(128,128,128,0.2); }
+  th { font-weight: 600; color: #888; }
+  .pill { display: inline-block; padding: 0.1rem 0.5rem; border-radius: 0.5rem; font-size: 0.75rem; }
+  .pill-running  { background: #ffeb3b; color: #000; }
+  .pill-pending  { background: #90caf9; color: #000; }
+  .pill-completed{ background: #a5d6a7; color: #000; }
+  .pill-failed   { background: #ef9a9a; color: #000; }
+  .pill-terminated { background: #cfcfcf; color: #000; }
+  #log {
+    background: rgba(128,128,128,0.08);
+    padding: 1rem;
+    border-radius: 0.5rem;
+    font-family: ui-monospace, Menlo, monospace;
+    font-size: 0.85rem;
+    white-space: pre-wrap;
+    min-height: 10rem;
+    max-height: 28rem;
+    overflow-y: auto;
+  }
+  button.link { background: none; border: none; padding: 0; color: #2196f3; cursor: pointer; }
+</style>
+</head>
+<body>
+<h1>Agent on Demand — Dashboard</h1>
+<p class="sub">Single agent, one prompt per session. SSE is proxied through this server.</p>
+
+<form id="new-session">
+  <input id="prompt" placeholder="Prompt for the agent…" required autofocus />
+  <button type="submit">Start</button>
+</form>
+
+<section>
+  <table>
+    <thead>
+      <tr><th>status</th><th>id</th><th>runtime</th><th>turns</th><th>created</th><th></th></tr>
+    </thead>
+    <tbody id="sessions"></tbody>
+  </table>
+</section>
+
+<section>
+  <h2 style="font-size: 1rem; margin-bottom: 0.3rem;">Output <span id="active" class="sub"></span></h2>
+  <div id="log">Select a session above to stream its output here.</div>
+</section>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const sessionsEl = $("sessions");
+const logEl = $("log");
+const activeEl = $("active");
+
+async function refreshSessions() {
+  const r = await fetch("/api/sessions");
+  const { data } = await r.json();
+  sessionsEl.innerHTML = data.map((s) => `
+    <tr>
+      <td><span class="pill pill-${s.status}">${s.status}</span></td>
+      <td><button class="link" onclick="streamSession('${s.id}')">${s.id.slice(0, 8)}…</button></td>
+      <td>${s.runtime ?? "—"}</td>
+      <td>${s.turn_count ?? 0}</td>
+      <td>${new Date(s.created_at).toLocaleTimeString()}</td>
+      <td>${s.status === "running" || s.status === "pending"
+            ? `<button onclick="terminate('${s.id}')">stop</button>`
+            : ""}</td>
+    </tr>`).join("");
+}
+
+let currentStream = null;
+
+function streamSession(id) {
+  if (currentStream) currentStream.close();
+  logEl.textContent = "";
+  activeEl.textContent = `· streaming ${id.slice(0, 8)}…`;
+  const es = new EventSource(`/api/sessions/${id}/stream`);
+  currentStream = es;
+  es.onmessage = (e) => {
+    const ev = JSON.parse(e.data);
+    if (ev.type === "output") {
+      logEl.textContent += ev.data ?? "";
+      logEl.scrollTop = logEl.scrollHeight;
+    } else if (ev.type === "stage") {
+      logEl.textContent += `\n[stage] ${ev.stage} ${ev.state}\n`;
+    } else if (["exit", "error", "terminated", "stale"].includes(ev.type)) {
+      logEl.textContent += `\n[${ev.type}]${ev.message ? " " + ev.message : ""}\n`;
+      es.close();
+      refreshSessions();
+    }
+  };
+  es.onerror = () => { es.close(); activeEl.textContent = "· stream disconnected"; };
+}
+
+async function terminate(id) {
+  await fetch(`/api/sessions/${id}/terminate`, { method: "POST" });
+  refreshSessions();
+}
+
+$("new-session").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const prompt = $("prompt").value;
+  $("prompt").value = "";
+  const r = await fetch("/api/sessions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ prompt }),
+  });
+  const { id } = await r.json();
+  await refreshSessions();
+  streamSession(id);
+});
+
+refreshSessions();
+setInterval(refreshSessions, 5000);
+</script>
+</body>
+</html>
