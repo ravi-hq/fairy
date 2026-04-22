@@ -269,28 +269,33 @@ def _clone_repos(sprite: Sprite, repos: list[RepoSpec], session_id: str | None) 
     with stage_timer(session_id, STAGE_CLONE_REPOS):
         try:
             if cred_lines:
-                fs = sprite.filesystem()
-                (fs / cred_path.lstrip("/")).write_text("\n".join(cred_lines) + "\n")
-                sprite.command("chmod", "600", cred_path).run()
-                sprite.command(
-                    "git",
-                    "config",
-                    "--global",
-                    "credential.helper",
-                    f"store --file={cred_path}",
-                ).run()
+                with stage_timer(session_id, f"{STAGE_CLONE_REPOS}.setup"):
+                    fs = sprite.filesystem()
+                    (fs / cred_path.lstrip("/")).write_text("\n".join(cred_lines) + "\n")
+                    sprite.command("chmod", "600", cred_path).run()
+                    sprite.command(
+                        "git",
+                        "config",
+                        "--global",
+                        "credential.helper",
+                        f"store --file={cred_path}",
+                    ).run()
             for repo in repos:
-                sprite.command(
-                    "git", "clone", "--depth=1", "--quiet", repo.url, repo.mount_path
-                ).run()
+                with stage_timer(session_id, f"{STAGE_CLONE_REPOS}.download"):
+                    sprite.command(
+                        "git", "clone", "--depth=1", "--quiet", repo.url, repo.mount_path
+                    ).run()
         except SpriteError as e:
             raise ProvisionError(f"Failed to clone repos: {e}", stage=STAGE_CLONE_REPOS) from e
         finally:
             # Always attempt cleanup, even on clone failure. Cleanup errors are
             # logged but don't shadow the real failure.
             try:
-                sprite.command("rm", "-f", cred_path).run()
-                sprite.command("git", "config", "--global", "--unset", "credential.helper").run()
+                with stage_timer(session_id, f"{STAGE_CLONE_REPOS}.cleanup"):
+                    sprite.command("rm", "-f", cred_path).run()
+                    sprite.command(
+                        "git", "config", "--global", "--unset", "credential.helper"
+                    ).run()
             except SpriteError:
                 logger.warning("Failed to clean git credentials on Sprite", exc_info=True)
 
