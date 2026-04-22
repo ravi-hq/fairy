@@ -48,8 +48,13 @@ def test_install_runs_npm_global():
     argv = sprite.commands[0].argv
     assert argv[0] == "bash"
     assert argv[1] == "-lc"
-    assert f"opencode-ai@{OPENCODE_VERSION}" in argv[2]
-    assert "npm install -g" in argv[2]
+    script = argv[2]
+    assert f"opencode-ai@{OPENCODE_VERSION}" in script
+    assert "npm install -g" in script
+    # Symlink into a PATH-visible location (nvm prefix bin isn't on PATH).
+    assert "/home/sprite/.local/bin/opencode" in script
+    # Pre-create the legacy config dir so first-run migration can read it.
+    assert "/home/sprite/.opencode" in script
 
 
 @pytest.mark.django_db

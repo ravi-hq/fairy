@@ -32,8 +32,20 @@ class OpencodeRuntime:
     skills_root: str | None = "/home/sprite/.config/opencode/skills"
 
     def install(self, sprite: Sprite) -> None:
+        # 1. npm install -g puts the binary in nvm's prefix bin (not on PATH).
+        # 2. Symlink it into ~/.local/bin so the per-turn `bash -lc` shim
+        #    finds it (~/.local/bin is first on the sprite user's PATH).
+        # 3. Pre-create ~/.opencode so opencode's first-run legacy-config
+        #    migration can read it instead of EACCES'ing.
         sprite.command(
-            "bash", "-lc", f"npm install -g opencode-ai@{OPENCODE_VERSION}"
+            "bash",
+            "-lc",
+            (
+                f"npm install -g opencode-ai@{OPENCODE_VERSION} && "
+                "mkdir -p /home/sprite/.local/bin /home/sprite/.opencode && "
+                'ln -sf "$(npm config get prefix)/bin/opencode" '
+                "/home/sprite/.local/bin/opencode"
+            ),
         ).run()
 
     def build_command(
