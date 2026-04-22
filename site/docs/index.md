@@ -12,34 +12,62 @@ Local dev runs on `http://localhost:8777` (`make dev`). Every request except `GE
 
 Three calls to go from zero to a running agent:
 
-```bash
-BASE=http://localhost:8777
-TOKEN=aod_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+=== "curl"
 
-# 1. Create an agent.
-AGENT_ID=$(curl -s -X POST "$BASE/agents" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"name":"hello","model":"claude-sonnet-4-6","runtime":"claude"}' | jq -r .id)
+    ```bash
+    BASE=http://localhost:8777
+    TOKEN=aod_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
-# 2. Start a session.
-SESS_ID=$(curl -s -X POST "$BASE/sessions" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d "{\"agent_id\":\"$AGENT_ID\",\"prompt\":\"Say hello.\",\"timeout\":120}" | jq -r .id)
+    # 1. Create an agent.
+    AGENT_ID=$(curl -s -X POST "$BASE/agents" \
+      -H "Authorization: Bearer $TOKEN" \
+      -H "Content-Type: application/json" \
+      -d '{"name":"hello","model":"claude-sonnet-4-6","runtime":"claude"}' | jq -r .id)
 
-# 3. Stream output.
-curl -N -H "Authorization: Bearer $TOKEN" "$BASE/sessions/$SESS_ID/stream"
-```
+    # 2. Start a session.
+    SESS_ID=$(curl -s -X POST "$BASE/sessions" \
+      -H "Authorization: Bearer $TOKEN" \
+      -H "Content-Type: application/json" \
+      -d "{\"agent_id\":\"$AGENT_ID\",\"prompt\":\"Say hello.\",\"timeout\":120}" | jq -r .id)
+
+    # 3. Stream output.
+    curl -N -H "Authorization: Bearer $TOKEN" "$BASE/sessions/$SESS_ID/stream"
+    ```
+
+=== "Python"
+
+    ```bash
+    pip install aod-sdk
+    ```
+
+    ```python
+    from aod import Client
+
+    # Client() reads AOD_API_URL and AOD_API_TOKEN from the environment.
+    with Client(base_url="http://localhost:8777", token="aod_...") as client:
+        agent = client.agents.create(
+            name="hello", model="claude-sonnet-4-6", runtime="claude"
+        )
+        ack = client.sessions.create(
+            agent_id=agent.id, prompt="Say hello.", timeout=120
+        )
+        with client.sessions.stream(ack.id) as events:
+            for event in events:
+                if event.type == "output":
+                    print(event.extra["data"], end="")
+    ```
+
+    See the [Python SDK](sdks/python.md) page for the full surface.
 
 ## Explore the docs
 
 | Section | What you'll find |
 |---------|-----------------|
-| [Quickstart](api/quickstart.md) | Full minimum-viable flow with curl commands |
+| [Quickstart](api/quickstart.md) | Full minimum-viable flow with curl + Python SDK |
 | [Core Concepts](api/concepts.md) | Resources, versioning, state machines, metadata semantics |
 | [Overview](api/product.md) | What problems Agent on Demand solves |
 | [API Reference](api/reference.md) | Interactive Stoplight Elements explorer |
+| [Python SDK](sdks/python.md) | `aod-sdk` — typed sync + async client on PyPI |
 | [Authentication](api/authentication.md) | Bearer tokens, 401 shapes |
 | [Streaming](api/streaming.md) | SSE event types, reconnect, replay |
 | [Errors](api/errors.md) | Every status code and when it fires |

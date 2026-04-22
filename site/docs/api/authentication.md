@@ -33,13 +33,35 @@ Agent on Demand does not return 403. Resources that exist but don't belong to th
 
 ## Example
 
-```bash
-# Missing header → 401
-curl http://localhost:8777/agents
-# {"detail":"Missing or invalid Authorization header"}
+=== "curl"
 
-# Valid token
-curl http://localhost:8777/agents \
-  -H "Authorization: Bearer aod_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-# {"data":[...]}
-```
+    ```bash
+    # Missing header → 401
+    curl http://localhost:8777/agents
+    # {"detail":"Missing or invalid Authorization header"}
+
+    # Valid token
+    curl http://localhost:8777/agents \
+      -H "Authorization: Bearer aod_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    # {"data":[...]}
+    ```
+
+=== "Python"
+
+    With [`aod-sdk`](../sdks/python.md), the token is set at `Client` construction (or via `AOD_API_TOKEN`); 401 responses surface as `AuthError`:
+
+    ```python
+    from aod import AuthError, Client
+
+    client = Client(
+        base_url="http://localhost:8777",
+        token="aod_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    )
+    try:
+        agents = client.agents.list()
+    except AuthError as e:
+        print(e.status_code, e.detail)
+        # 401 'Invalid API key'
+    ```
+
+    `AuthError` is a subclass of `AodHTTPError` — `.status_code`, `.detail`, `.method`, `.url` are all available.

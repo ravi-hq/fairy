@@ -107,37 +107,74 @@ If the `id` is not a non-negative integer, the server returns `400`.
 
 ## Client examples
 
-### curl
+=== "curl"
 
-```bash
-curl -N \
-  -H "Authorization: Bearer $TOKEN" \
-  "$BASE/sessions/<session-uuid>/stream"
-```
+    The `-N` flag disables output buffering.
 
-The `-N` flag disables output buffering.
+    ```bash
+    curl -N \
+      -H "Authorization: Bearer $TOKEN" \
+      "$BASE/sessions/<session-uuid>/stream"
+    ```
 
-### Python
+    To resume after a disconnect, pass the last `id` you received:
 
-```python
-import json
-import requests
+    ```bash
+    curl -N \
+      -H "Authorization: Bearer $TOKEN" \
+      -H "Last-Event-ID: 42" \
+      "$BASE/sessions/<session-uuid>/stream"
+    ```
 
-last_event_id = 0
-while True:
-    headers = {"Authorization": f"Bearer {token}"}
-    if last_event_id:
-        headers["Last-Event-ID"] = str(last_event_id)
-    with requests.get(url, headers=headers, stream=True) as r:
-        for line in r.iter_lines(decode_unicode=True):
-            if not line or line.startswith(":"):
-                continue  # blank line between events, or heartbeat
-            if line.startswith("id: "):
-                last_event_id = int(line[4:])
-            elif line.startswith("data: "):
-                event = json.loads(line[6:])
-                # handle event...
-                if event["type"] in ("exit", "error", "terminated", "stale"):
-                    return
-    # loop reconnects with Last-Event-ID preserved
-```
+=== "Python (aod-sdk)"
+
+    The [`aod-sdk`](../sdks/python.md) package handles SSE parsing, heartbeats, and `Last-Event-ID` resume for you. Events are typed `StreamEvent` objects; everything beyond `type` and `id` lands in `event.extra`.
+
+    ```python
+    from aod import Client
+
+    with Client() as client:
+        with client.sessions.stream(session_id) as events:
+            for event in events:
+                if event.type == "output":
+                    print(event.extra["data"], end="")
+                elif event.type == "stage":
+                    print(f"[{event.extra['stage']} {event.extra['state']}]")
+                elif event.type in ("exit", "error", "terminated", "stale"):
+                    print(f"\n[{event.type}]")
+                    break
+    ```
+
+    Pass `since=<id>` to resume after a previously-seen event:
+
+    ```python
+    with client.sessions.stream(session_id, since=42) as events:
+        ...
+    ```
+
+=== "Python (raw)"
+
+    If you'd rather not add `aod-sdk` as a dependency, here's a minimal reconnect-aware loop on top of `requests`:
+
+    ```python
+    import json
+    import requests
+
+    last_event_id = 0
+    while True:
+        headers = {"Authorization": f"Bearer {token}"}
+        if last_event_id:
+            headers["Last-Event-ID"] = str(last_event_id)
+        with requests.get(url, headers=headers, stream=True) as r:
+            for line in r.iter_lines(decode_unicode=True):
+                if not line or line.startswith(":"):
+                    continue  # blank line between events, or heartbeat
+                if line.startswith("id: "):
+                    last_event_id = int(line[4:])
+                elif line.startswith("data: "):
+                    event = json.loads(line[6:])
+                    # handle event...
+                    if event["type"] in ("exit", "error", "terminated", "stale"):
+                        return
+        # loop reconnects with Last-Event-ID preserved
+    ```
