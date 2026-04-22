@@ -322,6 +322,26 @@ paths:
         "409":
           $ref: "#/components/responses/Conflict"
 
+  /sessions/{session_id}/turns:
+    parameters:
+      - $ref: "#/components/parameters/SessionId"
+    get:
+      tags: [sessions]
+      summary: List turns for a session
+      description: Returns the full turn history ordered by turn_number.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/SessionTurn"
+
   /sessions/{session_id}/terminate:
     parameters:
       - $ref: "#/components/parameters/SessionId"
@@ -689,6 +709,31 @@ components:
         updated_at:
           type: string
           format: date-time
+        ended_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    SessionTurn:
+      type: object
+      properties:
+        turn_number:
+          type: integer
+        prompt:
+          type: string
+        status:
+          type: string
+          enum: [pending, running, completed, failed]
+        exit_code:
+          type: integer
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
         ended_at:
           type: string
           format: date-time

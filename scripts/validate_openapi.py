@@ -113,6 +113,17 @@ def _methods_for_view(view) -> set[str]:
     return {"GET"}
 
 
+# Routes that serve HTML (the landing page and anything under /ui/) are not
+# part of the HTTP API spec — openapi.yaml only covers JSON endpoints.
+NON_API_PATHS = ("/", "/ui/")
+
+
+def _is_api_path(path: str) -> bool:
+    if path == "/":
+        return False
+    return not path.startswith("/ui/")
+
+
 def _collect_routes(patterns, prefix: str = "") -> list[tuple[str, set[str]]]:
     routes: list[tuple[str, set[str]]] = []
     for entry in patterns:
@@ -121,6 +132,8 @@ def _collect_routes(patterns, prefix: str = "") -> list[tuple[str, set[str]]]:
         elif isinstance(entry, URLPattern):
             full = prefix + str(entry.pattern)
             path = _django_path_to_openapi(full)
+            if not _is_api_path(path):
+                continue
             methods = _methods_for_view(entry.callback)
             routes.append((path, methods))
     return routes
