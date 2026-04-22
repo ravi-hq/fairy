@@ -99,8 +99,12 @@ class TestProvisionSessionOrder:
         provision_session(user, _spec(user, environment=env))
         body = fake_sprites.last_sprite().write_map()["/tmp/aod-env"]
         lines = body.strip().split("\n")
-        cred_idx = next(i for i, line in enumerate(lines) if line.startswith("ANTHROPIC_API_KEY=sk-xxx"))
-        override_idx = next(i for i, line in enumerate(lines) if line == "ANTHROPIC_API_KEY=env-override")
+        cred_idx = next(
+            i for i, line in enumerate(lines) if line.startswith("ANTHROPIC_API_KEY=sk-xxx")
+        )
+        override_idx = next(
+            i for i, line in enumerate(lines) if line == "ANTHROPIC_API_KEY=env-override"
+        )
         assert cred_idx < override_idx
 
     def test_no_run_agent_script_is_written(self, user, fake_sprites):

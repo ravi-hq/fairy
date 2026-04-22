@@ -32,13 +32,9 @@ class OpencodeRuntime:
     skills_root: str | None = "/home/sprite/.config/opencode/skills"
 
     def install(self, sprite: Sprite) -> None:
-        sprite.command(
-            "bash", "-lc", f"npm install -g opencode-ai@{OPENCODE_VERSION}"
-        ).run()
+        sprite.command("bash", "-lc", f"npm install -g opencode-ai@{OPENCODE_VERSION}").run()
 
-    def build_command(
-        self, spec: "SessionSpec", mode: Literal["run", "continue"]
-    ) -> list[str]:
+    def build_command(self, spec: "SessionSpec", mode: Literal["run", "continue"]) -> list[str]:
         argv = ["opencode", "run", "--model", spec.model, "--format", "json"]
         if mode == "continue":
             argv.append("--continue")

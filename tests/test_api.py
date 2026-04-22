@@ -707,8 +707,7 @@ async def test_stream_emits_turn_start_boundaries(async_client: AsyncClient):
     turn_start_events = [
         json.loads(line[6:])
         for line in content.splitlines()
-        if line.startswith("data: ")
-        and json.loads(line[6:]).get("type") == "turn_start"
+        if line.startswith("data: ") and json.loads(line[6:]).get("type") == "turn_start"
     ]
     turns = [e["turn"] for e in turn_start_events]
     assert turns == [1, 2]
