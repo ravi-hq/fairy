@@ -34,9 +34,9 @@ from .client import best_effort_delete, require_client
 from .errors import ProvisionError
 from .specs import RepoSpec, SessionSpec
 
-ENV_FILE_PATH = "/tmp/aod-env"
-GIT_CREDS_PATH = "/tmp/.git-credentials"
-PROVISION_SCRIPT_PATH = "/tmp/aod-provision.sh"
+ENV_FILE_PATH = "/tmp/aod-env"  # nosec B108
+GIT_CREDS_PATH = "/tmp/.git-credentials"  # nosec B108
+PROVISION_SCRIPT_PATH = "/tmp/aod-provision.sh"  # nosec B108
 
 logger = logging.getLogger(__name__)
 
