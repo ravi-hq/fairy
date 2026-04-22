@@ -59,8 +59,8 @@ STAGE_LABELS = {
     "create_sprite": "creating sandbox",
     "network_policy": "applying network policy",
     "env_file": "writing env file",
-    "clone_repos": "cloning repos",
-    "user_setup": "running setup script",
+    "git_credentials": "writing git credentials",
+    "provision_setup": "installing packages, cloning repos, running setup",
     "mcp_config": "writing mcp config",
     "skills": "writing skills",
     "runtime_start": "starting agent",
@@ -68,14 +68,6 @@ STAGE_LABELS = {
 
 
 def _stage_label(stage: str) -> str:
-    if stage.startswith("packages."):
-        return f"installing {stage.split('.', 1)[1]} packages"
-    if stage == "clone_repos.setup":
-        return "  └ preparing git credentials"
-    if stage == "clone_repos.download":
-        return "  └ git clone"
-    if stage == "clone_repos.cleanup":
-        return "  └ cleaning up git credentials"
     return STAGE_LABELS.get(stage, stage)
 
 

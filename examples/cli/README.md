@@ -12,11 +12,12 @@ $ ./example-cli.py "what does /workspace/fairy do?"     # new session
 $ ./example-cli.py --session <uuid> "open a PR"          # continue that session
 # session 8f3a...
 ⠋ creating sandbox · 12s       # spinner updates as each provision stage starts
-✓ creating sandbox · 15.2s     # one line per completed stage (stderr)
-✓ writing env file · 0.3s
-✓ cloning repos · 4.2s
+✓ creating sandbox · 2.1s      # one line per completed stage (stderr)
+✓ writing env file · 0.2s
+✓ writing git credentials · 0.2s
+✓ installing packages, cloning repos, running setup · 6.8s
 ✓ writing mcp config · 0.2s
-⠋ starting agent · 21s         # runtime_start — clears on first output
+⠋ starting agent · 10s         # runtime_start — clears on first output
 ⚙️  Session init · model=claude-sonnet-4-6, tools=27, mcp=[context7]
 
 💭 Let me explore /workspace/fairy to understand what it does.
