@@ -1,0 +1,198 @@
+name: Judge
+
+on:
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: judge-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  security:
+    name: Security judge
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      AOD_API_URL: ${{ vars.AOD_API_URL || 'https://aod.ravi.id' }}
+      AOD_API_TOKEN: ${{ secrets.AOD_API_TOKEN }}
+      AGENT_ID: ${{ vars.JUDGE_AGENT_ID }}
+      ENVIRONMENT_ID: ${{ vars.JUDGE_ENVIRONMENT_ID }}
+      GH_TOKEN: ${{ github.token }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build judge prompt
+        run: |
+          set -euo pipefail
+          pr=$(gh pr view "$PR_NUMBER" --json title,body,author,baseRefOid,headRefOid)
+          title=$(jq -r '.title'         <<<"$pr")
+          body=$( jq -r '.body // ""'    <<<"$pr")
+          author=$(jq -r '.author.login' <<<"$pr")
+          base=$( jq -r '.baseRefOid'    <<<"$pr")
+          head=$( jq -r '.headRefOid'    <<<"$pr")
+
+          gh pr diff "$PR_NUMBER"             > diff.txt
+          gh pr diff "$PR_NUMBER" --name-only > files.txt
+          diff_lines=$(wc -l < diff.txt)
+          max_lines=4000
+
+          {
+            echo "## Pull request"
+            echo
+            echo "- Title: $title"
+            echo "- Author: $author"
+            echo "- Base: $base"
+            echo "- Head: $head"
+            echo
+            echo "## Description"
+            echo
+            printf '%s\n' "$body"
+            echo
+            echo "## Changed files"
+            echo
+            cat files.txt
+            echo
+            echo "## Diff"
+            echo
+            echo '```diff'
+            head -n "$max_lines" diff.txt
+            echo '```'
+            if [ "$diff_lines" -gt "$max_lines" ]; then
+              echo
+              echo "_(diff truncated: showing first $max_lines of $diff_lines lines)_"
+            fi
+            echo
+            cat <<'PROMPT'
+          You are a security reviewer evaluating whether a code diff introduces security vulnerabilities.
+
+          You have everything you need to make this judgement. Do not attempt to read files, search code, or use any tools — evaluate based solely on the diff, file list, and task description provided above.
+
+          ## Evaluation criteria
+
+          Score this diff PASS or FAIL. FAIL if any of the following vulnerabilities are introduced:
+
+          1. **Injection (SQL, NoSQL, command, LDAP).** User-supplied input concatenated directly into queries or shell commands without parameterization or sanitization.
+
+          2. **Cross-Site Scripting (XSS).** User input rendered in HTML without escaping. In React/Next.js, watch for dangerouslySetInnerHTML with unsanitized content.
+
+          3. **Broken authentication/authorization.** Endpoints that skip auth middleware, hardcoded credentials, auth checks that can be bypassed, or JWT validation disabled.
+
+          4. **Sensitive data exposure.** Logging passwords, tokens, or PII. Returning sensitive fields in API responses that shouldn't be exposed. Storing secrets in plaintext.
+
+          5. **Insecure direct object references.** Accessing resources by ID without verifying the requesting user owns or has access to that resource.
+
+          6. **Security misconfiguration.** CORS set to allow all origins in production code, debug mode enabled, verbose error messages that leak internals.
+
+          7. **Path traversal.** File operations using user-supplied paths without sanitization (e.g., joining user input directly into file paths).
+
+          8. **Prototype pollution.** Merging user-supplied objects into internal objects without filtering (Object.assign, spread operator on untrusted input in Node.js).
+
+          It is acceptable to PASS if:
+          - The code does not handle user input or external data
+          - The code operates in a trusted internal context (e.g., migration scripts, build tools)
+          - Existing security middleware/framework handles the concern (e.g., an ORM that parameterizes queries)
+
+          Respond with exactly one line: PASS or FAIL, followed by a brief explanation.
+          PROMPT
+          } > prompt.txt
+
+      - name: Start judge session
+        id: session
+        run: |
+          set -euo pipefail
+          if [ -z "${AOD_API_TOKEN:-}" ] || [ -z "${AGENT_ID:-}" ] || [ -z "${ENVIRONMENT_ID:-}" ]; then
+            echo "Missing AOD_API_TOKEN / JUDGE_AGENT_ID / JUDGE_ENVIRONMENT_ID." >&2
+            echo "(Forked-PR runs do not receive secrets; this is expected for forks.)" >&2
+            exit 1
+          fi
+
+          jq -n \
+            --rawfile prompt prompt.txt \
+            --arg agent_id "$AGENT_ID" \
+            --arg environment_id "$ENVIRONMENT_ID" \
+            '{agent_id: $agent_id, environment_id: $environment_id, prompt: $prompt, timeout: 900}' \
+            > body.json
+
+          resp=$(curl -sS -w '\n%{http_code}' -X POST \
+            -H "Authorization: Bearer $AOD_API_TOKEN" \
+            -H "Content-Type: application/json" \
+            --data @body.json \
+            "$AOD_API_URL/sessions")
+          code=$(tail -n1 <<<"$resp")
+          payload=$(sed '$d' <<<"$resp")
+          if [ "$code" != "202" ]; then
+            echo "POST /sessions failed ($code):" >&2
+            echo "$payload" >&2
+            exit 1
+          fi
+          sid=$(jq -r '.id' <<<"$payload")
+          echo "session_id=$sid" >> "$GITHUB_OUTPUT"
+          echo "Started session: $sid"
+
+      - name: Wait for verdict
+        id: wait
+        run: |
+          set -euo pipefail
+          sid='${{ steps.session.outputs.session_id }}'
+
+          status=""
+          for _ in $(seq 1 240); do
+            status=$(curl -sS -H "Authorization: Bearer $AOD_API_TOKEN" \
+              "$AOD_API_URL/sessions/$sid" | jq -r '.status')
+            echo "status=$status"
+            case "$status" in
+              completed|failed|terminated) break ;;
+            esac
+            sleep 5
+          done
+
+          if [ "$status" != "completed" ]; then
+            echo "Session ended with status=$status — cannot extract a verdict." >&2
+            exit 1
+          fi
+
+          curl -sN --max-time 120 \
+            -H "Authorization: Bearer $AOD_API_TOKEN" \
+            "$AOD_API_URL/sessions/$sid/stream?since=0" \
+            | awk 'sub(/^data: /, "") { print }' \
+            | jq -rR 'fromjson? | select(.type=="output" and .stream=="stdout") | .data' \
+            | sed -E 's/\x1B\[[0-9;]*[a-zA-Z]//g' \
+            > stdout.txt
+
+          line=$(grep -E '^(PASS|FAIL)\b' stdout.txt | tail -n1 || true)
+          if [ -z "$line" ]; then
+            echo "No PASS/FAIL line found in judge output. Last 200 lines:" >&2
+            tail -n 200 stdout.txt >&2
+            exit 1
+          fi
+
+          verdict=$(awk '{print $1}' <<<"$line")
+          {
+            echo "verdict=$verdict"
+            echo "line<<EOF"
+            printf '%s\n' "$line"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Comment and enforce verdict
+        env:
+          VERDICT: ${{ steps.wait.outputs.verdict }}
+          LINE: ${{ steps.wait.outputs.line }}
+          SESSION_ID: ${{ steps.session.outputs.session_id }}
+        run: |
+          set -euo pipefail
+          gh pr comment "$PR_NUMBER" --body "Security judge: **$VERDICT**
+
+          $LINE
+
+          _Session: \`$SESSION_ID\`_"
+
+          if [ "$VERDICT" != "PASS" ]; then
+            exit 1
+          fi
