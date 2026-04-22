@@ -31,6 +31,7 @@ import logging
 import queue
 import threading
 import time
+from typing import Literal
 
 import posthog
 from django.contrib.auth import get_user_model
@@ -103,7 +104,7 @@ class TaggingQueueWriter(io.RawIOBase):
 _ENV_SOURCE_SHIM = 'set -a; source /tmp/aod-env; set +a; exec "$@"'
 
 
-def build_turn_argv(runtime: Runtime, spec, mode: str) -> list[str]:
+def build_turn_argv(runtime: Runtime, spec, mode: Literal["run", "continue"]) -> list[str]:
     """Return the full argv for the per-turn `sprite.command`.
 
     The first three elements are a thin `bash -lc` shim that sources
