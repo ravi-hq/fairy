@@ -18,6 +18,7 @@ import os
 import sys
 
 from aod_client import AodClient, AodError
+from claude_format import ClaudeFormatter
 
 # -------- configure me ------------------------------------------------------
 
@@ -37,7 +38,7 @@ AGENT = {
 
 ENVIRONMENT = {
     "name": "example-cli",
-    "packages": {"apt": ["jq", "ripgrep"]},
+    "packages": {},
     "networking": {"type": "unrestricted"},
 }
 
@@ -57,14 +58,26 @@ def _env(name: str, default: str | None = None) -> str:
     return val
 
 
+def _emit(formatted: str) -> None:
+    print(formatted, flush=True)
+    print(flush=True)
+
+
 def _handle_stream(client: AodClient, session_id: str) -> int:
+    formatter = ClaudeFormatter()
     for event in client.stream_session(session_id):
         kind = event.get("type")
         if kind == "output":
-            out = sys.stdout if event.get("stream") == "stdout" else sys.stderr
-            out.write(event.get("data", ""))
-            out.flush()
+            data = event.get("data", "")
+            if event.get("stream") == "stderr":
+                sys.stderr.write(data)
+                sys.stderr.flush()
+                continue
+            for line in formatter.feed(data):
+                _emit(line)
         elif kind == "exit":
+            for line in formatter.flush():
+                _emit(line)
             return int(event.get("code") or 0)
         elif kind in ("error", "terminated", "stale"):
             print(f"\n[{kind}] {event.get('message', '')}", file=sys.stderr)

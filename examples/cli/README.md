@@ -8,9 +8,21 @@ runs inside a Sprite sandbox against a pinned agent, tool set, and repo list.
 ```
 $ export AOD_API_URL=https://aod.example.com
 $ export AOD_API_TOKEN=aod_xxxxxxxx
-$ ./example-cli.py "work on the latest open issue in ravi-hq/fairy"
+$ ./example-cli.py "what does /workspace/fairy do?"
 # session 8f3a...
-Let me look at the issue list...
+⚙️  Session init · model=claude-sonnet-4-6, tools=27, mcp=[context7]
+
+💭 Let me explore /workspace/fairy to understand what it does.
+
+🤖 Agent · Explore /workspace/fairy codebase
+
+  🔧 Bash · find /workspace/fairy -type f -name "*.md" | head -20
+
+  📖 Read · /workspace/fairy/README.md
+
+✉️  /workspace/fairy is a Django REST API for running AI coding agents...
+
+✨ Done · 12.3s, 15 turns, $0.0234
 ```
 
 ## Files
@@ -19,6 +31,7 @@ Let me look at the issue list...
 |---|---|
 | [`example-cli.py`](./example-cli.py) | Config + `main()`. The file you fork per team. |
 | [`aod_client.py`](./aod_client.py) | `AodClient` — stdlib HTTP + SSE wrapper over the AoD API. Reusable across examples. |
+| [`claude_format.py`](./claude_format.py) | Pretty-prints Claude `stream-json` events (tool uses, thinking, final text, result) as one-liners with emoji prefixes. Claude-runtime-specific. |
 
 ## Configure
 
