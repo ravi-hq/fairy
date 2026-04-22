@@ -15,7 +15,7 @@ It manages three resources: **agents**, **environments**, and **sessions**. See
   - `models/` — `Agent`, `Environment`, `Session`, version history
   - `views/` — All HTTP endpoints (per-resource routers)
   - `urls.py` — Route table (single source of truth for the API surface)
-  - `runtimes/` — per-runtime `Runtime` classes (`claude.py`, `codex.py`, `gemini.py`) and the `RUNTIMES` registry
+  - `runtimes/` — per-runtime `Runtime` classes (`claude.py`, `codex.py`, `gemini.py`, `opencode.py`) and the `RUNTIMES` registry
   - `models_catalog.py` — `MODELS` dict keyed by canonical `provider/model_id` strings
   - `session_service/` — Sprites orchestration
     - `provisioning.py` — `provision_session`, per-stage helpers
