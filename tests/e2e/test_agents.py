@@ -16,7 +16,7 @@ class TestAgentCRUD:
     def test_create_agent_full(self, api, create_agent):
         agent = create_agent(
             name=_unique("e2e-agent"),
-            model="claude-sonnet-4-6",
+            model="anthropic/claude-sonnet-4-6",
             runtime="claude",
             system="You are a helpful assistant.",
             description="E2E test agent",
@@ -37,7 +37,7 @@ class TestAgentCRUD:
         )
         assert agent["type"] == "agent"
         assert agent["name"].startswith("e2e-agent-")
-        assert agent["model"] == "claude-sonnet-4-6"
+        assert agent["model"] == "anthropic/claude-sonnet-4-6"
         assert agent["runtime"] == "claude"
         assert agent["system"] == "You are a helpful assistant."
         assert agent["description"] == "E2E test agent"
@@ -49,7 +49,7 @@ class TestAgentCRUD:
     def test_create_agent_minimal(self, api, create_agent):
         agent = create_agent(
             name=_unique("e2e-min"),
-            model="claude-sonnet-4-6",
+            model="anthropic/claude-sonnet-4-6",
             runtime="claude",
         )
         assert agent["system"] is None or agent["system"] == ""
@@ -69,7 +69,7 @@ class TestAgentCRUD:
     def test_create_agent_invalid_runtime_rejected(self, api):
         resp = api.create_agent(
             name=_unique("e2e-bad"),
-            model="claude-sonnet-4-6",
+            model="anthropic/claude-sonnet-4-6",
             runtime="invalid",
         )
         assert resp.status_code == 400
@@ -81,7 +81,7 @@ class TestAgentCRUD:
     def test_get_agent(self, api, create_agent):
         agent = create_agent(
             name=_unique("e2e-get"),
-            model="claude-sonnet-4-6",
+            model="anthropic/claude-sonnet-4-6",
             runtime="claude",
         )
         resp = api.get_agent(agent["id"])
@@ -95,7 +95,7 @@ class TestAgentCRUD:
     def test_list_agents(self, api, create_agent):
         agent = create_agent(
             name=_unique("e2e-list"),
-            model="claude-sonnet-4-6",
+            model="anthropic/claude-sonnet-4-6",
             runtime="claude",
         )
         resp = api.list_agents()
@@ -113,7 +113,7 @@ class TestAgentVersioning:
     def test_update_increments_version(self, api, create_agent):
         agent = create_agent(
             name=_unique("e2e-ver"),
-            model="claude-sonnet-4-6",
+            model="anthropic/claude-sonnet-4-6",
             runtime="claude",
             system="v1 prompt",
         )
@@ -131,7 +131,7 @@ class TestAgentVersioning:
     def test_update_version_mismatch_rejected(self, api, create_agent):
         agent = create_agent(
             name=_unique("e2e-vmis"),
-            model="claude-sonnet-4-6",
+            model="anthropic/claude-sonnet-4-6",
             runtime="claude",
         )
         resp = api.update_agent(agent["id"], version=99, name="new")
@@ -140,7 +140,7 @@ class TestAgentVersioning:
     def test_no_change_update_keeps_version(self, api, create_agent):
         agent = create_agent(
             name=_unique("e2e-noop"),
-            model="claude-sonnet-4-6",
+            model="anthropic/claude-sonnet-4-6",
             runtime="claude",
         )
         resp = api.update_agent(
@@ -153,7 +153,7 @@ class TestAgentVersioning:
     def test_list_versions(self, api, create_agent):
         agent = create_agent(
             name=_unique("e2e-versions"),
-            model="claude-sonnet-4-6",
+            model="anthropic/claude-sonnet-4-6",
             runtime="claude",
         )
         api.update_agent(agent["id"], version=1, system="updated")
@@ -168,7 +168,7 @@ class TestAgentVersioning:
     def test_metadata_merge_semantics(self, api, create_agent):
         agent = create_agent(
             name=_unique("e2e-meta"),
-            model="claude-sonnet-4-6",
+            model="anthropic/claude-sonnet-4-6",
             runtime="claude",
             metadata={"key1": "val1", "key2": "val2"},
         )
@@ -191,7 +191,7 @@ class TestAgentArchive:
     def test_archive(self, api, create_agent):
         agent = create_agent(
             name=_unique("e2e-arch"),
-            model="claude-sonnet-4-6",
+            model="anthropic/claude-sonnet-4-6",
             runtime="claude",
         )
         resp = api.archive_agent(agent["id"])
@@ -201,7 +201,7 @@ class TestAgentArchive:
     def test_archive_idempotent_409(self, api, create_agent):
         agent = create_agent(
             name=_unique("e2e-arch2"),
-            model="claude-sonnet-4-6",
+            model="anthropic/claude-sonnet-4-6",
             runtime="claude",
         )
         api.archive_agent(agent["id"])
@@ -211,7 +211,7 @@ class TestAgentArchive:
     def test_update_archived_rejected(self, api, create_agent):
         agent = create_agent(
             name=_unique("e2e-archup"),
-            model="claude-sonnet-4-6",
+            model="anthropic/claude-sonnet-4-6",
             runtime="claude",
         )
         api.archive_agent(agent["id"])
@@ -221,7 +221,7 @@ class TestAgentArchive:
     def test_list_excludes_archived(self, api, create_agent):
         agent = create_agent(
             name=_unique("e2e-archhide"),
-            model="claude-sonnet-4-6",
+            model="anthropic/claude-sonnet-4-6",
             runtime="claude",
         )
         api.archive_agent(agent["id"])
@@ -252,7 +252,7 @@ class TestAgentMcp:
     def test_create_with_mcp(self, api, create_agent):
         agent = create_agent(
             name=_unique("e2e-mcp"),
-            model="claude-sonnet-4-6",
+            model="anthropic/claude-sonnet-4-6",
             runtime="claude",
             mcp_servers=[
                 {
@@ -269,7 +269,7 @@ class TestAgentMcp:
     def test_mcp_server_missing_name_rejected(self, api):
         resp = api.create_agent(
             name=_unique("e2e-badmcp"),
-            model="claude-sonnet-4-6",
+            model="anthropic/claude-sonnet-4-6",
             runtime="claude",
             mcp_servers=[{"type": "url", "url": "https://example.com/mcp"}],
         )
@@ -278,7 +278,7 @@ class TestAgentMcp:
     def test_mcp_server_duplicate_names_rejected(self, api):
         resp = api.create_agent(
             name=_unique("e2e-dupmcp"),
-            model="claude-sonnet-4-6",
+            model="anthropic/claude-sonnet-4-6",
             runtime="claude",
             mcp_servers=[
                 {"name": "s", "url": "https://a.com/mcp"},
@@ -291,7 +291,7 @@ class TestAgentMcp:
         servers = [{"name": f"s{i}", "url": f"https://s{i}.com/mcp"} for i in range(21)]
         resp = api.create_agent(
             name=_unique("e2e-maxmcp"),
-            model="claude-sonnet-4-6",
+            model="anthropic/claude-sonnet-4-6",
             runtime="claude",
             mcp_servers=servers,
         )
@@ -300,7 +300,7 @@ class TestAgentMcp:
     def test_update_mcp_versioned(self, api, create_agent):
         agent = create_agent(
             name=_unique("e2e-mcpver"),
-            model="claude-sonnet-4-6",
+            model="anthropic/claude-sonnet-4-6",
             runtime="claude",
         )
         resp = api.update_agent(

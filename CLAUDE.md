@@ -15,7 +15,8 @@ It manages three resources: **agents**, **environments**, and **sessions**. See
   - `models/` — `Agent`, `Environment`, `Session`, version history
   - `views/` — All HTTP endpoints (per-resource routers)
   - `urls.py` — Route table (single source of truth for the API surface)
-  - `runtimes.py` — `AgentModel` enum and `MODEL_RUNTIME_MAP`
+  - `runtimes/` — per-runtime `Runtime` classes (`claude.py`, `codex.py`, `gemini.py`) and the `RUNTIMES` registry
+  - `models_catalog.py` — `MODELS` dict keyed by canonical `provider/model_id` strings
   - `session_service/` — Sprites orchestration
     - `provisioning.py` — `provision_session`, per-stage helpers
     - `tasks.py` — `execute_turn` Procrastinate task (runs in worker process)
@@ -55,8 +56,10 @@ directly (without `make`), `tests/e2e/conftest.py` defaults to
 
 ## Conventions
 
-- **Runtimes**: new models must be added to both `AgentModel` *and*
-  `MODEL_RUNTIME_MAP` in `src/agent_on_demand/runtimes.py`.
+- **Runtimes**: new models go in `src/agent_on_demand/models_catalog.py`; ensure
+  the `provider` is in the target `Runtime`'s `providers` set. New runtimes are
+  one file per class under `src/agent_on_demand/runtimes/` and must be added to
+  the `RUNTIMES` dict in `runtimes/__init__.py`.
 - **Versioning**: `agents` and `environments` use optimistic concurrency —
   updates require the current `version` and return a new row in
   `{agent,environment}_versions`. Tests to reference: `test_agents.py::TestAgentVersioning`,

@@ -118,11 +118,7 @@ def _everything_server_spec() -> dict:
     }
 
 
-# claude-oauth is intentionally excluded — Anthropic OAuth accounts can have
-# MCP disabled at the org policy tier (observed as "org_level_disabled" in the
-# stream), so MCP invocation is not portably testable on that runtime. Other
-# e2e suites still exercise claude-oauth for non-MCP paths.
-_MCP_RUNTIMES = [r for r in RUNTIME_MODELS.keys() if r != "claude-oauth"]
+_MCP_RUNTIMES = list(RUNTIME_MODELS.keys())
 
 
 @pytest.fixture(scope="class", params=_MCP_RUNTIMES)

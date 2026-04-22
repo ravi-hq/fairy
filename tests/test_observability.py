@@ -19,7 +19,7 @@ from django.contrib.auth.models import User
 from django.test import Client
 
 from agent_on_demand import observability
-from agent_on_demand.models import APIKey, UserRuntimeKey, UserSpritesKey
+from agent_on_demand.models import APIKey, UserCredential, UserSpritesKey
 
 
 SENSITIVE_PROMPT = "PLEASE_DO_NOT_LEAK_THIS_PROMPT_TEXT_2026"
@@ -45,9 +45,9 @@ def runtime_keys(user):
     usk = UserSpritesKey(user=user)
     usk.set_api_key("fake-sprites")
     usk.save()
-    urk = UserRuntimeKey(user=user, runtime="claude")
-    urk.set_api_key("fake-anthropic")
-    urk.save()
+    cred = UserCredential(user=user, kind="provider:anthropic")
+    cred.set_value("fake-anthropic")
+    cred.save()
 
 
 @pytest.fixture
@@ -87,7 +87,7 @@ def test_agent_created_event_fires_with_safe_props(client: Client, auth_headers,
         data=json.dumps(
             {
                 "name": "obs-agent",
-                "model": "claude-sonnet-4-6",
+                "model": "anthropic/claude-sonnet-4-6",
                 "runtime": "claude",
                 "system": "SYSTEM_PROMPT_BODY_SHOULD_NOT_LEAK",
                 "skills": [
@@ -107,7 +107,7 @@ def test_agent_created_event_fires_with_safe_props(client: Client, auth_headers,
     assert len(matched) == 1
     props = matched[0]["properties"]
     assert props["runtime"] == "claude"
-    assert props["model"] == "claude-sonnet-4-6"
+    assert props["model"] == "anthropic/claude-sonnet-4-6"
     assert props["skill_count"] == 1
     assert props["system_length"] == len("SYSTEM_PROMPT_BODY_SHOULD_NOT_LEAK")
 
@@ -174,7 +174,7 @@ def test_session_created_event_excludes_prompt_and_repo_url(
         data=json.dumps(
             {
                 "name": "a",
-                "model": "claude-sonnet-4-6",
+                "model": "anthropic/claude-sonnet-4-6",
                 "runtime": "claude",
                 "environment_id": env_id,
             }

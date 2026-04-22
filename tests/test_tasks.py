@@ -21,7 +21,7 @@ from agent_on_demand.models import (
     AgentSessionLog,
     APIKey,
     SessionTurn,
-    UserRuntimeKey,
+    UserCredential,
     UserSpritesKey,
 )
 from agent_on_demand.session_service.tasks import (
@@ -140,7 +140,7 @@ def test_execute_turn_marks_failed_on_exec_error(user, mocker):
 
 
 @pytest.mark.django_db
-def test_execute_turn_builds_expected_bash_command(user, mocker):
+def test_execute_turn_builds_expected_argv(user, mocker):
     session, turn = _make_session_and_turn(user)
     mock_sprite, _ = _patch_sprite(mocker, "success")
 
@@ -153,11 +153,17 @@ def test_execute_turn_builds_expected_bash_command(user, mocker):
     )
 
     argv = mock_sprite.command.call_args.args
+    # Thin shim: bash -lc sourcing /tmp/aod-env, then exec "$@" ... argv.
     assert argv[0] == "bash"
-    assert argv[1] == "-c"
-    assert "/run-agent.sh" not in argv[2]
+    assert argv[1] == "-lc"
     assert "source /tmp/aod-env" in argv[2]
-    assert "PROMPT=$(cat)" in argv[2]
+    assert 'exec "$@"' in argv[2]
+    assert argv[3] == "--"
+    # First runtime-CLI token must be the claude binary for this session.
+    assert argv[4] == "claude"
+    # No shell template substitutions made it into argv.
+    assert "/run-agent.sh" not in " ".join(argv)
+    assert "PROMPT=$(cat)" not in " ".join(argv)
 
 
 @pytest.mark.django_db
@@ -267,15 +273,15 @@ def provision_user(db):
     usk = UserSpritesKey(user=u)
     usk.set_api_key("fake-sprites-token")
     usk.save()
-    urk = UserRuntimeKey(user=u, runtime="claude")
-    urk.set_api_key("fake-anthropic-key")
-    urk.save()
+    cred = UserCredential(user=u, kind="provider:anthropic")
+    cred.set_value("fake-anthropic-key")
+    cred.save()
     return u
 
 
 def _make_pending_session(user):
     agent = Agent.objects.create(
-        user=user, name="a", model="claude-sonnet-4-6", runtime="claude", version=1
+        user=user, name="a", model="anthropic/claude-sonnet-4-6", runtime="claude", version=1
     )
     session = AgentSession.objects.create(
         user=user,
@@ -366,11 +372,13 @@ def test_provision_task_skips_if_session_terminated(provision_user, fake_sprites
 
 
 @pytest.mark.django_db
-def test_provision_task_marks_failed_when_runtime_key_missing(provision_user, fake_sprites, mocker):
-    """If the user's runtime key was deleted between create and provision,
-    the task surfaces that as a failed session rather than raising."""
+def test_provision_task_runs_with_no_runtime_credential(provision_user, fake_sprites, mocker):
+    """Credentials are now dumped wholesale into /tmp/aod-env; provisioning
+    no longer short-circuits on missing creds (the session-create HTTP gate
+    is what prevents this from reaching the worker). This just confirms the
+    worker path succeeds with zero credentials."""
     session, turn = _make_pending_session(provision_user)
-    UserRuntimeKey.objects.filter(user=provision_user, runtime="claude").delete()
+    UserCredential.objects.filter(user=provision_user).delete()
     defer_spy = mocker.patch("agent_on_demand.session_service.tasks.execute_turn.defer")
 
     provision_session_task(
@@ -381,10 +389,8 @@ def test_provision_task_marks_failed_when_runtime_key_missing(provision_user, fa
         timeout=10.0,
     )
 
-    session.refresh_from_db()
-    assert session.status == "failed"
-    assert fake_sprites.created == []
-    assert defer_spy.call_count == 0
+    # Provisioning proceeded; turn execution is the worker's next step.
+    assert defer_spy.call_count == 1
 
 
 # --------------------------------------------------------------------------

@@ -5,7 +5,6 @@ from django.conf import settings
 from django.db import models
 
 from agent_on_demand.crypto import decrypt, encrypt
-from agent_on_demand.runtimes import RUNTIMES
 
 
 class APIKey(models.Model):
@@ -45,40 +44,6 @@ class APIKey(models.Model):
         )
         instance.save()
         return instance, raw_key
-
-
-class UserRuntimeKey(models.Model):
-    RUNTIME_CHOICES = [(name, name) for name in RUNTIMES]
-
-    user = models.ForeignKey(
-        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="runtime_keys"
-    )
-    runtime = models.CharField(max_length=32, choices=RUNTIME_CHOICES)
-    encrypted_key = models.BinaryField()
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        db_table = "user_runtime_keys"
-        constraints = [
-            models.UniqueConstraint(fields=["user", "runtime"], name="unique_user_runtime"),
-        ]
-
-    def __str__(self):
-        return f"{self.user} — {self.runtime}"
-
-    def set_api_key(self, raw_key: str):
-        self.encrypted_key = encrypt(raw_key)
-
-    def get_api_key(self) -> str:
-        return decrypt(bytes(self.encrypted_key))
-
-    @classmethod
-    def get_key_for(cls, user, runtime: str) -> str | None:
-        try:
-            return cls.objects.get(user=user, runtime=runtime).get_api_key()
-        except cls.DoesNotExist:
-            return None
 
 
 CREDENTIAL_ENV_VAR: dict[str, str] = {

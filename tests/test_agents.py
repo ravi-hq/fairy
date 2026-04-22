@@ -5,7 +5,7 @@ import pytest
 from django.contrib.auth.models import User
 from django.test import Client
 
-from agent_on_demand.models import Agent, AgentVersion, APIKey, UserRuntimeKey, UserSpritesKey
+from agent_on_demand.models import Agent, AgentVersion, APIKey, UserCredential, UserSpritesKey
 
 
 @pytest.fixture
@@ -35,10 +35,10 @@ def sprites_key(user):
 
 @pytest.fixture
 def runtime_key(user, sprites_key):
-    urk = UserRuntimeKey(user=user, runtime="claude")
-    urk.set_api_key("fake-anthropic-key")
-    urk.save()
-    return urk
+    cred = UserCredential(user=user, kind="provider:anthropic")
+    cred.set_value("fake-anthropic-key")
+    cred.save()
+    return cred
 
 
 SAMPLE_SKILL = {
@@ -55,7 +55,7 @@ def agent(user):
         name="Test Agent",
         description="A test agent",
         system="You are a helpful assistant.",
-        model="claude-sonnet-4-6",
+        model="anthropic/claude-sonnet-4-6",
         runtime="claude",
         skills=[SAMPLE_SKILL],
         metadata={"team": "platform"},
@@ -85,7 +85,7 @@ def test_create_agent(client: Client, auth_headers):
         data=json.dumps(
             {
                 "name": "My Agent",
-                "model": "claude-sonnet-4-6",
+                "model": "anthropic/claude-sonnet-4-6",
                 "runtime": "claude",
                 "system": "You are helpful.",
                 "description": "Does things",
@@ -99,7 +99,7 @@ def test_create_agent(client: Client, auth_headers):
     assert resp.status_code == 201
     data = resp.json()
     assert data["name"] == "My Agent"
-    assert data["model"] == "claude-sonnet-4-6"
+    assert data["model"] == "anthropic/claude-sonnet-4-6"
     assert data["runtime"] == "claude"
     assert data["system"] == "You are helpful."
     assert data["description"] == "Does things"
@@ -117,7 +117,7 @@ def test_create_agent(client: Client, auth_headers):
 def test_create_agent_minimal(client: Client, auth_headers):
     resp = client.post(
         "/agents",
-        data=json.dumps({"name": "Minimal", "model": "claude-sonnet-4-6", "runtime": "claude"}),
+        data=json.dumps({"name": "Minimal", "model": "anthropic/claude-sonnet-4-6", "runtime": "claude"}),
         content_type="application/json",
         **auth_headers,
     )
@@ -144,12 +144,31 @@ def test_create_agent_invalid_model(client: Client, auth_headers):
 def test_create_agent_invalid_runtime(client: Client, auth_headers):
     resp = client.post(
         "/agents",
-        data=json.dumps({"name": "Bad", "model": "claude-sonnet-4-6", "runtime": "nope"}),
+        data=json.dumps({"name": "Bad", "model": "anthropic/claude-sonnet-4-6", "runtime": "nope"}),
         content_type="application/json",
         **auth_headers,
     )
     assert resp.status_code == 400
     assert "Unknown runtime" in resp.json()["detail"]
+
+
+@pytest.mark.django_db
+def test_create_agent_runtime_model_mismatch(client: Client, auth_headers):
+    """Runtime's providers must include the model's provider."""
+    resp = client.post(
+        "/agents",
+        data=json.dumps(
+            {
+                "name": "Bad",
+                "model": "openai/gpt-4.1",
+                "runtime": "claude",
+            }
+        ),
+        content_type="application/json",
+        **auth_headers,
+    )
+    assert resp.status_code == 422
+    assert "cannot serve model" in resp.json()["detail"]
 
 
 @pytest.mark.django_db

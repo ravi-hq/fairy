@@ -4,7 +4,6 @@ from django.conf import settings
 from django.db import models
 
 from agent_on_demand.models.environments import Environment
-from agent_on_demand.runtimes import RUNTIMES, AgentModel
 
 
 class Agent(models.Model):
@@ -15,8 +14,8 @@ class Agent(models.Model):
     name = models.CharField(max_length=200)
     description = models.TextField(blank=True, default="")
     system = models.TextField(blank=True, default="")
-    model = models.CharField(max_length=100, choices=AgentModel.choices())
-    runtime = models.CharField(max_length=32, choices=[(name, name) for name in RUNTIMES])
+    model = models.CharField(max_length=100)
+    runtime = models.CharField(max_length=32)
     environment = models.ForeignKey(
         Environment, on_delete=models.SET_NULL, null=True, blank=True, related_name="agents"
     )

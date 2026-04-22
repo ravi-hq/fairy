@@ -11,8 +11,8 @@ from agent_on_demand.models import (
     AgentSession,
     AgentSessionLog,
     SessionTurn,
+    UserCredential,
     UserQuota,
-    UserRuntimeKey,
     UserSpritesKey,
 )
 
@@ -65,24 +65,24 @@ def sprites_key(user):
 
 @pytest.fixture
 def runtime_key(user, sprites_key):
-    """Create a UserRuntimeKey for the claude runtime.
+    """Create a UserCredential for the anthropic provider (Claude runtime).
 
     Depends on `sprites_key` so tests that exercise session create/prompt also
     have the per-user Sprites token configured.
     """
-    urk = UserRuntimeKey(user=user, runtime="claude")
-    urk.set_api_key("fake-anthropic-key")
-    urk.save()
-    return urk
+    cred = UserCredential(user=user, kind="provider:anthropic")
+    cred.set_value("fake-anthropic-key")
+    cred.save()
+    return cred
 
 
 @pytest.fixture
 def runtime_key_without_sprites(user):
-    """Runtime key configured, but no UserSpritesKey — for negative tests."""
-    urk = UserRuntimeKey(user=user, runtime="claude")
-    urk.set_api_key("fake-anthropic-key")
-    urk.save()
-    return urk
+    """Runtime credential configured, but no UserSpritesKey — for negative tests."""
+    cred = UserCredential(user=user, kind="provider:anthropic")
+    cred.set_value("fake-anthropic-key")
+    cred.save()
+    return cred
 
 
 @pytest.fixture
@@ -90,7 +90,7 @@ def agent(user):
     return Agent.objects.create(
         user=user,
         name="Test Agent",
-        model="claude-sonnet-4-6",
+        model="anthropic/claude-sonnet-4-6",
         runtime="claude",
         version=1,
     )
@@ -179,7 +179,7 @@ def test_run_agent_not_found(client: Client, auth_headers):
 
 @pytest.mark.django_db
 def test_run_no_runtime_key(client: Client, auth_headers, agent):
-    """Authenticated but no UserRuntimeKey configured for the agent's runtime."""
+    """Authenticated but no UserCredential configured for the agent's runtime."""
     resp = client.post(
         "/sessions",
         data=json.dumps({"agent_id": str(agent.id), "prompt": "hello"}),
@@ -192,7 +192,7 @@ def test_run_no_runtime_key(client: Client, auth_headers, agent):
 
 @pytest.mark.django_db
 def test_run_no_sprites_key(client: Client, auth_headers, runtime_key_without_sprites, agent):
-    """Runtime key is set but no UserSpritesKey — session create must 400."""
+    """Runtime credential is set but no UserSpritesKey — session create must 400."""
     resp = client.post(
         "/sessions",
         data=json.dumps({"agent_id": str(agent.id), "prompt": "hello"}),

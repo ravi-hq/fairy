@@ -19,10 +19,9 @@ import requests
 
 # Cheapest model per runtime for fast, inexpensive tests
 RUNTIME_MODELS = {
-    "claude": "claude-haiku-4-5",
-    "codex": "o4-mini",
-    "gemini": "gemini-2.5-flash",
-    "claude-oauth": "claude-haiku-4-5",
+    "claude": "anthropic/claude-haiku-4-5",
+    "codex": "openai/o4-mini",
+    "gemini": "google/gemini-2.5-flash",
 }
 
 DEFAULT_TIMEOUT = int(os.environ.get("E2E_TIMEOUT", "180"))

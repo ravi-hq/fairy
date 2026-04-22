@@ -1,9 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from agent_on_demand.models import Environment
-from agent_on_demand.runtimes import RuntimeConfig
+
+if TYPE_CHECKING:
+    from django.contrib.auth.models import User
+
+    from agent_on_demand.runtimes import Runtime
 
 
 @dataclass(frozen=True)
@@ -47,8 +52,9 @@ class SessionSpec:
     """
 
     name: str
-    runtime: RuntimeConfig
-    api_key: str
+    runtime: "Runtime"
+    model: str
+    user: "User"
     runtime_session_id: str | None
     environment: Environment | None
     repos: list[RepoSpec]
