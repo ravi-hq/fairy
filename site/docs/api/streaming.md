@@ -20,6 +20,7 @@ Each event is a line of the form `data: <json>\n\n`, preceded by an `id: <int>\n
 | Type | Payload | Notes |
 |------|---------|-------|
 | `start` | `{"type":"start","runtime":"claude","session_id":"<uuid>"}` | Always the first event, before any replayed output. No `id` field. |
+| `stage` | `{"type":"stage","id":3,"stage":"create_sprite","state":"started"\|"done"\|"failed","duration_ms":15200,"message":"..."}` | Emitted during provisioning and just before the runtime starts. `duration_ms` is present on `done` and `failed`; `message` is present on `failed` only. Non-terminal — clients should keep reading. See [Provisioning stages](#provisioning-stages) below. |
 | `turn_start` | `{"type":"turn_start","id":42,"turn":1}` | Emitted before the first `output` event of each turn. Turn numbers start at 1. |
 | `output` | `{"type":"output","id":42,"stream":"stdout"\|"stderr","data":"...","turn":1}` | One chunk of agent output; may contain multiple lines |
 | `exit` | `{"type":"exit","id":42,"code":0}` | Terminal. Emitted when the runtime exits (code 0 = success, non-zero = failure) |
@@ -30,6 +31,28 @@ Each event is a line of the form `data: <json>\n\n`, preceded by an `id: <int>\n
 Every event except `start` includes an `"id"` field in its JSON payload, set to the log row ID. For terminal events (`exit`, `error`, `terminated`, `stale`), `id` is set to the last seen log row.
 
 The stream closes after any terminal event.
+
+## Provisioning stages
+
+Between `POST /sessions` returning `202` and the first `output` event arriving, AoD is creating a Sprite sandbox, running setup steps, and starting the runtime. `stage` events surface that work so clients can render "currently cloning ravi-hq/fairy…" instead of a generic waiting spinner.
+
+Each stage that actually runs emits a `started` event on entry and a `done` event on clean exit (carrying `duration_ms`). Stages that are skipped (empty packages, no setup script, etc.) emit no events — absence means "not run." On failure, a `failed` event is emitted with `duration_ms` and a short `message`, followed by the session's terminal event (`error` in most cases).
+
+Possible `stage` values:
+
+| Stage | When it runs |
+|-------|-------------|
+| `create_sprite` | Always — first thing after `POST /sessions`. Typically the longest stage. |
+| `network_policy` | Only when `environment.networking.type == "limited"`. |
+| `env_file` | Always — writes the runtime API key and any `environment.env_vars`. |
+| `packages.apt`, `packages.pip`, `packages.npm`, `packages.cargo`, `packages.gem`, `packages.go` | One per non-empty entry in `environment.packages`. |
+| `clone_repos` | When the session has GitHub repo resources. |
+| `user_setup` | When `environment.setup_script` is non-empty. |
+| `mcp_config` | When the agent has MCP servers configured. |
+| `skills` | When the agent has skills configured. |
+| `runtime_start` | `started` only — emitted just before the runtime CLI launches. `output` events follow once the runtime writes to stdout/stderr. |
+
+Stage events are ordered by the same `id` sequence as `output` events; `Last-Event-ID` resume works across both.
 
 ## Heartbeats
 

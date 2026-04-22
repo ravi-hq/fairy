@@ -11,7 +11,7 @@ import pytest
 from django.contrib.auth.models import User
 from sprites import SpriteError
 
-from agent_on_demand.models import Environment, UserSpritesKey
+from agent_on_demand.models import AgentSession, AgentSessionLog, Environment, UserSpritesKey
 from agent_on_demand.runtimes import RUNTIMES
 from agent_on_demand.session_service import (
     ProvisionError,
@@ -73,7 +73,7 @@ class TestProvisionSessionFailureHandling:
         fake_sprites.raise_on_create(SpriteError("boom"))
         with pytest.raises(ProvisionError) as ei:
             provision_session(user, _spec())
-        assert ei.value.stage == "create"
+        assert ei.value.stage == "create_sprite"
         # Nothing was created, so nothing should be deleted.
         assert fake_sprites.deleted == []
 
@@ -99,6 +99,63 @@ class TestProvisionSessionFailureHandling:
             provision_session(user, _spec(environment=env))
         assert ei.value.stage == "env_file"
         assert fake_sprites.deleted == ["sprite-x"]
+
+
+class TestProvisionStageEvents:
+    """Stage rows are written to AgentSessionLog so the SSE stream can surface
+    provisioning progress. Unit tests here pass a real session id; skipped
+    stages produce no rows, and a stage failure emits a `failed` event before
+    the ProvisionError propagates."""
+
+    def _make_session(self, user):
+        return AgentSession.objects.create(
+            user=user, runtime="claude", prompt="t", status="pending"
+        )
+
+    def test_minimal_spec_emits_only_create_sprite(self, user, fake_sprites):
+        session = self._make_session(user)
+        provision_session(user, _spec(), session_id=str(session.id))
+        events = list(
+            AgentSessionLog.objects.filter(session=session, kind="stage")
+            .order_by("id")
+            .values("stage", "state")
+        )
+        # env_file always runs (writes the API key file). No packages, repos,
+        # setup, mcp, or skills in _spec(), so those stages are skipped.
+        assert events == [
+            {"stage": "create_sprite", "state": "started"},
+            {"stage": "create_sprite", "state": "done"},
+            {"stage": "env_file", "state": "started"},
+            {"stage": "env_file", "state": "done"},
+        ]
+
+    def test_done_events_carry_duration_ms(self, user, fake_sprites):
+        session = self._make_session(user)
+        provision_session(user, _spec(), session_id=str(session.id))
+        done = AgentSessionLog.objects.filter(session=session, kind="stage", state="done").first()
+        assert done.duration_ms is not None and done.duration_ms >= 0
+
+    def test_create_sprite_failure_emits_failed_stage(self, user, fake_sprites):
+        session = self._make_session(user)
+        fake_sprites.raise_on_create(SpriteError("boom"))
+        with pytest.raises(ProvisionError):
+            provision_session(user, _spec(), session_id=str(session.id))
+        events = list(
+            AgentSessionLog.objects.filter(session=session, kind="stage")
+            .order_by("id")
+            .values("stage", "state", "data")
+        )
+        assert events[0] == {"stage": "create_sprite", "state": "started", "data": ""}
+        assert events[1]["stage"] == "create_sprite"
+        assert events[1]["state"] == "failed"
+        assert "boom" in events[1]["data"]
+
+    def test_no_session_id_emits_no_rows(self, user, fake_sprites):
+        """Backwards-compat path: tests that don't pass session_id emit nothing."""
+        provision_session(user, _spec())
+        # Use the fake_sprites fixture's session handle to prove provisioning ran;
+        # the real assertion is that no logs were written anywhere.
+        assert AgentSessionLog.objects.count() == 0
 
 
 class TestProvisionSessionEnvFileShape:
