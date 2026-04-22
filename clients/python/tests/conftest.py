@@ -95,10 +95,15 @@ def make_agent() -> Callable[..., dict[str, Any]]:
     def _make(**overrides: Any) -> dict[str, Any]:
         base = {
             "id": str(uuid4()),
+            "type": "agent",
             "name": "demo",
+            "description": None,
+            "system": None,
             "model": "claude-sonnet-4-5",
             "runtime": "claude-code",
-            "system_prompt": None,
+            "environment_id": None,
+            "skills": [],
+            "mcp_servers": [],
             "metadata": {},
             "version": 1,
             "archived_at": None,
@@ -116,11 +121,11 @@ def make_environment() -> Callable[..., dict[str, Any]]:
     def _make(**overrides: Any) -> dict[str, Any]:
         base = {
             "id": str(uuid4()),
+            "type": "environment",
             "name": "demo-env",
-            "resources": [],
-            "setup_commands": [],
-            "network_policy": None,
-            "metadata": {},
+            "packages": {},
+            "setup_script": None,
+            "networking": {"type": "unrestricted"},
             "version": 1,
             "archived_at": None,
             "created_at": _now(),
@@ -139,13 +144,14 @@ def make_session() -> Callable[..., dict[str, Any]]:
             "id": str(uuid4()),
             "agent_id": str(uuid4()),
             "environment_id": None,
+            "runtime": "claude-code",
             "status": "completed",
-            "prompt": "hi",
-            "stream_url": "/sessions/123/stream",
-            "metadata": {},
+            "exit_code": 0,
             "created_at": _now(),
             "updated_at": _now(),
-            "ended_at": _now(),
+            "resources": [],
+            "turn_count": 1,
+            "current_turn": 1,
         }
         base.update(overrides)
         return base

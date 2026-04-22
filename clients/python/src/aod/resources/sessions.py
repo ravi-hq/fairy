@@ -17,20 +17,20 @@ def _create_body(
     agent_id: str | UUID,
     prompt: str,
     environment_id: str | UUID | None = None,
-    timeout: float | None = None,
-    metadata: dict[str, Any] | None = None,
+    timeout: int | None = None,
+    resources: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     body: dict[str, Any] = {"agent_id": str(agent_id), "prompt": prompt}
     if environment_id is not None:
         body["environment_id"] = str(environment_id)
     if timeout is not None:
         body["timeout"] = timeout
-    if metadata is not None:
-        body["metadata"] = metadata
+    if resources is not None:
+        body["resources"] = resources
     return body
 
 
-def _prompt_body(*, prompt: str, timeout: float | None = None) -> dict[str, Any]:
+def _prompt_body(*, prompt: str, timeout: int | None = None) -> dict[str, Any]:
     body: dict[str, Any] = {"prompt": prompt}
     if timeout is not None:
         body["timeout"] = timeout
@@ -55,15 +55,15 @@ class Sessions:
         agent_id: str | UUID,
         prompt: str,
         environment_id: str | UUID | None = None,
-        timeout: float | None = None,
-        metadata: dict[str, Any] | None = None,
+        timeout: int | None = None,
+        resources: list[dict[str, Any]] | None = None,
     ) -> SessionAck:
         body = _create_body(
             agent_id=agent_id,
             prompt=prompt,
             environment_id=environment_id,
             timeout=timeout,
-            metadata=metadata,
+            resources=resources,
         )
         return SessionAck.model_validate(check_response(self._client.post("/sessions", json=body)))
 
@@ -71,7 +71,7 @@ class Sessions:
         return Session.model_validate(check_response(self._client.get(f"/sessions/{session_id}")))
 
     def prompt(
-        self, session_id: str | UUID, *, prompt: str, timeout: float | None = None
+        self, session_id: str | UUID, *, prompt: str, timeout: int | None = None
     ) -> SessionAck:
         body = _prompt_body(prompt=prompt, timeout=timeout)
         return SessionAck.model_validate(
@@ -124,15 +124,15 @@ class AsyncSessions:
         agent_id: str | UUID,
         prompt: str,
         environment_id: str | UUID | None = None,
-        timeout: float | None = None,
-        metadata: dict[str, Any] | None = None,
+        timeout: int | None = None,
+        resources: list[dict[str, Any]] | None = None,
     ) -> SessionAck:
         body = _create_body(
             agent_id=agent_id,
             prompt=prompt,
             environment_id=environment_id,
             timeout=timeout,
-            metadata=metadata,
+            resources=resources,
         )
         return SessionAck.model_validate(
             check_response(await self._client.post("/sessions", json=body))
@@ -144,7 +144,7 @@ class AsyncSessions:
         )
 
     async def prompt(
-        self, session_id: str | UUID, *, prompt: str, timeout: float | None = None
+        self, session_id: str | UUID, *, prompt: str, timeout: int | None = None
     ) -> SessionAck:
         body = _prompt_body(prompt=prompt, timeout=timeout)
         return SessionAck.model_validate(

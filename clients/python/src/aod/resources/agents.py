@@ -14,23 +14,26 @@ def _create_body(
     name: str,
     model: str,
     runtime: str,
-    system_prompt: str | None = None,
-    metadata: dict[str, Any] | None = None,
-    tools: list[dict[str, Any]] | None = None,
-    mcp_servers: list[dict[str, Any]] | None = None,
+    system: str | None = None,
+    description: str | None = None,
+    environment_id: str | UUID | None = None,
     skills: list[dict[str, Any]] | None = None,
+    mcp_servers: list[dict[str, Any]] | None = None,
+    metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     body: dict[str, Any] = {"name": name, "model": model, "runtime": runtime}
-    if system_prompt is not None:
-        body["system_prompt"] = system_prompt
-    if metadata is not None:
-        body["metadata"] = metadata
-    if tools is not None:
-        body["tools"] = tools
-    if mcp_servers is not None:
-        body["mcp_servers"] = mcp_servers
+    if system is not None:
+        body["system"] = system
+    if description is not None:
+        body["description"] = description
+    if environment_id is not None:
+        body["environment_id"] = str(environment_id)
     if skills is not None:
         body["skills"] = skills
+    if mcp_servers is not None:
+        body["mcp_servers"] = mcp_servers
+    if metadata is not None:
+        body["metadata"] = metadata
     return body
 
 
@@ -40,25 +43,32 @@ def _update_body(
     name: str | None = None,
     model: str | None = None,
     runtime: str | None = None,
-    system_prompt: str | None = None,
-    metadata: dict[str, Any] | None = None,
-    tools: list[dict[str, Any]] | None = None,
-    mcp_servers: list[dict[str, Any]] | None = None,
+    system: str | None = None,
+    description: str | None = None,
+    environment_id: str | UUID | None = None,
     skills: list[dict[str, Any]] | None = None,
+    mcp_servers: list[dict[str, Any]] | None = None,
+    metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     body: dict[str, Any] = {"version": version}
-    for key, value in (
-        ("name", name),
-        ("model", model),
-        ("runtime", runtime),
-        ("system_prompt", system_prompt),
-        ("metadata", metadata),
-        ("tools", tools),
-        ("mcp_servers", mcp_servers),
-        ("skills", skills),
-    ):
-        if value is not None:
-            body[key] = value
+    if name is not None:
+        body["name"] = name
+    if model is not None:
+        body["model"] = model
+    if runtime is not None:
+        body["runtime"] = runtime
+    if system is not None:
+        body["system"] = system
+    if description is not None:
+        body["description"] = description
+    if environment_id is not None:
+        body["environment_id"] = str(environment_id)
+    if skills is not None:
+        body["skills"] = skills
+    if mcp_servers is not None:
+        body["mcp_servers"] = mcp_servers
+    if metadata is not None:
+        body["metadata"] = metadata
     return body
 
 
@@ -76,21 +86,23 @@ class Agents:
         name: str,
         model: str,
         runtime: str,
-        system_prompt: str | None = None,
-        metadata: dict[str, Any] | None = None,
-        tools: list[dict[str, Any]] | None = None,
-        mcp_servers: list[dict[str, Any]] | None = None,
+        system: str | None = None,
+        description: str | None = None,
+        environment_id: str | UUID | None = None,
         skills: list[dict[str, Any]] | None = None,
+        mcp_servers: list[dict[str, Any]] | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> Agent:
         body = _create_body(
             name=name,
             model=model,
             runtime=runtime,
-            system_prompt=system_prompt,
-            metadata=metadata,
-            tools=tools,
-            mcp_servers=mcp_servers,
+            system=system,
+            description=description,
+            environment_id=environment_id,
             skills=skills,
+            mcp_servers=mcp_servers,
+            metadata=metadata,
         )
         return Agent.model_validate(check_response(self._client.post("/agents", json=body)))
 
@@ -105,22 +117,24 @@ class Agents:
         name: str | None = None,
         model: str | None = None,
         runtime: str | None = None,
-        system_prompt: str | None = None,
-        metadata: dict[str, Any] | None = None,
-        tools: list[dict[str, Any]] | None = None,
-        mcp_servers: list[dict[str, Any]] | None = None,
+        system: str | None = None,
+        description: str | None = None,
+        environment_id: str | UUID | None = None,
         skills: list[dict[str, Any]] | None = None,
+        mcp_servers: list[dict[str, Any]] | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> Agent:
         body = _update_body(
             version=version,
             name=name,
             model=model,
             runtime=runtime,
-            system_prompt=system_prompt,
-            metadata=metadata,
-            tools=tools,
-            mcp_servers=mcp_servers,
+            system=system,
+            description=description,
+            environment_id=environment_id,
             skills=skills,
+            mcp_servers=mcp_servers,
+            metadata=metadata,
         )
         return Agent.model_validate(
             check_response(self._client.put(f"/agents/{agent_id}", json=body))
@@ -150,21 +164,23 @@ class AsyncAgents:
         name: str,
         model: str,
         runtime: str,
-        system_prompt: str | None = None,
-        metadata: dict[str, Any] | None = None,
-        tools: list[dict[str, Any]] | None = None,
-        mcp_servers: list[dict[str, Any]] | None = None,
+        system: str | None = None,
+        description: str | None = None,
+        environment_id: str | UUID | None = None,
         skills: list[dict[str, Any]] | None = None,
+        mcp_servers: list[dict[str, Any]] | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> Agent:
         body = _create_body(
             name=name,
             model=model,
             runtime=runtime,
-            system_prompt=system_prompt,
-            metadata=metadata,
-            tools=tools,
-            mcp_servers=mcp_servers,
+            system=system,
+            description=description,
+            environment_id=environment_id,
             skills=skills,
+            mcp_servers=mcp_servers,
+            metadata=metadata,
         )
         return Agent.model_validate(check_response(await self._client.post("/agents", json=body)))
 
@@ -179,22 +195,24 @@ class AsyncAgents:
         name: str | None = None,
         model: str | None = None,
         runtime: str | None = None,
-        system_prompt: str | None = None,
-        metadata: dict[str, Any] | None = None,
-        tools: list[dict[str, Any]] | None = None,
-        mcp_servers: list[dict[str, Any]] | None = None,
+        system: str | None = None,
+        description: str | None = None,
+        environment_id: str | UUID | None = None,
         skills: list[dict[str, Any]] | None = None,
+        mcp_servers: list[dict[str, Any]] | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> Agent:
         body = _update_body(
             version=version,
             name=name,
             model=model,
             runtime=runtime,
-            system_prompt=system_prompt,
-            metadata=metadata,
-            tools=tools,
-            mcp_servers=mcp_servers,
+            system=system,
+            description=description,
+            environment_id=environment_id,
             skills=skills,
+            mcp_servers=mcp_servers,
+            metadata=metadata,
         )
         return Agent.model_validate(
             check_response(await self._client.put(f"/agents/{agent_id}", json=body))

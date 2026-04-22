@@ -32,7 +32,9 @@ def test_update_optimistic_concurrency(client, server, make_environment):
     sent = server.requests[-1].body
     assert sent["version"] == env["version"]
     assert sent["name"] == "renamed"
-    assert "resources" not in sent  # only set keys sent
+    # Only set keys are sent
+    assert "packages" not in sent
+    assert "networking" not in sent
 
 
 def test_archive(client, server, make_environment):
@@ -56,9 +58,20 @@ def test_archive_already_archived(client, server):
 
 
 def test_delete_returns_none(client, server):
-    server.json("DELETE", "/environments/abc/delete", 204, None)
+    server.json("DELETE", "/environments/abc/delete", 200, {"detail": "Environment deleted"})
     result = client.environments.delete("abc")
     assert result is None
+
+
+def test_delete_with_sessions_conflicts(client, server):
+    server.json(
+        "DELETE",
+        "/environments/abc/delete",
+        409,
+        {"detail": "Cannot delete environment with existing sessions"},
+    )
+    with pytest.raises(ConflictError):
+        client.environments.delete("abc")
 
 
 def test_versions_returns_history(client, server, make_environment):
@@ -67,15 +80,37 @@ def test_versions_returns_history(client, server, make_environment):
     env = make_environment()
     history = [
         {
-            "version": 1,
+            "id": env["id"],
+            "type": "environment",
             "name": "v1",
-            "resources": [],
-            "setup_commands": [],
-            "network_policy": None,
-            "metadata": {},
+            "packages": {},
+            "setup_script": None,
+            "networking": {"type": "unrestricted"},
+            "version": 1,
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
     ]
     server.json("GET", f"/environments/{env['id']}/versions", 200, {"data": history})
     versions = client.environments.versions(env["id"])
     assert versions[0].version == 1
+    assert versions[0].networking.type == "unrestricted"
+
+
+def test_create_with_packages_and_networking(client, server, make_environment):
+    env = make_environment()
+    server.json("POST", "/environments", 201, env)
+
+    client.environments.create(
+        name="prod",
+        packages={"apt": ["jq", "curl"], "npm": ["typescript"]},
+        setup_script="echo hi",
+        networking={"type": "limited", "allowed_hosts": ["api.github.com"]},
+    )
+
+    sent = server.requests[-1].body
+    assert sent == {
+        "name": "prod",
+        "packages": {"apt": ["jq", "curl"], "npm": ["typescript"]},
+        "setup_script": "echo hi",
+        "networking": {"type": "limited", "allowed_hosts": ["api.github.com"]},
+    }

@@ -19,10 +19,24 @@ def test_create_sends_optional_fields_only_when_set(client, server, make_agent):
     created = make_agent(name="created")
     server.json("POST", "/agents", 201, created)
 
-    client.agents.create(name="created", model="m", runtime="r", metadata={"k": "v"})
+    client.agents.create(
+        name="created",
+        model="m",
+        runtime="r",
+        system="be helpful",
+        description="demo agent",
+        metadata={"k": "v"},
+    )
 
     sent = server.requests[-1].body
-    assert sent == {"name": "created", "model": "m", "runtime": "r", "metadata": {"k": "v"}}
+    assert sent == {
+        "name": "created",
+        "model": "m",
+        "runtime": "r",
+        "system": "be helpful",
+        "description": "demo agent",
+        "metadata": {"k": "v"},
+    }
 
 
 def test_create_omits_null_optional_fields(client, server, make_agent):
@@ -98,12 +112,18 @@ def test_versions(client, server, make_agent):
     agent = make_agent()
     versions = [
         {
-            "version": 1,
+            "id": agent["id"],
+            "type": "agent",
             "name": "v1",
+            "description": None,
+            "system": None,
             "model": "m",
             "runtime": "r",
-            "system_prompt": None,
+            "environment_id": None,
+            "skills": [],
+            "mcp_servers": [],
             "metadata": {},
+            "version": 1,
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
     ]

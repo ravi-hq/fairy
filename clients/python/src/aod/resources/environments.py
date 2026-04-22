@@ -12,22 +12,20 @@ from ..models import Environment, EnvironmentVersion
 def _create_body(
     *,
     name: str,
-    resources: list[dict[str, Any]] | None = None,
-    setup_commands: list[str] | None = None,
+    packages: dict[str, list[str]] | None = None,
     env_vars: dict[str, str] | None = None,
-    network_policy: dict[str, Any] | None = None,
-    metadata: dict[str, Any] | None = None,
+    setup_script: str | None = None,
+    networking: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     body: dict[str, Any] = {"name": name}
-    for key, value in (
-        ("resources", resources),
-        ("setup_commands", setup_commands),
-        ("env_vars", env_vars),
-        ("network_policy", network_policy),
-        ("metadata", metadata),
-    ):
-        if value is not None:
-            body[key] = value
+    if packages is not None:
+        body["packages"] = packages
+    if env_vars is not None:
+        body["env_vars"] = env_vars
+    if setup_script is not None:
+        body["setup_script"] = setup_script
+    if networking is not None:
+        body["networking"] = networking
     return body
 
 
@@ -35,23 +33,22 @@ def _update_body(
     *,
     version: int,
     name: str | None = None,
-    resources: list[dict[str, Any]] | None = None,
-    setup_commands: list[str] | None = None,
+    packages: dict[str, list[str]] | None = None,
     env_vars: dict[str, str] | None = None,
-    network_policy: dict[str, Any] | None = None,
-    metadata: dict[str, Any] | None = None,
+    setup_script: str | None = None,
+    networking: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     body: dict[str, Any] = {"version": version}
-    for key, value in (
-        ("name", name),
-        ("resources", resources),
-        ("setup_commands", setup_commands),
-        ("env_vars", env_vars),
-        ("network_policy", network_policy),
-        ("metadata", metadata),
-    ):
-        if value is not None:
-            body[key] = value
+    if name is not None:
+        body["name"] = name
+    if packages is not None:
+        body["packages"] = packages
+    if env_vars is not None:
+        body["env_vars"] = env_vars
+    if setup_script is not None:
+        body["setup_script"] = setup_script
+    if networking is not None:
+        body["networking"] = networking
     return body
 
 
@@ -67,19 +64,17 @@ class Environments:
         self,
         *,
         name: str,
-        resources: list[dict[str, Any]] | None = None,
-        setup_commands: list[str] | None = None,
+        packages: dict[str, list[str]] | None = None,
         env_vars: dict[str, str] | None = None,
-        network_policy: dict[str, Any] | None = None,
-        metadata: dict[str, Any] | None = None,
+        setup_script: str | None = None,
+        networking: dict[str, Any] | None = None,
     ) -> Environment:
         body = _create_body(
             name=name,
-            resources=resources,
-            setup_commands=setup_commands,
+            packages=packages,
             env_vars=env_vars,
-            network_policy=network_policy,
-            metadata=metadata,
+            setup_script=setup_script,
+            networking=networking,
         )
         return Environment.model_validate(
             check_response(self._client.post("/environments", json=body))
@@ -96,20 +91,18 @@ class Environments:
         *,
         version: int,
         name: str | None = None,
-        resources: list[dict[str, Any]] | None = None,
-        setup_commands: list[str] | None = None,
+        packages: dict[str, list[str]] | None = None,
         env_vars: dict[str, str] | None = None,
-        network_policy: dict[str, Any] | None = None,
-        metadata: dict[str, Any] | None = None,
+        setup_script: str | None = None,
+        networking: dict[str, Any] | None = None,
     ) -> Environment:
         body = _update_body(
             version=version,
             name=name,
-            resources=resources,
-            setup_commands=setup_commands,
+            packages=packages,
             env_vars=env_vars,
-            network_policy=network_policy,
-            metadata=metadata,
+            setup_script=setup_script,
+            networking=networking,
         )
         return Environment.model_validate(
             check_response(self._client.put(f"/environments/{environment_id}", json=body))
@@ -140,19 +133,17 @@ class AsyncEnvironments:
         self,
         *,
         name: str,
-        resources: list[dict[str, Any]] | None = None,
-        setup_commands: list[str] | None = None,
+        packages: dict[str, list[str]] | None = None,
         env_vars: dict[str, str] | None = None,
-        network_policy: dict[str, Any] | None = None,
-        metadata: dict[str, Any] | None = None,
+        setup_script: str | None = None,
+        networking: dict[str, Any] | None = None,
     ) -> Environment:
         body = _create_body(
             name=name,
-            resources=resources,
-            setup_commands=setup_commands,
+            packages=packages,
             env_vars=env_vars,
-            network_policy=network_policy,
-            metadata=metadata,
+            setup_script=setup_script,
+            networking=networking,
         )
         return Environment.model_validate(
             check_response(await self._client.post("/environments", json=body))
@@ -169,20 +160,18 @@ class AsyncEnvironments:
         *,
         version: int,
         name: str | None = None,
-        resources: list[dict[str, Any]] | None = None,
-        setup_commands: list[str] | None = None,
+        packages: dict[str, list[str]] | None = None,
         env_vars: dict[str, str] | None = None,
-        network_policy: dict[str, Any] | None = None,
-        metadata: dict[str, Any] | None = None,
+        setup_script: str | None = None,
+        networking: dict[str, Any] | None = None,
     ) -> Environment:
         body = _update_body(
             version=version,
             name=name,
-            resources=resources,
-            setup_commands=setup_commands,
+            packages=packages,
             env_vars=env_vars,
-            network_policy=network_policy,
-            metadata=metadata,
+            setup_script=setup_script,
+            networking=networking,
         )
         return Environment.model_validate(
             check_response(await self._client.put(f"/environments/{environment_id}", json=body))

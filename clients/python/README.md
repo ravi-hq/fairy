@@ -18,12 +18,26 @@ pip install aod-sdk
 from aod import Client
 
 with Client(base_url="https://aod.example", token="aod_...") as client:
+    env = client.environments.create(
+        name="prod",
+        packages={"apt": ["jq"], "npm": ["typescript"]},
+        env_vars={"OPENAI_API_KEY": "sk-..."},
+        networking={"type": "limited", "allowed_hosts": ["api.github.com"]},
+    )
     agent = client.agents.create(
         name="my-agent",
         model="claude-sonnet-4-5",
         runtime="claude-code",
+        system="You are a careful software engineer.",
+        environment_id=env.id,
     )
-    ack = client.sessions.create(agent_id=agent.id, prompt="hello")
+    ack = client.sessions.create(
+        agent_id=agent.id,
+        prompt="implement the feature in TODO.md",
+        resources=[
+            {"type": "github_repository", "url": "https://github.com/me/repo"},
+        ],
+    )
     with client.sessions.stream(ack.id) as events:
         for event in events:
             print(event.type, event.extra)
