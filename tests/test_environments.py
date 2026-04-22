@@ -12,7 +12,7 @@ from agent_on_demand.models import (
     APIKey,
     Environment,
     EnvironmentVersion,
-    UserRuntimeKey,
+    UserCredential,
     UserSpritesKey,
 )
 
@@ -47,10 +47,10 @@ def sprites_key(user):
 
 @pytest.fixture
 def runtime_key(user, sprites_key):
-    urk = UserRuntimeKey(user=user, runtime="claude")
-    urk.set_api_key("fake-anthropic-key")
-    urk.save()
-    return urk
+    cred = UserCredential(user=user, kind="provider:anthropic")
+    cred.set_value("fake-anthropic-key")
+    cred.save()
+    return cred
 
 
 @pytest.fixture
@@ -82,7 +82,7 @@ def agent(user):
     return Agent.objects.create(
         user=user,
         name="Test Agent",
-        model="claude-sonnet-4-6",
+        model="anthropic/claude-sonnet-4-6",
         runtime="claude",
         version=1,
     )
@@ -648,7 +648,7 @@ class TestSessionEnvironmentIntegration:
         agent = Agent.objects.create(
             user=user,
             name="Agent",
-            model="claude-sonnet-4-6",
+            model="anthropic/claude-sonnet-4-6",
             runtime="claude",
             environment=environment,
             version=1,
@@ -677,7 +677,7 @@ class TestSessionEnvironmentIntegration:
         agent = Agent.objects.create(
             user=user,
             name="Agent",
-            model="claude-sonnet-4-6",
+            model="anthropic/claude-sonnet-4-6",
             runtime="claude",
             environment=environment,
             version=1,
@@ -781,7 +781,7 @@ class TestAgentEnvironmentIntegration:
             data=json.dumps(
                 {
                     "name": "My Agent",
-                    "model": "claude-sonnet-4-6",
+                    "model": "anthropic/claude-sonnet-4-6",
                     "runtime": "claude",
                     "environment_id": str(environment.id),
                 }
@@ -798,7 +798,7 @@ class TestAgentEnvironmentIntegration:
             data=json.dumps(
                 {
                     "name": "My Agent",
-                    "model": "claude-sonnet-4-6",
+                    "model": "anthropic/claude-sonnet-4-6",
                     "runtime": "claude",
                 }
             ),
@@ -812,7 +812,7 @@ class TestAgentEnvironmentIntegration:
         agent = Agent.objects.create(
             user=user,
             name="Agent",
-            model="claude-sonnet-4-6",
+            model="anthropic/claude-sonnet-4-6",
             runtime="claude",
             version=1,
         )

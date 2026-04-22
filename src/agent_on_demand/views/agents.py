@@ -11,7 +11,8 @@ from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from agent_on_demand.auth import require_api_key
 from agent_on_demand.models import Agent, AgentVersion, Environment
-from agent_on_demand.runtimes import RUNTIMES, AgentModel
+from agent_on_demand.models_catalog import MODELS
+from agent_on_demand.runtimes import RUNTIMES
 
 
 AGENT_VERSIONED_FIELDS = (
@@ -116,8 +117,8 @@ class CreateAgentRequest(BaseModel):
     @field_validator("model")
     @classmethod
     def validate_model(cls, v: str) -> str:
-        if v not in AgentModel.values():
-            raise ValueError(f"Unknown model: {v}. Must be one of: {sorted(AgentModel.values())}")
+        if v not in MODELS:
+            raise ValueError(f"Unknown model: {v}. Must be one of: {sorted(MODELS)}")
         return v
 
     @field_validator("mcp_servers")
@@ -146,8 +147,8 @@ class UpdateAgentRequest(BaseModel):
     @field_validator("model")
     @classmethod
     def validate_model(cls, v: str | None) -> str | None:
-        if v is not None and v not in AgentModel.values():
-            raise ValueError(f"Unknown model: {v}. Must be one of: {sorted(AgentModel.values())}")
+        if v is not None and v not in MODELS:
+            raise ValueError(f"Unknown model: {v}. Must be one of: {sorted(MODELS)}")
         return v
 
     @field_validator("mcp_servers")
@@ -163,6 +164,20 @@ class UpdateAgentRequest(BaseModel):
         if v is not None:
             _validate_skills(v)
         return v
+
+
+def _check_runtime_model_compat(runtime_name: str, model_id: str) -> str | None:
+    """Return an error message if model isn't servable by runtime, else None."""
+    runtime = RUNTIMES[runtime_name]
+    model = MODELS[model_id]
+    if model.provider not in runtime.providers:
+        return (
+            f"Runtime {runtime_name} cannot serve model {model_id}: "
+            f"provider {model.provider} not in {sorted(runtime.providers)}"
+        )
+    if model.runtimes is not None and runtime_name not in model.runtimes:
+        return f"Model {model_id} not supported on runtime {runtime_name}"
+    return None
 
 
 def _serialize_agent(agent: Agent) -> dict:
@@ -240,6 +255,9 @@ def agents_list_create(request):
                 {"detail": f"Unknown runtime: {req.runtime}. Must be one of: {list(RUNTIMES)}"},
                 status=400,
             )
+        compat_err = _check_runtime_model_compat(req.runtime, req.model)
+        if compat_err is not None:
+            return JsonResponse({"detail": compat_err}, status=422)
 
         env_obj = None
         if req.environment_id:
@@ -328,6 +346,13 @@ def agent_detail(request, agent_id):
                 {"detail": f"Unknown runtime: {req.runtime}. Must be one of: {list(RUNTIMES)}"},
                 status=400,
             )
+
+        effective_runtime = req.runtime or agent.runtime
+        effective_model = req.model or agent.model
+        if effective_runtime in RUNTIMES and effective_model in MODELS:
+            compat_err = _check_runtime_model_compat(effective_runtime, effective_model)
+            if compat_err is not None:
+                return JsonResponse({"detail": compat_err}, status=422)
 
         # Detect changes
         changed = False

@@ -43,10 +43,9 @@ from agent_on_demand.models import (
     AgentSession,
     AgentSessionLog,
     SessionTurn,
-    UserRuntimeKey,
 )
 from agent_on_demand.observability import get_tracer
-from agent_on_demand.runtimes import RUNTIMES, RuntimeConfig
+from agent_on_demand.runtimes import RUNTIMES, Runtime
 
 from .errors import NoSpritesKeyError, ProvisionError
 from .provisioning import (
@@ -101,18 +100,23 @@ class TaggingQueueWriter(io.RawIOBase):
         return len(data)
 
 
-def build_turn_command(runtime: RuntimeConfig, mode: str) -> str:
-    """Render the per-turn `bash -c` script.
+_ENV_SOURCE_SHIM = 'set -a; source /tmp/aod-env; set +a; exec "$@"'
 
-    Per turn we (1) source /tmp/aod-env to expose the runtime API key,
-    AOD_SESSION_ID, and any Environment.env_vars; (2) slurp stdin into
-    $PROMPT so the runtime CLI can reference it via `-p "$PROMPT"`; (3)
-    exec the mode-appropriate runtime CLI. The string contains no secrets
-    (the API key sources at runtime from the env file) so it's safe to
-    appear in Sprites server-side WS URL logs.
+
+def build_turn_argv(runtime: Runtime, spec, mode: str) -> list[str]:
+    """Return the full argv for the per-turn `sprite.command`.
+
+    The first three elements are a thin `bash -lc` shim that sources
+    `/tmp/aod-env` (so credential and Environment env vars reach the
+    runtime CLI's process) and then execs the runtime argv verbatim. No
+    template substitution — the runtime's `build_command` already inlined
+    any session-id or model values from the spec.
+
+    Prompt delivery is out of band: callers attach `cmd.stdin` with the
+    prompt bytes so it flows through the bash shim into the runtime CLI.
     """
-    runtime_cmd = runtime.cmd if mode == "run" else runtime.continue_cmd
-    return f"set -a; source /tmp/aod-env; set +a; PROMPT=$(cat); export PROMPT; exec {runtime_cmd}"
+    argv = runtime.build_command(spec, mode)
+    return ["bash", "-lc", _ENV_SOURCE_SHIM, "--", *argv]
 
 
 @procrastinate_app.task(queue="sessions", name="provision_session", pass_context=False)
@@ -162,11 +166,6 @@ def _provision_session_inner(
         return
 
     spec = _build_spec_for_session(session)
-    if spec is None:
-        _mark_provision_failed(
-            session, turn_id, f"No API key configured for runtime: {session.runtime}"
-        )
-        return
 
     tracer = get_tracer()
     with tracer.start_as_current_span(
@@ -197,17 +196,14 @@ def _provision_session_inner(
     )
 
 
-def _build_spec_for_session(session: AgentSession) -> SessionSpec | None:
-    """Rehydrate a SessionSpec from persisted session state. Returns None when
-    the user no longer has an API key configured for the session's runtime."""
-    api_key = UserRuntimeKey.get_key_for(session.user, session.runtime)
-    if api_key is None:
-        return None
-
+def _build_spec_for_session(session: AgentSession) -> SessionSpec:
+    """Rehydrate a SessionSpec from persisted session state."""
     agent = session.agent
     mcp_servers: list[McpServerSpec] = []
     skills: list[SkillSpec] = []
+    model = ""
     if agent is not None:
+        model = agent.model
         for s in agent.mcp_servers or []:
             mcp_servers.append(
                 McpServerSpec(
@@ -231,7 +227,8 @@ def _build_spec_for_session(session: AgentSession) -> SessionSpec | None:
     return SessionSpec(
         name=session.sprite_name,
         runtime=RUNTIMES[session.runtime],
-        api_key=api_key,
+        model=model,
+        user=session.user,
         runtime_session_id=str(session.runtime_session_id) if session.runtime_session_id else None,
         environment=session.environment,
         repos=repos,
@@ -316,9 +313,9 @@ def _execute_turn_inner(
     mode: str,
     timeout: float,
 ) -> None:
-    session = AgentSession.objects.select_related("user").get(pk=session_id)
+    session = AgentSession.objects.select_related("user", "agent", "environment").get(pk=session_id)
     turn = SessionTurn.objects.get(pk=turn_id)
-    runtime = RUNTIMES[session.runtime]
+    spec = _build_spec_for_session(session)
 
     tracer = get_tracer()
     with tracer.start_as_current_span(
@@ -333,10 +330,10 @@ def _execute_turn_inner(
         },
     ) as span:
         sprite = resume_session(session.user, session.sprite_name)
-        _execute_turn_body(session, turn, runtime, sprite, prompt, mode, timeout, span)
+        _execute_turn_body(session, turn, spec, sprite, prompt, mode, timeout, span)
 
 
-def _execute_turn_body(session, turn, runtime, sprite, prompt, mode, timeout, span) -> None:
+def _execute_turn_body(session, turn, spec, sprite, prompt, mode, timeout, span) -> None:
 
     output_q: queue.Queue = queue.Queue(maxsize=4096)
     db_buffer: list[AgentSessionLog] = []
@@ -370,14 +367,14 @@ def _execute_turn_body(session, turn, runtime, sprite, prompt, mode, timeout, sp
                 close_old_connections()
                 time.sleep(delay)
 
+    argv = build_turn_argv(spec.runtime, spec, mode)
+
     def _run_command():
         # NOTE: if you add DB writes inside this inner thread, wrap the body
         # in close_old_connections()/finally. Today it only drives the SDK.
         try:
             cmd = sprite.command(
-                "bash",
-                "-c",
-                build_turn_command(runtime, mode),
+                *argv,
                 cwd="/home/sprite",
                 timeout=timeout,
             )

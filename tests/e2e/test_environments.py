@@ -261,7 +261,7 @@ class TestEnvironmentInSession:
         self, api, create_agent, create_session, create_environment, runtime
     ):
         """A domain outside allowed_hosts resolves to DNS REFUSED inside the sprite."""
-        if runtime not in ("claude", "claude-oauth"):
+        if runtime != "claude":
             pytest.skip("Hardcoded allowed_hosts assume the claude runtime's API host")
 
         env = create_environment(
@@ -302,7 +302,7 @@ class TestEnvironmentInSession:
         self, api, create_agent, create_session, create_environment, runtime
     ):
         """A domain inside allowed_hosts resolves normally inside the sprite."""
-        if runtime not in ("claude", "claude-oauth"):
+        if runtime != "claude":
             pytest.skip("Hardcoded allowed_hosts assume the claude runtime's API host")
 
         env = create_environment(

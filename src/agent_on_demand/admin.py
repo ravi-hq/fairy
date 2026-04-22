@@ -13,10 +13,11 @@ from agent_on_demand.models import (
     AgentSessionLog,
     Environment,
     EnvironmentVersion,
+    UserCredential,
     UserQuota,
-    UserRuntimeKey,
     UserSpritesKey,
 )
+from agent_on_demand.models.auth import CREDENTIAL_ENV_VAR
 
 
 class APIKeyInline(admin.TabularInline):
@@ -26,10 +27,10 @@ class APIKeyInline(admin.TabularInline):
     readonly_fields = ("key_prefix", "created_at")
 
 
-class UserRuntimeKeyInline(admin.TabularInline):
-    model = UserRuntimeKey
+class UserCredentialInline(admin.TabularInline):
+    model = UserCredential
     extra = 0
-    fields = ("runtime", "created_at", "updated_at")
+    fields = ("kind", "created_at", "updated_at")
     readonly_fields = ("created_at", "updated_at")
 
 
@@ -54,7 +55,7 @@ admin.site.unregister(User)
 class UserAdmin(BaseUserAdmin):
     inlines = list(BaseUserAdmin.inlines) + [
         APIKeyInline,
-        UserRuntimeKeyInline,
+        UserCredentialInline,
         UserSpritesKeyInline,
         UserQuotaInline,
     ]
@@ -90,41 +91,46 @@ class APIKeyAdmin(admin.ModelAdmin):
             super().save_model(request, obj, form, change)
 
 
-class UserRuntimeKeyForm(forms.ModelForm):
-    api_key = forms.CharField(
+class UserCredentialForm(forms.ModelForm):
+    kind = forms.ChoiceField(
+        choices=[(k, k) for k in CREDENTIAL_ENV_VAR],
+        help_text="Credential kind (e.g. provider:anthropic). Determines the "
+        "env var that gets exported on Sprite startup.",
+    )
+    value = forms.CharField(
         widget=forms.PasswordInput(render_value=True),
-        help_text="The API key for this runtime. Stored encrypted.",
+        help_text="The credential value. Stored encrypted.",
     )
 
     class Meta:
-        model = UserRuntimeKey
-        fields = ("user", "runtime", "api_key")
+        model = UserCredential
+        fields = ("user", "kind", "value")
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         if self.instance.pk:
-            self.fields["api_key"].initial = self.instance.get_api_key()
+            self.fields["value"].initial = self.instance.get_value()
 
     def save(self, commit=True):
         instance = super().save(commit=False)
-        instance.set_api_key(self.cleaned_data["api_key"])
+        instance.set_value(self.cleaned_data["value"])
         if commit:
             instance.save()
         return instance
 
 
-@admin.register(UserRuntimeKey)
-class UserRuntimeKeyAdmin(admin.ModelAdmin):
-    form = UserRuntimeKeyForm
-    list_display = ("user", "runtime", "created_at", "updated_at")
-    list_filter = ("runtime",)
-    search_fields = ("user__email", "runtime")
+@admin.register(UserCredential)
+class UserCredentialAdmin(admin.ModelAdmin):
+    form = UserCredentialForm
+    list_display = ("user", "kind", "created_at", "updated_at")
+    list_filter = ("kind",)
+    search_fields = ("user__email", "kind")
     readonly_fields = ("created_at", "updated_at")
 
     def get_fields(self, request, obj=None):
         if obj is None:
-            return ("user", "runtime", "api_key")
-        return ("user", "runtime", "api_key", "created_at", "updated_at")
+            return ("user", "kind", "value")
+        return ("user", "kind", "value", "created_at", "updated_at")
 
 
 class UserSpritesKeyForm(forms.ModelForm):

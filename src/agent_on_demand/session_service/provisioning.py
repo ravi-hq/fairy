@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import contextlib
 import io
-import json
 import logging
 import shlex
 import time
@@ -33,7 +32,7 @@ from agent_on_demand.observability import get_tracer
 
 from .client import best_effort_delete, require_client
 from .errors import ProvisionError
-from .specs import McpServerSpec, RepoSpec, SessionSpec, SkillSpec
+from .specs import RepoSpec, SessionSpec
 
 ENV_FILE_PATH = "/tmp/aod-env"
 GIT_CREDS_PATH = "/tmp/.git-credentials"
@@ -46,11 +45,12 @@ PACKAGE_MANAGER_ORDER = ["apt", "cargo", "gem", "go", "npm", "pip"]
 # Stage names emitted both as `ProvisionError.stage` tags (server-side logging)
 # and as `stage` SSE events (see site/docs/api/streaming.md). Keep in sync.
 STAGE_CREATE_SPRITE = "create_sprite"
+STAGE_INSTALL_RUNTIME = "install_runtime"
 STAGE_NETWORK_POLICY = "network_policy"
 STAGE_ENV_FILE = "env_file"
 STAGE_GIT_CREDENTIALS = "git_credentials"
 STAGE_PROVISION_SETUP = "provision_setup"
-STAGE_MCP_CONFIG = "mcp_config"
+STAGE_RUNTIME_CONFIG = "runtime_config"
 STAGE_SKILLS = "skills"
 STAGE_RUNTIME_START = "runtime_start"
 
@@ -104,14 +104,6 @@ def stage_timer(session_id: str | None, stage: str) -> Iterator[None]:
         )
 
 
-_SKILLS_ROOTS: dict[str, str] = {
-    "claude": "/home/sprite/.claude/skills",
-    "claude-oauth": "/home/sprite/.claude/skills",
-    "codex": "/home/sprite/.codex/skills",
-    "gemini": "/home/sprite/.gemini/skills",
-}
-
-
 def provision_session(user, spec: SessionSpec, session_id: str | None = None) -> Sprite:
     """Create a Sprite and run all setup stages against it.
 
@@ -149,12 +141,13 @@ def provision_session(user, spec: SessionSpec, session_id: str | None = None) ->
             raise
 
         try:
+            _install_runtime(sprite, spec, session_id)
             _apply_network_policy(sprite, env, session_id)
             _write_env_file(sprite, spec, session_id)
             _write_git_credentials(sprite, spec.repos, session_id)
             _run_provision_setup(sprite, spec, session_id)
-            _write_mcp_config(sprite, spec.runtime.name, spec.mcp_servers, session_id)
-            _write_skills(sprite, spec.runtime.name, spec.skills, session_id)
+            _write_runtime_config(sprite, spec, session_id)
+            _write_skills(sprite, spec, session_id)
         except ProvisionError as e:
             span.set_attribute("aod.failure_stage", e.stage)
             best_effort_delete(client, spec.name)
@@ -191,6 +184,19 @@ def destroy_session(user, sprite_name: str) -> None:
     best_effort_delete(client, sprite_name)
 
 
+def _install_runtime(sprite: Sprite, spec: SessionSpec, session_id: str | None) -> None:
+    """Run per-runtime `install` hook before the network policy locks things
+    down. For pre-baked runtimes (claude/codex/gemini) this is a no-op; for
+    meta-runtimes that fetch binaries, internet access is required here."""
+    with stage_timer(session_id, STAGE_INSTALL_RUNTIME):
+        try:
+            spec.runtime.install(sprite)
+        except SpriteError as e:
+            raise ProvisionError(
+                f"Failed to install runtime: {e}", stage=STAGE_INSTALL_RUNTIME
+            ) from e
+
+
 def _apply_network_policy(sprite: Sprite, env: Environment | None, session_id: str | None) -> None:
     if env is None or env.networking_type != "limited":
         return
@@ -210,10 +216,22 @@ def _apply_network_policy(sprite: Sprite, env: Environment | None, session_id: s
 def _write_env_file(sprite: Sprite, spec: SessionSpec, session_id: str | None) -> None:
     """Write /tmp/aod-env (fs.write only — chmod happens in the provision
     script). The file is sourced (with `set -a`) by the per-turn dispatcher,
-    so every line must be a valid KEY=value shell assignment."""
-    lines: list[str] = [f"{spec.runtime.env_var}={shlex.quote(spec.api_key)}"]
+    so every line must be a valid KEY=value shell assignment.
+
+    Precedence: user credentials first (so their env-var names are mapped
+    from `CREDENTIAL_ENV_VAR`), then the session metadata, then any
+    Environment.env_vars last — per-environment overrides win."""
+    from agent_on_demand.models.auth import CREDENTIAL_ENV_VAR, UserCredential
+
+    lines: list[str] = []
+    for cred in UserCredential.objects.filter(user=spec.user):
+        env_name = CREDENTIAL_ENV_VAR.get(cred.kind)
+        if env_name:
+            lines.append(f"{env_name}={shlex.quote(cred.get_value())}")
     if spec.runtime_session_id:
         lines.append(f"AOD_SESSION_ID={shlex.quote(spec.runtime_session_id)}")
+    if spec.model:
+        lines.append(f"AOD_MODEL={shlex.quote(spec.model)}")
     env = spec.environment
     if env is not None:
         for key in sorted(env.env_vars or {}):
@@ -352,12 +370,12 @@ def _directories_for_post_script_writes(spec: SessionSpec) -> list[str]:
             dirs.append("/home/sprite/.codex")
         elif spec.runtime.name == "gemini":
             dirs.append("/home/sprite/.gemini")
-        # claude/claude-oauth write to /home/sprite/.claude.json (no mkdir).
-    if spec.skills:
-        root = _SKILLS_ROOTS.get(spec.runtime.name)
-        if root:
-            for s in spec.skills:
-                dirs.append(f"{root}/{s.name}")
+        elif spec.runtime.name == "opencode":
+            dirs.append("/home/sprite/.config/opencode")
+        # claude writes to /home/sprite/.claude.json (no mkdir).
+    if spec.skills and spec.runtime.skills_root:
+        for s in spec.skills:
+            dirs.append(f"{spec.runtime.skills_root}/{s.name}")
     return dirs
 
 
@@ -381,103 +399,38 @@ def _package_commands(manager: str, pkgs: list[str]) -> list[str]:
     return []
 
 
-def _write_mcp_config(
+def _write_runtime_config(
     sprite: Sprite,
-    runtime_name: str,
-    servers: list[McpServerSpec],
+    spec: SessionSpec,
     session_id: str | None,
 ) -> None:
-    if not servers:
-        return
-    with stage_timer(session_id, STAGE_MCP_CONFIG):
+    """Delegate config writes to the runtime. Always runs at provision time —
+    meta-runtimes need their config files even when there are no MCP servers.
+    Individual runtimes can skip the fs write themselves when they have
+    nothing to say."""
+    with stage_timer(session_id, STAGE_RUNTIME_CONFIG):
         try:
-            if runtime_name in ("claude", "claude-oauth"):
-                _write_mcp_claude(sprite, servers)
-            elif runtime_name == "codex":
-                _write_mcp_codex(sprite, servers)
-            elif runtime_name == "gemini":
-                _write_mcp_gemini(sprite, servers)
+            spec.runtime.write_config(sprite, spec, spec.mcp_servers)
         except SpriteError as e:
-            raise ProvisionError(f"Failed to write MCP config: {e}", stage=STAGE_MCP_CONFIG) from e
-
-
-def _write_mcp_claude(sprite: Sprite, servers: list[McpServerSpec]) -> None:
-    config: dict[str, dict] = {}
-    for s in servers:
-        if s.type == "url":
-            entry: dict = {"type": "http", "url": s.url}
-            if s.headers:
-                entry["headers"] = s.headers
-            config[s.name] = entry
-        elif s.type == "stdio":
-            entry = {"type": "stdio", "command": s.command, "args": s.args}
-            if s.env:
-                entry["env"] = s.env
-            config[s.name] = entry
-    fs = sprite.filesystem()
-    (fs / "home/sprite/.claude.json").write_text(json.dumps({"mcpServers": config}, indent=2))
-
-
-def _write_mcp_codex(sprite: Sprite, servers: list[McpServerSpec]) -> None:
-    lines: list[str] = []
-    for s in servers:
-        lines.append(f"[mcp_servers.{s.name}]")
-        if s.type == "url":
-            lines.append(f'url = "{s.url}"')
-            for key, val in s.headers.items():
-                if key.lower() == "authorization" and val.startswith("Bearer "):
-                    token = val.removeprefix("Bearer ").strip()
-                    if token.startswith("${") and token.endswith("}"):
-                        lines.append(f'bearer_token_env_var = "{token[2:-1]}"')
-            lines.append("required = true")
-        elif s.type == "stdio":
-            lines.append(f'command = "{s.command}"')
-            if s.args:
-                args_str = ", ".join(f'"{a}"' for a in s.args)
-                lines.append(f"args = [{args_str}]")
-            if s.env:
-                lines.append(f"[mcp_servers.{s.name}.env]")
-                for key, val in s.env.items():
-                    lines.append(f'{key} = "{val}"')
-        lines.append("")
-    fs = sprite.filesystem()
-    (fs / "home/sprite/.codex/config.toml").write_text("\n".join(lines))
-
-
-def _write_mcp_gemini(sprite: Sprite, servers: list[McpServerSpec]) -> None:
-    config: dict[str, dict] = {}
-    for s in servers:
-        if s.type == "url":
-            entry: dict = {"httpUrl": s.url, "trust": True}
-            if s.headers:
-                entry["headers"] = s.headers
-            config[s.name] = entry
-        elif s.type == "stdio":
-            entry = {"command": s.command, "args": s.args, "trust": True}
-            if s.env:
-                entry["env"] = s.env
-            config[s.name] = entry
-    fs = sprite.filesystem()
-    (fs / "home/sprite/.gemini/settings.json").write_text(
-        json.dumps({"mcpServers": config}, indent=2)
-    )
+            raise ProvisionError(
+                f"Failed to write runtime config: {e}", stage=STAGE_RUNTIME_CONFIG
+            ) from e
 
 
 def _write_skills(
     sprite: Sprite,
-    runtime_name: str,
-    skills: list[SkillSpec],
+    spec: SessionSpec,
     session_id: str | None,
 ) -> None:
-    if not skills:
+    if not spec.skills:
         return
-    root = _SKILLS_ROOTS.get(runtime_name)
+    root = spec.runtime.skills_root
     if root is None:
         return
     with stage_timer(session_id, STAGE_SKILLS):
         try:
             fs = sprite.filesystem()
-            for s in skills:
+            for s in spec.skills:
                 dir_path = f"{root}/{s.name}"
                 (fs / f"{dir_path.lstrip('/')}/SKILL.md").write_text(s.content)
         except SpriteError as e:

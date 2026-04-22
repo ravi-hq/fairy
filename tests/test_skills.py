@@ -1,10 +1,16 @@
+"""HTTP-layer validation for the agent `skills` field.
+
+Per-runtime skills materialization onto the Sprite is exercised via the
+provision flow in `tests/test_session_service.py` and in per-runtime tests.
+"""
+
 import json
 
 import pytest
 from django.contrib.auth.models import User
 from django.test import Client
 
-from agent_on_demand.models import Agent, AgentVersion, APIKey, UserRuntimeKey, UserSpritesKey
+from agent_on_demand.models import Agent, AgentVersion, APIKey
 
 
 SAMPLE_CONTENT = (
@@ -24,9 +30,6 @@ def _skill(name: str = "web-search", content: str = SAMPLE_CONTENT) -> dict:
     }
 
 
-# --- Fixtures ---
-
-
 @pytest.fixture
 def user(db):
     return User.objects.create_user(username="testuser", password="testpass")
@@ -44,208 +47,6 @@ def auth_headers(api_key):
     return {"HTTP_AUTHORIZATION": f"Bearer {raw_key}"}
 
 
-@pytest.fixture
-def sprites_key(user):
-    usk = UserSpritesKey(user=user)
-    usk.set_api_key("fake-sprites-token")
-    usk.save()
-    return usk
-
-
-@pytest.fixture
-def runtime_key(user, sprites_key):
-    urk = UserRuntimeKey(user=user, runtime="claude")
-    urk.set_api_key("fake-anthropic-key")
-    urk.save()
-    return urk
-
-
-# --- Session + skills integration (via recording fake) ---
-
-
-def _last_sprite_writes(fake_sprites) -> dict[str, str]:
-    return fake_sprites.last_sprite().write_map()
-
-
-@pytest.mark.django_db
-class TestSessionSkillsIntegration:
-    def test_claude_skill_writes_skill_md_under_dot_claude(
-        self, client: Client, auth_headers, runtime_key, user, fake_sprites
-    ):
-        agent = Agent.objects.create(
-            user=user,
-            name="Skilled",
-            model="claude-sonnet-4-6",
-            runtime="claude",
-            version=1,
-            skills=[_skill()],
-        )
-        resp = client.post(
-            "/sessions",
-            data=json.dumps({"agent_id": str(agent.id), "prompt": "hello"}),
-            content_type="application/json",
-            **auth_headers,
-        )
-        assert resp.status_code == 202
-        sprite = fake_sprites.last_sprite()
-        assert "/home/sprite/.claude/skills/web-search/SKILL.md" in sprite.write_map()
-        cmds = sprite.shell_strings()
-        assert "mkdir -p /home/sprite/.claude/skills/web-search" in cmds
-
-    def test_codex_skill_writes_under_dot_codex(
-        self, client: Client, auth_headers, user, sprites_key, fake_sprites
-    ):
-        urk = UserRuntimeKey(user=user, runtime="codex")
-        urk.set_api_key("k")
-        urk.save()
-        agent = Agent.objects.create(
-            user=user,
-            name="Codex Skilled",
-            model="gpt-4.1",
-            runtime="codex",
-            version=1,
-            skills=[_skill()],
-        )
-        resp = client.post(
-            "/sessions",
-            data=json.dumps({"agent_id": str(agent.id), "prompt": "hello"}),
-            content_type="application/json",
-            **auth_headers,
-        )
-        assert resp.status_code == 202
-        writes = _last_sprite_writes(fake_sprites)
-        assert "/home/sprite/.codex/skills/web-search/SKILL.md" in writes
-        assert "/home/sprite/.claude/skills/web-search/SKILL.md" not in writes
-
-    def test_gemini_skill_writes_under_dot_gemini(
-        self, client: Client, auth_headers, user, sprites_key, fake_sprites
-    ):
-        urk = UserRuntimeKey(user=user, runtime="gemini")
-        urk.set_api_key("k")
-        urk.save()
-        agent = Agent.objects.create(
-            user=user,
-            name="Gemini Skilled",
-            model="gemini-2.5-pro",
-            runtime="gemini",
-            version=1,
-            skills=[_skill()],
-        )
-        resp = client.post(
-            "/sessions",
-            data=json.dumps({"agent_id": str(agent.id), "prompt": "hello"}),
-            content_type="application/json",
-            **auth_headers,
-        )
-        assert resp.status_code == 202
-        writes = _last_sprite_writes(fake_sprites)
-        assert "/home/sprite/.gemini/skills/web-search/SKILL.md" in writes
-
-    def test_agent_without_skills_writes_none(
-        self, client: Client, auth_headers, runtime_key, user, fake_sprites
-    ):
-        agent = Agent.objects.create(
-            user=user,
-            name="Plain",
-            model="claude-sonnet-4-6",
-            runtime="claude",
-            version=1,
-        )
-        resp = client.post(
-            "/sessions",
-            data=json.dumps({"agent_id": str(agent.id), "prompt": "hello"}),
-            content_type="application/json",
-            **auth_headers,
-        )
-        assert resp.status_code == 202
-        writes = _last_sprite_writes(fake_sprites)
-        assert not any("SKILL.md" in path for path in writes)
-
-    def test_multiple_skills_each_get_their_own_dir(
-        self, client: Client, auth_headers, runtime_key, user, fake_sprites
-    ):
-        agent = Agent.objects.create(
-            user=user,
-            name="Multi",
-            model="claude-sonnet-4-6",
-            runtime="claude",
-            version=1,
-            skills=[
-                _skill(name="one", content="---\nname: one\ndescription: d\n---\nbody\n"),
-                _skill(name="two", content="---\nname: two\ndescription: d\n---\nbody\n"),
-            ],
-        )
-        resp = client.post(
-            "/sessions",
-            data=json.dumps({"agent_id": str(agent.id), "prompt": "hello"}),
-            content_type="application/json",
-            **auth_headers,
-        )
-        assert resp.status_code == 202
-        writes = _last_sprite_writes(fake_sprites)
-        assert "/home/sprite/.claude/skills/one/SKILL.md" in writes
-        assert "/home/sprite/.claude/skills/two/SKILL.md" in writes
-
-    def test_skill_content_written_verbatim(
-        self, client: Client, auth_headers, runtime_key, user, fake_sprites
-    ):
-        """Skills are written via the filesystem API now, so any shell-metachar
-        concerns from the old heredoc approach no longer apply — the content is
-        raw bytes from the Python side to the Sprite filesystem."""
-        content = "---\nname: sh\ndescription: d\n---\n$VAR `whoami` $(date)\n"
-        agent = Agent.objects.create(
-            user=user,
-            name="Raw",
-            model="claude-sonnet-4-6",
-            runtime="claude",
-            version=1,
-            skills=[_skill(name="sh", content=content)],
-        )
-        resp = client.post(
-            "/sessions",
-            data=json.dumps({"agent_id": str(agent.id), "prompt": "hello"}),
-            content_type="application/json",
-            **auth_headers,
-        )
-        assert resp.status_code == 202
-        writes = _last_sprite_writes(fake_sprites)
-        assert writes["/home/sprite/.claude/skills/sh/SKILL.md"] == content
-
-    def test_continue_session_touches_no_filesystem(
-        self, client: Client, auth_headers, runtime_key, user, fake_sprites
-    ):
-        from agent_on_demand.models import AgentSession
-
-        agent = Agent.objects.create(
-            user=user,
-            name="Skilled",
-            model="claude-sonnet-4-6",
-            runtime="claude",
-            version=1,
-            skills=[_skill()],
-        )
-        session = AgentSession.objects.create(
-            user=user,
-            agent=agent,
-            runtime="claude",
-            prompt="first",
-            sprite_name="sprite-xyz",
-            status="completed",
-        )
-        resp = client.post(
-            f"/sessions/{session.id}/prompt",
-            data=json.dumps({"prompt": "follow-up"}),
-            content_type="application/json",
-            **auth_headers,
-        )
-        assert resp.status_code == 202
-        sprite = fake_sprites.sprites["sprite-xyz"]
-        assert sprite.writes == []
-
-
-# --- Validator edges (HTTP layer, unchanged) ---
-
-
 @pytest.mark.django_db
 class TestCreateAgentWithSkills:
     def test_create_with_skill(self, client: Client, auth_headers):
@@ -254,7 +55,7 @@ class TestCreateAgentWithSkills:
             data=json.dumps(
                 {
                     "name": "Skill Agent",
-                    "model": "claude-sonnet-4-6",
+                    "model": "anthropic/claude-sonnet-4-6",
                     "runtime": "claude",
                     "skills": [_skill()],
                 }
@@ -273,7 +74,7 @@ class TestCreateAgentWithSkills:
             data=json.dumps(
                 {
                     "name": "Plain",
-                    "model": "claude-sonnet-4-6",
+                    "model": "anthropic/claude-sonnet-4-6",
                     "runtime": "claude",
                 }
             ),
@@ -292,7 +93,7 @@ class TestSkillsValidation:
             data=json.dumps(
                 {
                     "name": "Bad",
-                    "model": "claude-sonnet-4-6",
+                    "model": "anthropic/claude-sonnet-4-6",
                     "runtime": "claude",
                     "skills": skills,
                 }
@@ -375,7 +176,7 @@ class TestUpdateAgentSkills:
         agent = Agent.objects.create(
             user=user,
             name="Agent",
-            model="claude-sonnet-4-6",
+            model="anthropic/claude-sonnet-4-6",
             runtime="claude",
             version=1,
         )
@@ -403,7 +204,7 @@ class TestUpdateAgentSkills:
         agent = Agent.objects.create(
             user=user,
             name="Agent",
-            model="claude-sonnet-4-6",
+            model="anthropic/claude-sonnet-4-6",
             runtime="claude",
             version=1,
         )

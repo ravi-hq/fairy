@@ -1,10 +1,16 @@
+"""HTTP-layer validation for the agent `mcp_servers` field.
+
+Per-runtime MCP config rendering (the actual file contents on the Sprite) is
+covered in `tests/runtimes/test_{claude,codex,gemini}.py`.
+"""
+
 import json
 
 import pytest
 from django.contrib.auth.models import User
 from django.test import Client
 
-from agent_on_demand.models import Agent, AgentVersion, APIKey, UserRuntimeKey, UserSpritesKey
+from agent_on_demand.models import Agent, AgentVersion, APIKey
 
 
 # --- Fixtures ---
@@ -27,284 +33,7 @@ def auth_headers(api_key):
     return {"HTTP_AUTHORIZATION": f"Bearer {raw_key}"}
 
 
-@pytest.fixture
-def sprites_key(user):
-    usk = UserSpritesKey(user=user)
-    usk.set_api_key("fake-sprites-token")
-    usk.save()
-    return usk
-
-
-@pytest.fixture
-def runtime_key(user, sprites_key):
-    urk = UserRuntimeKey(user=user, runtime="claude")
-    urk.set_api_key("fake-anthropic-key")
-    urk.save()
-    return urk
-
-
-# --- Session + MCP integration (via recording fake) ---
-
-
-def _mcp_json(sprite) -> dict:
-    return json.loads(sprite.write_map()["/home/sprite/.claude.json"])
-
-
-@pytest.mark.django_db
-class TestSessionMcpIntegration:
-    def test_claude_mcp_url_server_writes_json(
-        self, client: Client, auth_headers, runtime_key, user, fake_sprites
-    ):
-        agent = Agent.objects.create(
-            user=user,
-            name="MCP Agent",
-            model="claude-sonnet-4-6",
-            runtime="claude",
-            version=1,
-            mcp_servers=[
-                {"type": "url", "name": "github", "url": "https://mcp.github.com/mcp"},
-            ],
-        )
-        resp = client.post(
-            "/sessions",
-            data=json.dumps({"agent_id": str(agent.id), "prompt": "hello"}),
-            content_type="application/json",
-            **auth_headers,
-        )
-        assert resp.status_code == 202
-        sprite = fake_sprites.last_sprite()
-        cfg = _mcp_json(sprite)
-        assert cfg == {
-            "mcpServers": {"github": {"type": "http", "url": "https://mcp.github.com/mcp"}}
-        }
-
-    def test_claude_mcp_with_headers(
-        self, client: Client, auth_headers, runtime_key, user, fake_sprites
-    ):
-        agent = Agent.objects.create(
-            user=user,
-            name="Auth Agent",
-            model="claude-sonnet-4-6",
-            runtime="claude",
-            version=1,
-            mcp_servers=[
-                {
-                    "type": "url",
-                    "name": "private",
-                    "url": "https://mcp.example.com/mcp",
-                    "headers": {"Authorization": "Bearer ${SECRET}"},
-                },
-            ],
-        )
-        resp = client.post(
-            "/sessions",
-            data=json.dumps({"agent_id": str(agent.id), "prompt": "hello"}),
-            content_type="application/json",
-            **auth_headers,
-        )
-        assert resp.status_code == 202
-        cfg = _mcp_json(fake_sprites.last_sprite())
-        assert cfg["mcpServers"]["private"]["headers"] == {"Authorization": "Bearer ${SECRET}"}
-
-    def test_claude_stdio_mcp(self, client: Client, auth_headers, runtime_key, user, fake_sprites):
-        agent = Agent.objects.create(
-            user=user,
-            name="Local MCP",
-            model="claude-sonnet-4-6",
-            runtime="claude",
-            version=1,
-            mcp_servers=[
-                {
-                    "type": "stdio",
-                    "name": "local",
-                    "command": "npx",
-                    "args": ["-y", "@some/mcp-server"],
-                    "env": {"API_KEY": "val"},
-                },
-            ],
-        )
-        resp = client.post(
-            "/sessions",
-            data=json.dumps({"agent_id": str(agent.id), "prompt": "hello"}),
-            content_type="application/json",
-            **auth_headers,
-        )
-        assert resp.status_code == 202
-        cfg = _mcp_json(fake_sprites.last_sprite())
-        assert cfg["mcpServers"]["local"]["type"] == "stdio"
-        assert cfg["mcpServers"]["local"]["command"] == "npx"
-        assert cfg["mcpServers"]["local"]["args"] == ["-y", "@some/mcp-server"]
-
-    def test_codex_mcp_writes_toml(
-        self, client: Client, auth_headers, user, sprites_key, fake_sprites
-    ):
-        urk = UserRuntimeKey(user=user, runtime="codex")
-        urk.set_api_key("k")
-        urk.save()
-        agent = Agent.objects.create(
-            user=user,
-            name="Codex Agent",
-            model="gpt-4.1",
-            runtime="codex",
-            version=1,
-            mcp_servers=[
-                {"type": "url", "name": "github", "url": "https://mcp.github.com/mcp"},
-            ],
-        )
-        resp = client.post(
-            "/sessions",
-            data=json.dumps({"agent_id": str(agent.id), "prompt": "hello"}),
-            content_type="application/json",
-            **auth_headers,
-        )
-        assert resp.status_code == 202
-        sprite = fake_sprites.last_sprite()
-        toml = sprite.write_map()["/home/sprite/.codex/config.toml"]
-        assert "[mcp_servers.github]" in toml
-        assert 'url = "https://mcp.github.com/mcp"' in toml
-
-    def test_codex_mcp_bearer_token_env_var(
-        self, client: Client, auth_headers, user, sprites_key, fake_sprites
-    ):
-        urk = UserRuntimeKey(user=user, runtime="codex")
-        urk.set_api_key("k")
-        urk.save()
-        agent = Agent.objects.create(
-            user=user,
-            name="Codex Auth",
-            model="gpt-4.1",
-            runtime="codex",
-            version=1,
-            mcp_servers=[
-                {
-                    "type": "url",
-                    "name": "api",
-                    "url": "https://mcp.example.com/mcp",
-                    "headers": {"Authorization": "Bearer ${MY_TOKEN}"},
-                },
-            ],
-        )
-        resp = client.post(
-            "/sessions",
-            data=json.dumps({"agent_id": str(agent.id), "prompt": "hello"}),
-            content_type="application/json",
-            **auth_headers,
-        )
-        assert resp.status_code == 202
-        toml = fake_sprites.last_sprite().write_map()["/home/sprite/.codex/config.toml"]
-        assert 'bearer_token_env_var = "MY_TOKEN"' in toml
-
-    def test_gemini_mcp_writes_settings_json(
-        self, client: Client, auth_headers, user, sprites_key, fake_sprites
-    ):
-        urk = UserRuntimeKey(user=user, runtime="gemini")
-        urk.set_api_key("k")
-        urk.save()
-        agent = Agent.objects.create(
-            user=user,
-            name="Gemini Agent",
-            model="gemini-2.5-pro",
-            runtime="gemini",
-            version=1,
-            mcp_servers=[
-                {"type": "url", "name": "github", "url": "https://mcp.github.com/mcp"},
-            ],
-        )
-        resp = client.post(
-            "/sessions",
-            data=json.dumps({"agent_id": str(agent.id), "prompt": "hello"}),
-            content_type="application/json",
-            **auth_headers,
-        )
-        assert resp.status_code == 202
-        settings = json.loads(
-            fake_sprites.last_sprite().write_map()["/home/sprite/.gemini/settings.json"]
-        )
-        assert settings["mcpServers"]["github"]["httpUrl"] == "https://mcp.github.com/mcp"
-        assert settings["mcpServers"]["github"]["trust"] is True
-
-    def test_agent_without_mcp_writes_no_config(
-        self, client: Client, auth_headers, runtime_key, user, fake_sprites
-    ):
-        agent = Agent.objects.create(
-            user=user,
-            name="Plain Agent",
-            model="claude-sonnet-4-6",
-            runtime="claude",
-            version=1,
-        )
-        resp = client.post(
-            "/sessions",
-            data=json.dumps({"agent_id": str(agent.id), "prompt": "hello"}),
-            content_type="application/json",
-            **auth_headers,
-        )
-        assert resp.status_code == 202
-        writes = fake_sprites.last_sprite().write_map()
-        assert "/home/sprite/.claude.json" not in writes
-
-    def test_multiple_mcp_servers(
-        self, client: Client, auth_headers, runtime_key, user, fake_sprites
-    ):
-        agent = Agent.objects.create(
-            user=user,
-            name="Multi MCP",
-            model="claude-sonnet-4-6",
-            runtime="claude",
-            version=1,
-            mcp_servers=[
-                {"type": "url", "name": "github", "url": "https://mcp.github.com/mcp"},
-                {"type": "url", "name": "slack", "url": "https://mcp.slack.com/mcp"},
-            ],
-        )
-        resp = client.post(
-            "/sessions",
-            data=json.dumps({"agent_id": str(agent.id), "prompt": "hello"}),
-            content_type="application/json",
-            **auth_headers,
-        )
-        assert resp.status_code == 202
-        cfg = _mcp_json(fake_sprites.last_sprite())
-        assert set(cfg["mcpServers"].keys()) == {"github", "slack"}
-
-    def test_continue_session_touches_no_filesystem(
-        self, client: Client, auth_headers, runtime_key, user, fake_sprites
-    ):
-        """Follow-up /prompt is fire-and-forget: no filesystem writes on the
-        Sprite. The prompt streams over stdin when the background thread runs
-        the dispatcher in `continue` mode."""
-        from agent_on_demand.models import AgentSession
-
-        agent = Agent.objects.create(
-            user=user,
-            name="MCP Agent",
-            model="claude-sonnet-4-6",
-            runtime="claude",
-            version=1,
-            mcp_servers=[
-                {"type": "url", "name": "github", "url": "https://mcp.github.com/mcp"},
-            ],
-        )
-        session = AgentSession.objects.create(
-            user=user,
-            agent=agent,
-            runtime="claude",
-            prompt="first",
-            sprite_name="sprite-xyz",
-            status="completed",
-        )
-        resp = client.post(
-            f"/sessions/{session.id}/prompt",
-            data=json.dumps({"prompt": "follow-up"}),
-            content_type="application/json",
-            **auth_headers,
-        )
-        assert resp.status_code == 202
-        sprite = fake_sprites.sprites["sprite-xyz"]
-        assert sprite.writes == []
-
-
-# --- Agent CRUD with mcp_servers (HTTP layer only, unchanged) ---
+# --- Agent CRUD with mcp_servers (HTTP layer) ---
 
 
 @pytest.mark.django_db
@@ -315,7 +44,7 @@ class TestCreateAgentWithMcp:
             data=json.dumps(
                 {
                     "name": "MCP Agent",
-                    "model": "claude-sonnet-4-6",
+                    "model": "anthropic/claude-sonnet-4-6",
                     "runtime": "claude",
                     "mcp_servers": [
                         {
@@ -341,7 +70,7 @@ class TestCreateAgentWithMcp:
             data=json.dumps(
                 {
                     "name": "No MCP",
-                    "model": "claude-sonnet-4-6",
+                    "model": "anthropic/claude-sonnet-4-6",
                     "runtime": "claude",
                 }
             ),
@@ -359,7 +88,7 @@ class TestCreateAgentWithMcp:
             data=json.dumps(
                 {
                     "name": "Ignored Tools",
-                    "model": "claude-sonnet-4-6",
+                    "model": "anthropic/claude-sonnet-4-6",
                     "runtime": "claude",
                     "tools": [{"type": "agent_toolset_20260401"}],
                 }
@@ -379,7 +108,7 @@ class TestAgentMcpValidation:
             data=json.dumps(
                 {
                     "name": "Bad",
-                    "model": "claude-sonnet-4-6",
+                    "model": "anthropic/claude-sonnet-4-6",
                     "runtime": "claude",
                     "mcp_servers": [{"type": "url", "url": "https://example.com/mcp"}],
                 }
@@ -396,7 +125,7 @@ class TestAgentMcpValidation:
             data=json.dumps(
                 {
                     "name": "Bad",
-                    "model": "claude-sonnet-4-6",
+                    "model": "anthropic/claude-sonnet-4-6",
                     "runtime": "claude",
                     "mcp_servers": [{"type": "url", "name": "test"}],
                 }
@@ -413,7 +142,7 @@ class TestAgentMcpValidation:
             data=json.dumps(
                 {
                     "name": "Bad",
-                    "model": "claude-sonnet-4-6",
+                    "model": "anthropic/claude-sonnet-4-6",
                     "runtime": "claude",
                     "mcp_servers": [{"type": "stdio", "name": "test"}],
                 }
@@ -430,7 +159,7 @@ class TestAgentMcpValidation:
             data=json.dumps(
                 {
                     "name": "Bad",
-                    "model": "claude-sonnet-4-6",
+                    "model": "anthropic/claude-sonnet-4-6",
                     "runtime": "claude",
                     "mcp_servers": [
                         {"name": "github", "url": "https://a.com/mcp"},
@@ -450,7 +179,7 @@ class TestAgentMcpValidation:
             data=json.dumps(
                 {
                     "name": "Bad",
-                    "model": "claude-sonnet-4-6",
+                    "model": "anthropic/claude-sonnet-4-6",
                     "runtime": "claude",
                     "mcp_servers": [{"type": "grpc", "name": "test", "url": "https://a.com"}],
                 }
@@ -468,7 +197,7 @@ class TestAgentMcpValidation:
             data=json.dumps(
                 {
                     "name": "Bad",
-                    "model": "claude-sonnet-4-6",
+                    "model": "anthropic/claude-sonnet-4-6",
                     "runtime": "claude",
                     "mcp_servers": servers,
                 }
@@ -486,7 +215,7 @@ class TestUpdateAgentMcp:
         agent = Agent.objects.create(
             user=user,
             name="Agent",
-            model="claude-sonnet-4-6",
+            model="anthropic/claude-sonnet-4-6",
             runtime="claude",
             version=1,
         )
@@ -520,7 +249,7 @@ class TestUpdateAgentMcp:
         agent = Agent.objects.create(
             user=user,
             name="Agent",
-            model="claude-sonnet-4-6",
+            model="anthropic/claude-sonnet-4-6",
             runtime="claude",
             version=1,
         )
