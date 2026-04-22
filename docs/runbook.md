@@ -24,6 +24,7 @@ External dependencies:
 | Signal                         | Where |
 | ------------------------------ | ----- |
 | Alerts                         | Slack `#alerts` |
+| End-to-end "is prod working"   | Checkly — scheduled smoke test (auth → create session → poll for `completed`) |
 | Request rate, error rate, p95  | Honeycomb `aod-web` |
 | Worker task durations, failures | Honeycomb `aod-worker` — look for `session.provision_task` and `session.execute_turn` spans |
 | Session outcomes by runtime    | PostHog — event names above |
@@ -128,6 +129,19 @@ SELECT pg_size_pretty(pg_total_relation_size('agent_session_logs'));
 No retention policy exists today. Options: upgrade the plan, or delete logs for old/terminated sessions. Coordinate before deleting — we haven't written a retention tool yet.
 
 If connections exhausted: web uses 3 uvicorn workers, worker uses `--concurrency 4`, plus Procrastinate's own listener. All share one DB. Render's Postgres plan has a connection cap — check it before increasing concurrency anywhere.
+
+### Checkly smoke test failing
+
+The scheduled Checkly run went red. This is usually the first signal on launch day — it's a full end-to-end flow against the hosted API.
+
+**Diagnose.** Open the failed run in Checkly — it shows which step failed (auth, create, poll, assert). Cross-reference:
+
+- **Auth step failed** but Honeycomb shows normal 2xx traffic: the **canary user's** API key rotated/expired. Not a prod issue — rotate a fresh key into the Checkly secret. Look for this when everything else in Honeycomb is green.
+- **Create-session step failed:** check Honeycomb `aod-web` for the span — likely the same issue users are hitting. Fall through to the "All new sessions failing at `provision_failed`" section.
+- **Poll / assert step failed** (session never reached `completed`): the worker is stuck or slow. Check queue depth and the "Sessions stuck in `pending`/`running`" sections.
+- **Runtime session cap 429:** the canary user has leftover `running` sessions from previous failed runs. Terminate them via the admin or raise the canary's `UserQuota.max_concurrent_sessions`.
+
+Green Honeycomb + red Checkly almost always means a canary-user or network-reachability issue, not a service outage.
 
 ### Bad deploy — rollback
 
