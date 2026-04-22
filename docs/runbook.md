@@ -24,6 +24,7 @@ External dependencies:
 | Signal                         | Where |
 | ------------------------------ | ----- |
 | Alerts                         | Slack `#alerts` |
+| External `/health` reachability | Checkly — scheduled `GET /health` from outside our network |
 | Request rate, error rate, p95  | Honeycomb `aod-web` |
 | Worker task durations, failures | Honeycomb `aod-worker` — look for `session.provision_task` and `session.execute_turn` spans |
 | Session outcomes by runtime    | PostHog — event names above |
@@ -128,6 +129,21 @@ SELECT pg_size_pretty(pg_total_relation_size('agent_session_logs'));
 No retention policy exists today. Options: upgrade the plan, or delete logs for old/terminated sessions. Coordinate before deleting — we haven't written a retention tool yet.
 
 If connections exhausted: web uses 3 uvicorn workers, worker uses `--concurrency 4`, plus Procrastinate's own listener. All share one DB. Render's Postgres plan has a connection cap — check it before increasing concurrency anywhere.
+
+### Checkly `/health` check failing
+
+The scheduled Checkly run went red. Checkly hits `GET /health` from an external region — a failure means the web service is unreachable from the public internet.
+
+**Diagnose.**
+- If Render → `agent-on-demand-api` shows the service as healthy, the issue is between Checkly and Render: DNS, cert expiry on `aod.ravi.id`, or Render networking. Try `curl https://aod.ravi.id/health` yourself; if it works, suspect Checkly's region or a transient hiccup before escalating.
+- If Render also shows the web service unhealthy, fall through to "Web service returning 5xx / `/health` failing" above.
+
+**What Checkly does *not* catch.** It only proves the web process is answering. It won't detect:
+- Worker stuck / sessions backed up (web `/health` stays green)
+- Sprites outage (same)
+- All sessions failing (same)
+
+For those, watch Honeycomb `aod-worker` and PostHog session events.
 
 ### Bad deploy — rollback
 
