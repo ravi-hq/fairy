@@ -1,5 +1,5 @@
-"""ClaudeRuntime behavior: build_command (API-key + OAuth paths),
-write_config (MCP JSON at /home/sprite/.claude.json), skills_root."""
+"""ClaudeRuntime behavior: build_command, write_config (MCP JSON at
+/home/sprite/.claude.json), skills_root."""
 
 from __future__ import annotations
 
@@ -8,7 +8,6 @@ import json
 import pytest
 from django.contrib.auth.models import User
 
-from agent_on_demand.models import UserCredential
 from agent_on_demand.runtimes.claude import ClaudeRuntime
 from agent_on_demand.session_service.specs import McpServerSpec, SessionSpec
 from tests.fakes.sprite import RecordingSprite
@@ -45,10 +44,11 @@ def test_providers():
 
 
 @pytest.mark.django_db
-def test_build_command_run_api_key(user):
+def test_build_command_run(user):
     argv = ClaudeRuntime().build_command(_spec(user), "run")
     assert argv == [
         "claude",
+        "--dangerously-skip-permissions",
         "--print",
         "--verbose",
         "--output-format",
@@ -59,7 +59,7 @@ def test_build_command_run_api_key(user):
 
 
 @pytest.mark.django_db
-def test_build_command_continue_api_key(user):
+def test_build_command_continue(user):
     argv = ClaudeRuntime().build_command(_spec(user), "continue")
     assert argv == [
         "claude",
@@ -71,19 +71,6 @@ def test_build_command_continue_api_key(user):
         "--resume",
         SESSION_UUID,
     ]
-
-
-@pytest.mark.django_db
-def test_build_command_uses_dangerously_skip_permissions_when_user_has_oauth(user):
-    cred = UserCredential(user=user, kind="runtime_token:claude-oauth")
-    cred.set_value("oauth-token")
-    cred.save()
-
-    argv = ClaudeRuntime().build_command(_spec(user), "run")
-    assert "--dangerously-skip-permissions" in argv
-    # Run mode still uses --session-id, not --resume.
-    assert "--session-id" in argv
-    assert "--resume" not in argv
 
 
 @pytest.mark.django_db
