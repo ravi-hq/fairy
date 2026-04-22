@@ -138,19 +138,31 @@ npm run build
 
 ## Releases (maintainers)
 
-Published to npm via GitHub Actions using npm provenance + an npm automation
-token stored as the `NPM_TOKEN` repository secret. The workflow lives at
-`.github/workflows/sdk-release-npm.yml` and fires on a GitHub Release tagged
-`aod-sdk-ts-v<version>`.
+Published to npm via GitHub Actions using [Trusted
+Publishing](https://docs.npmjs.com/trusted-publishers) — no API tokens to
+manage. The workflow lives at `.github/workflows/sdk-release-npm.yml` and
+fires on a GitHub Release tagged `aod-sdk-ts-v<version>`. Provenance is
+enabled automatically.
 
 ### One-time setup
 
-1. Reserve `@ravi-hq/aod-sdk` on [npm](https://www.npmjs.com/) (the `ravi-hq`
-   org must exist and your account must be a member).
-2. Create an npm automation token with publish access and add it as
-   `NPM_TOKEN` in the repo's Actions secrets.
+1. **Reserve the name on npm**. The `ravi-hq` org must exist and your account
+   must be a member. The first publish has to happen outside OIDC (npm has no
+   "create package" UI), so publish once from a laptop with `npm publish
+   --access public`, or from CI with a temporary automation token.
+2. **Add the trusted publisher**. On
+   [npmjs.com](https://www.npmjs.com/package/@ravi-hq/aod-sdk/access) go to
+   the package's *Settings → Trusted Publisher* and add:
+
+   | Field | Value |
+   | ----- | ----- |
+   | Publisher | GitHub Actions |
+   | Organization / repo | `ravi-hq/agent-on-demand` |
+   | Workflow filename | `sdk-release-npm.yml` |
+   | Environment | `npm` |
+
 3. (Recommended) Create a protected GitHub environment `npm` with required
-   reviewers.
+   reviewers (must match the Environment field above).
 
 ### Cutting a release
 
