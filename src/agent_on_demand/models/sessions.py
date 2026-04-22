@@ -114,13 +114,29 @@ class AgentSessionLog(models.Model):
         ("stdout", "stdout"),
         ("stderr", "stderr"),
     ]
+    KIND_CHOICES = [
+        ("output", "output"),
+        ("stage", "stage"),
+    ]
+    STATE_CHOICES = [
+        ("started", "started"),
+        ("done", "done"),
+        ("failed", "failed"),
+    ]
 
     session = models.ForeignKey(AgentSession, on_delete=models.CASCADE, related_name="logs")
     turn = models.ForeignKey(
         SessionTurn, on_delete=models.CASCADE, related_name="logs", null=True, blank=True
     )
-    stream = models.CharField(max_length=6, choices=STREAM_CHOICES)
-    data = models.TextField()
+    kind = models.CharField(max_length=8, choices=KIND_CHOICES, default="output")
+    # stream + data describe output rows (stdout/stderr bytes from the runtime).
+    # For stage rows, stream is empty; data carries the optional failure message.
+    stream = models.CharField(max_length=6, choices=STREAM_CHOICES, blank=True, default="")
+    data = models.TextField(blank=True, default="")
+    # stage / state / duration_ms are set for kind=stage only.
+    stage = models.CharField(max_length=32, blank=True, default="")
+    state = models.CharField(max_length=16, choices=STATE_CHOICES, blank=True, default="")
+    duration_ms = models.PositiveIntegerField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -131,4 +147,6 @@ class AgentSessionLog(models.Model):
         ]
 
     def __str__(self):
+        if self.kind == "stage":
+            return f"[stage:{self.stage}:{self.state}]"
         return f"[{self.stream}] {self.data[:80]}"

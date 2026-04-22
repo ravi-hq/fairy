@@ -49,7 +49,13 @@ from agent_on_demand.observability import get_tracer
 from agent_on_demand.runtimes import RUNTIMES, RuntimeConfig
 
 from .errors import NoSpritesKeyError, ProvisionError
-from .provisioning import destroy_session, provision_session, resume_session
+from .provisioning import (
+    STAGE_RUNTIME_START,
+    destroy_session,
+    emit_stage_event,
+    provision_session,
+    resume_session,
+)
 from .specs import McpServerSpec, RepoSpec, SessionSpec, SkillSpec
 
 logger = logging.getLogger(__name__)
@@ -171,7 +177,7 @@ def _provision_session_inner(
         },
     ) as span:
         try:
-            provision_session(session.user, spec)
+            provision_session(session.user, spec, session_id=session_id)
         except NoSpritesKeyError as e:
             span.set_attribute("aod.failure_stage", "no_sprites_key")
             _mark_provision_failed(session, turn_id, str(e))
@@ -394,6 +400,8 @@ def _execute_turn_body(session, turn, runtime, sprite, prompt, mode, timeout, sp
     turn.status = "running"
     turn.started_at = now
     turn.save(update_fields=["status", "started_at"])
+
+    emit_stage_event(str(session.id), STAGE_RUNTIME_START, "started")
 
     cmd_thread = threading.Thread(target=_run_command, daemon=True)
     cmd_thread.start()

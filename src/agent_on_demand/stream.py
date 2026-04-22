@@ -30,7 +30,17 @@ async def stream_session_from_db(session_id: str, since: int = 0) -> AsyncGenera
             row
             async for row in AgentSessionLog.objects.filter(session_id=session_id, id__gt=last_id)
             .order_by("id")
-            .values("id", "stream", "data", "turn_id", "turn__turn_number")[:100]
+            .values(
+                "id",
+                "kind",
+                "stream",
+                "data",
+                "stage",
+                "state",
+                "duration_ms",
+                "turn_id",
+                "turn__turn_number",
+            )[:100]
         ]
 
         if chunks:
@@ -38,6 +48,14 @@ async def stream_session_from_db(session_id: str, since: int = 0) -> AsyncGenera
 
         for chunk in chunks:
             last_id = chunk["id"]
+            if chunk["kind"] == "stage":
+                payload = {"stage": chunk["stage"], "state": chunk["state"]}
+                if chunk["duration_ms"] is not None:
+                    payload["duration_ms"] = chunk["duration_ms"]
+                if chunk["state"] == "failed" and chunk["data"]:
+                    payload["message"] = chunk["data"]
+                yield _format("stage", chunk["id"], payload)
+                continue
             turn_id = chunk["turn_id"]
             if turn_id is not None and turn_id != last_turn_id:
                 yield _format("turn_start", chunk["id"], {"turn": chunk["turn__turn_number"]})
