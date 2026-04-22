@@ -9,7 +9,7 @@ if TYPE_CHECKING:
     from agent_on_demand.session_service.specs import McpServerSpec, SessionSpec
 
 
-OPENCODE_VERSION = "0.5.0"
+OPENCODE_VERSION = "1.14.20"
 
 
 class OpencodeRuntime:
