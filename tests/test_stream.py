@@ -220,6 +220,55 @@ async def _read_streaming(resp) -> str:
 
 
 @pytest.mark.django_db(transaction=True)
+async def test_stream_yields_stage_events_and_preserves_order(user):
+    """Stage rows translate to `stage` SSE events and interleave with output
+    rows in id order. Stage rows must not trigger `turn_start`."""
+    session = await AgentSession.objects.acreate(
+        user=user, runtime="claude", prompt="test", status="completed", exit_code=0
+    )
+    turn = await SessionTurn.objects.acreate(
+        session=session, turn_number=1, prompt="test", status="completed"
+    )
+    # Interleave: two stage rows before the turn starts, then output for turn 1.
+    await AgentSessionLog.objects.acreate(
+        session=session, kind="stage", stage="create_sprite", state="started"
+    )
+    await AgentSessionLog.objects.acreate(
+        session=session,
+        kind="stage",
+        stage="create_sprite",
+        state="done",
+        duration_ms=12000,
+    )
+    await AgentSessionLog.objects.acreate(
+        session=session,
+        kind="stage",
+        stage="env_file",
+        state="failed",
+        duration_ms=500,
+        data="write failed: permission denied",
+    )
+    await AgentSessionLog.objects.acreate(session=session, turn=turn, stream="stdout", data="hi")
+
+    events = [json.loads(e) async for e in stream_session_from_db(str(session.id), since=0) if e]
+    # stage events first (3), then turn_start, then output, then exit.
+    types = [e["type"] for e in events]
+    assert types == ["stage", "stage", "stage", "turn_start", "output", "exit"]
+
+    assert events[0] == {
+        "type": "stage",
+        "id": events[0]["id"],
+        "stage": "create_sprite",
+        "state": "started",
+    }
+    assert events[1]["state"] == "done"
+    assert events[1]["duration_ms"] == 12000
+    assert events[2]["state"] == "failed"
+    assert events[2]["duration_ms"] == 500
+    assert events[2]["message"] == "write failed: permission denied"
+
+
+@pytest.mark.django_db(transaction=True)
 async def test_stream_emits_id_field_via_view(async_client: AsyncClient):
     """Wire format must include `id: N` before each non-start data line."""
     user, headers = await _create_user_and_headers()
