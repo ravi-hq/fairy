@@ -70,6 +70,12 @@ STAGE_LABELS = {
 def _stage_label(stage: str) -> str:
     if stage.startswith("packages."):
         return f"installing {stage.split('.', 1)[1]} packages"
+    if stage == "clone_repos.setup":
+        return "  └ preparing git credentials"
+    if stage == "clone_repos.download":
+        return "  └ git clone"
+    if stage == "clone_repos.cleanup":
+        return "  └ cleaning up git credentials"
     return STAGE_LABELS.get(stage, stage)
 
 
