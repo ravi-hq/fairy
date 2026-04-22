@@ -220,7 +220,11 @@ def test_agents_list_only_shows_owned(logged_in_client, user, other_user):
         user=user, name="mine", model="anthropic/claude-sonnet-4-6", runtime="claude", version=1
     )
     theirs = Agent.objects.create(
-        user=other_user, name="theirs", model="anthropic/claude-sonnet-4-6", runtime="claude", version=1
+        user=other_user,
+        name="theirs",
+        model="anthropic/claude-sonnet-4-6",
+        runtime="claude",
+        version=1,
     )
     resp = logged_in_client.get("/ui/agents")
     assert resp.status_code == 200
@@ -231,7 +235,11 @@ def test_agents_list_only_shows_owned(logged_in_client, user, other_user):
 @pytest.mark.django_db
 def test_agent_detail_404_for_other_user(logged_in_client, other_user):
     theirs = Agent.objects.create(
-        user=other_user, name="theirs", model="anthropic/claude-sonnet-4-6", runtime="claude", version=1
+        user=other_user,
+        name="theirs",
+        model="anthropic/claude-sonnet-4-6",
+        runtime="claude",
+        version=1,
     )
     resp = logged_in_client.get(f"/ui/agents/{theirs.id}")
     assert resp.status_code == 404

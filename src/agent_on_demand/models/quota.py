@@ -37,6 +37,4 @@ class UserQuota(models.Model):
 
     @classmethod
     def active_session_count_for(cls, user) -> int:
-        return AgentSession.objects.filter(
-            user=user, status__in=ACTIVE_SESSION_STATUSES
-        ).count()
+        return AgentSession.objects.filter(user=user, status__in=ACTIVE_SESSION_STATUSES).count()

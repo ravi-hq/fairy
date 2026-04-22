@@ -74,6 +74,16 @@ test-all:
 lint:
 	uv run ruff check src/ tests/
 
+fmt-check:
+	uv run ruff format --check src/ tests/
+
+typecheck:
+	uv run mypy
+
+security:
+	uv run pip-audit
+	uv run bandit -r src/ -ll
+
 fmt:
 	uv run ruff format && ruff check --fix
 

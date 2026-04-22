@@ -31,6 +31,7 @@ import logging
 import queue
 import threading
 import time
+from typing import Literal, cast
 
 import posthog
 from django.contrib.auth import get_user_model
@@ -115,7 +116,7 @@ def build_turn_argv(runtime: Runtime, spec, mode: str) -> list[str]:
     Prompt delivery is out of band: callers attach `cmd.stdin` with the
     prompt bytes so it flows through the bash shim into the runtime CLI.
     """
-    argv = runtime.build_command(spec, mode)
+    argv = runtime.build_command(spec, cast(Literal["run", "continue"], mode))
     return ["bash", "-lc", _ENV_SOURCE_SHIM, "--", *argv]
 
 

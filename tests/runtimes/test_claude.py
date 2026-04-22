@@ -83,9 +83,7 @@ def test_write_config_url_server(user):
         [McpServerSpec(name="github", type="url", url="https://mcp.github.com/mcp")],
     )
     cfg = json.loads(sprite.write_map()["/home/sprite/.claude.json"])
-    assert cfg == {
-        "mcpServers": {"github": {"type": "http", "url": "https://mcp.github.com/mcp"}}
-    }
+    assert cfg == {"mcpServers": {"github": {"type": "http", "url": "https://mcp.github.com/mcp"}}}
 
 
 @pytest.mark.django_db

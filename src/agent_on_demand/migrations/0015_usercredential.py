@@ -4,7 +4,6 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("fairy", "0014_agentsessionlog_stage_fields"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),

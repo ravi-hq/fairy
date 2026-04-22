@@ -58,7 +58,9 @@ class UserCredential(models.Model):
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="credentials"
     )
-    kind = models.CharField(max_length=64)  # e.g. "provider:anthropic", "runtime_token:claude-oauth"
+    kind = models.CharField(
+        max_length=64
+    )  # e.g. "provider:anthropic", "runtime_token:claude-oauth"
     value_encrypted = models.BinaryField()
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

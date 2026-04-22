@@ -117,7 +117,9 @@ def test_create_agent(client: Client, auth_headers):
 def test_create_agent_minimal(client: Client, auth_headers):
     resp = client.post(
         "/agents",
-        data=json.dumps({"name": "Minimal", "model": "anthropic/claude-sonnet-4-6", "runtime": "claude"}),
+        data=json.dumps(
+            {"name": "Minimal", "model": "anthropic/claude-sonnet-4-6", "runtime": "claude"}
+        ),
         content_type="application/json",
         **auth_headers,
     )

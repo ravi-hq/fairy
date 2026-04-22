@@ -253,9 +253,7 @@ def test_execute_turn_writes_log_chunks_via_tagging_writer(user, mocker):
     )
 
     # Scope to output rows: stage rows (e.g. runtime_start) have turn_id=None by design.
-    logs = list(
-        AgentSessionLog.objects.filter(session=session, kind="output").order_by("id")
-    )
+    logs = list(AgentSessionLog.objects.filter(session=session, kind="output").order_by("id"))
     assert any("first chunk" in log.data for log in logs)
     assert any("second chunk" in log.data for log in logs)
     assert all(log.turn_id == turn.id for log in logs)
