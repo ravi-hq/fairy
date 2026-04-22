@@ -1,63 +1,140 @@
 {% extends "ui/base.html" %}
-{% block title %}Agent on Demand{% endblock %}
+{% block title %}Agent on Demand · Coding agents as an API{% endblock %}
+{% block body_class %}landing-body{% endblock %}
 {% block content %}
-  <section class="landing-hero">
-    <h1>Agent on Demand</h1>
-    <p class="lede">
-      A REST API for running AI coding agents on sandboxed cloud machines.
-      Define an <strong>agent</strong> (model + runtime), wire up an
-      <strong>environment</strong> (packages, env vars, network rules), and start
-      a <strong>session</strong>. Stream output back over SSE. Multi-turn when
-      you need it.
-    </p>
-    <div class="landing-ctas">
-      {% if user.is_authenticated %}
-        <a class="btn-primary" href="{% url 'ui-dashboard' %}">Open dashboard</a>
-      {% else %}
-        <a class="btn-primary" href="{% url 'ui-register' %}">Create an account</a>
-      {% endif %}
-      <a class="btn-secondary" href="https://ravi-hq.github.io/agent-on-demand">Read the docs</a>
-      <a class="btn-secondary" href="https://github.com/ravi-hq/agent-on-demand">GitHub</a>
-    </div>
-  </section>
+  <div class="landing-page">
 
-  <section class="landing-cards">
-    <div class="card">
-      <h3>Agents</h3>
-      <p>A runtime + model pairing. Claude, Codex, Gemini, and more. Optional MCP servers and system prompts.</p>
-    </div>
-    <div class="card">
-      <h3>Environments</h3>
-      <p>Packages, env vars, setup scripts, DNS allow-lists. Encrypted at rest. Versioned.</p>
-    </div>
-    <div class="card">
-      <h3>Sessions</h3>
-      <p>One agent run on one environment. Stream output over SSE. Resume with new prompts.</p>
-    </div>
-  </section>
+    <section class="landing-hero">
+      <div class="landing-container landing-hero-grid">
+        <div class="landing-hero-copy">
+          <div class="eyebrow">
+            <span class="dot dot-green pulse"></span>
+            REST API · Open source · Apache-2.0
+          </div>
+          <h1>
+            Spawn a coding agent
+            <span class="grad">in one request.</span>
+          </h1>
+          <p class="lede">
+            Agent on Demand is a REST API for running Claude Code, Codex and
+            Gemini CLI on fresh, sandboxed cloud machines. Define an agent,
+            wire up an environment, <code>POST /sessions</code>, stream the
+            output over SSE. Multi-turn when you need it.
+          </p>
+          <div class="landing-ctas">
+            {% if user.is_authenticated %}
+              <a class="btn-primary" href="{% url 'ui-dashboard' %}">Open dashboard →</a>
+            {% else %}
+              <a class="btn-primary" href="{% url 'ui-register' %}">Get started — it's free →</a>
+            {% endif %}
+            <a class="btn-ghost" href="https://ravi-hq.github.io/agent-on-demand">Read the docs</a>
+            <a class="btn-ghost" href="https://github.com/ravi-hq/agent-on-demand">GitHub ↗</a>
+          </div>
+          <div class="hero-meta">
+            <span><span class="dot dot-green"></span> Sandboxed per session</span>
+            <span><span class="dot dot-blue"></span> Bring your own keys</span>
+            <span><span class="dot dot-violet"></span> Versioned &amp; auditable</span>
+          </div>
+        </div>
 
-  <section class="landing-block">
-    <h2>Powered by Sprites</h2>
-    <p>
-      Every session runs inside a fresh sandbox provisioned on
-      <a href="https://sprites.dev">sprites.dev</a>. You bring your own Sprites
-      token and your own model API keys, stored encrypted and scoped per-user.
-      No shared credentials, no credential pooling.
-    </p>
-  </section>
+        <div class="terminal" aria-hidden="true">
+          <div class="terminal-bar">
+            <span class="tdot"></span><span class="tdot"></span><span class="tdot"></span>
+            <span class="terminal-title">aod.ravi.id · live session</span>
+          </div>
+<pre class="terminal-body"><span class="c-mute">$</span> <span class="c-cmd">curl -N https://aod.ravi.id/sessions/s_4f2c/stream \
+    -H "Authorization: Bearer $AOD_KEY"</span>
 
-  <section class="landing-block">
-    <h2>Open source. Contributors welcome.</h2>
-    <p>
-      Agent on Demand is Apache-2.0 and lives on
-      <a href="https://github.com/ravi-hq/agent-on-demand">GitHub</a>. We'd
-      especially love help adding more runtimes and model backends. If your
-      favorite agent CLI isn't supported, open a PR, file an issue, or come
-      say hello.
-    </p>
-    <p>
-      <a class="btn-secondary" href="https://github.com/ravi-hq/agent-on-demand/issues">Browse issues</a>
-      <a class="btn-secondary" href="https://ravi-hq.github.io/agent-on-demand">Architecture docs</a>
-    </p>
-  </section>
+<span class="c-evt">event:</span> session.started
+<span class="c-evt">data:</span>  <span class="c-str">{"id":"s_4f2c","agent":"claude-sonnet-4-6"}</span>
+
+<span class="c-evt">event:</span> turn.chunk
+<span class="c-evt">data:</span>  <span class="c-str">{"text":"Reading src/payments.py…"}</span>
+
+<span class="c-evt">event:</span> turn.chunk
+<span class="c-evt">data:</span>  <span class="c-str">{"text":"Applying refactor across 3 files…"}</span>
+
+<span class="c-evt">event:</span> turn.completed
+<span class="c-evt">data:</span>  <span class="c-str">{"status":"ok","files_changed":3,"tokens":41_208}</span><span class="caret">▍</span></pre>
+        </div>
+      </div>
+    </section>
+
+    <section class="landing-container landing-features">
+      <div class="feature">
+        <div class="feature-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/><circle cx="9" cy="10" r="1.2" fill="currentColor"/><circle cx="15" cy="10" r="1.2" fill="currentColor"/></svg>
+        </div>
+        <h3>Agents</h3>
+        <p>Runtime + model. Claude Code, Codex, Gemini CLI. Optional MCP servers, system prompts. Versioned with optimistic concurrency.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l8 4v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6l8-4z"/><path d="M9 12l2 2 4-4"/></svg>
+        </div>
+        <h3>Environments</h3>
+        <p>Packages, setup scripts, env vars, DNS allow-lists. Secrets encrypted at rest, never echoed back. DNS-enforced egress when you need it.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h3l2-6 4 12 2-6h5"/></svg>
+        </div>
+        <h3>Sessions</h3>
+        <p>One agent on one environment. Stream turns over SSE. Resume with follow-up prompts. Every turn logged, replayable, terminable.</p>
+      </div>
+    </section>
+
+    <section class="landing-container landing-code">
+      <div class="section-head">
+        <h2>Five lines. One session.</h2>
+        <p class="muted">The whole API fits on a postcard. Create it, prompt it, stream it.</p>
+      </div>
+<pre class="code-block"><span class="c-mute"># 1. Create an agent (runtime + model)</span>
+<span class="c-cmd">curl -X POST https://aod.ravi.id/agents</span> \
+  -H <span class="c-str">"Authorization: Bearer $AOD_KEY"</span> \
+  -d <span class="c-str">'{"name":"refactor-bot","model":"claude-sonnet-4-6"}'</span>
+
+<span class="c-mute"># 2. Start a session and stream the output</span>
+<span class="c-cmd">curl -N https://aod.ravi.id/sessions</span> \
+  -H <span class="c-str">"Authorization: Bearer $AOD_KEY"</span> \
+  -d <span class="c-str">'{"agent_id":"…","environment_id":"…","prompt":"refactor payments.py"}'</span>
+</pre>
+    </section>
+
+    <section class="landing-container runtime-strip">
+      <h2>Runs the agent CLI you already use.</h2>
+      <div class="runtime-grid">
+        <div class="runtime-chip">claude</div>
+        <div class="runtime-chip">codex</div>
+        <div class="runtime-chip">gemini</div>
+        <div class="runtime-chip runtime-chip-muted">+ your PR welcome</div>
+      </div>
+    </section>
+
+    <section class="landing-container landing-outro">
+      <div class="landing-block">
+        <h2>Powered by Sprites.</h2>
+        <p>
+          Every session runs inside a fresh sandbox provisioned on
+          <a href="https://sprites.dev">sprites.dev</a>. You bring your own
+          Sprites token and your own model API keys — stored encrypted and
+          scoped per-user. No shared credentials, no credential pooling.
+        </p>
+      </div>
+      <div class="landing-block">
+        <h2>Open source. Contributors welcome.</h2>
+        <p>
+          Agent on Demand is Apache-2.0 and lives on
+          <a href="https://github.com/ravi-hq/agent-on-demand">GitHub</a>.
+          We'd especially love help adding more runtimes and model backends.
+          If your favorite agent CLI isn't supported, open a PR.
+        </p>
+        <p>
+          <a class="btn-secondary" href="https://github.com/ravi-hq/agent-on-demand/issues">Browse issues</a>
+          <a class="btn-secondary" href="https://ravi-hq.github.io/agent-on-demand">Architecture docs</a>
+        </p>
+      </div>
+    </section>
+
+  </div>
 {% endblock %}

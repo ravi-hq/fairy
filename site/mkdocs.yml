@@ -36,6 +36,7 @@ nav:
   - Reference:
     - API Reference: api/reference.md
     - Authentication: api/authentication.md
+    - Runtimes: api/runtimes.md
     - Streaming: api/streaming.md
     - Errors: api/errors.md
     - Pagination: api/pagination.md
