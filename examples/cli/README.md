@@ -7,7 +7,7 @@ version that runs inside a Sprite sandbox against a pinned agent, tool set,
 and repo list.
 
 ```
-$ pip install aod-sdk                                    # or: pip install -e ../../clients/python
+$ pip install aod-sdk
 $ export AOD_API_URL=https://aod.example.com
 $ export AOD_API_TOKEN=aod_xxxxxxxx
 $ ./example-cli.py "what does /workspace/fairy do?"     # new session
