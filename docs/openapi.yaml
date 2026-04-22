@@ -71,6 +71,10 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Agent"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
         "422":
           $ref: "#/components/responses/ValidationError"
 
@@ -105,6 +109,10 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Agent"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
         "422":
@@ -119,6 +127,12 @@ paths:
       responses:
         "200":
           description: Archived
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Agent"
+        "404":
+          $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
 
@@ -140,6 +154,8 @@ paths:
                     type: array
                     items:
                       $ref: "#/components/schemas/AgentVersion"
+        "404":
+          $ref: "#/components/responses/NotFound"
 
   /environments:
     get:
@@ -173,6 +189,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Environment"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "422":
           $ref: "#/components/responses/ValidationError"
 
@@ -189,6 +207,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Environment"
+        "404":
+          $ref: "#/components/responses/NotFound"
     put:
       tags: [environments]
       summary: Update an environment (optimistic concurrency)
@@ -205,8 +225,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Environment"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationError"
 
   /environments/{environment_id}/archive:
     parameters:
@@ -217,6 +243,12 @@ paths:
       responses:
         "200":
           description: Archived
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Environment"
+        "404":
+          $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
 
@@ -226,9 +258,20 @@ paths:
     delete:
       tags: [environments]
       summary: Hard-delete an environment
+      description: >
+        Returns 409 if any session (active or historical) still references
+        this environment. Archive it instead if you need to preserve history.
       responses:
-        "204":
+        "200":
           description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DetailMessage"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
 
   /environments/{environment_id}/versions:
     parameters:
@@ -248,6 +291,8 @@ paths:
                     type: array
                     items:
                       $ref: "#/components/schemas/EnvironmentVersion"
+        "404":
+          $ref: "#/components/responses/NotFound"
 
   /sessions:
     get:
@@ -280,7 +325,13 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Session"
+                $ref: "#/components/schemas/SessionCreateAck"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
         "422":
           $ref: "#/components/responses/ValidationError"
         "429":
@@ -288,14 +339,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  detail:
-                    type: string
-                  limit:
-                    type: integer
-                  active:
-                    type: integer
+                $ref: "#/components/schemas/ConcurrencyLimitError"
 
   /sessions/{session_id}:
     parameters:
@@ -310,6 +354,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Session"
+        "404":
+          $ref: "#/components/responses/NotFound"
 
   /sessions/{session_id}/prompt:
     parameters:
@@ -322,18 +368,22 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              required: [prompt]
-              properties:
-                prompt:
-                  type: string
-                timeout:
-                  type: number
+              $ref: "#/components/schemas/SessionPromptRequest"
       responses:
         "202":
           description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionPromptAck"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationError"
 
   /sessions/{session_id}/turns:
     parameters:
@@ -354,6 +404,8 @@ paths:
                     type: array
                     items:
                       $ref: "#/components/schemas/SessionTurn"
+        "404":
+          $ref: "#/components/responses/NotFound"
 
   /sessions/{session_id}/terminate:
     parameters:
@@ -364,6 +416,12 @@ paths:
       responses:
         "200":
           description: Terminated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionTerminateAck"
+        "404":
+          $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
 
@@ -374,8 +432,16 @@ paths:
       tags: [sessions]
       summary: Delete a session row
       responses:
-        "204":
+        "200":
           description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DetailMessage"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
 
   /sessions/{session_id}/stream:
     parameters:
@@ -385,10 +451,10 @@ paths:
       summary: Server-sent events stream of session output
       description: >
         Streams session output as Server-Sent Events. Event types: `start`,
-        `turn_start`, `output`, `exit`, `error`, `terminated`, `stale`.
-        Every event except `start` includes an `"id"` field in its JSON payload
-        and an SSE `id:` line. Clients can resume a disconnected stream via
-        the `Last-Event-ID` header or the `since` query parameter.
+        `turn_start`, `output`, `stage`, `exit`, `error`, `terminated`,
+        `stale`. Every event except `start` includes an `"id"` field in its
+        JSON payload and an SSE `id:` line. Clients can resume a disconnected
+        stream via the `Last-Event-ID` header or the `since` query parameter.
       parameters:
         - name: since
           in: query
@@ -406,6 +472,8 @@ paths:
                 type: string
         "400":
           description: Bad request (e.g. since is not a non-negative integer)
+        "404":
+          $ref: "#/components/responses/NotFound"
 
 components:
   securitySchemes:
@@ -438,6 +506,12 @@ components:
         format: uuid
 
   responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
     NotFound:
       description: Not found
       content:
@@ -473,21 +547,106 @@ components:
               items:
                 type: object
 
+    DetailMessage:
+      type: object
+      properties:
+        detail:
+          type: string
+
+    ConcurrencyLimitError:
+      type: object
+      properties:
+        detail:
+          type: string
+        limit:
+          type: integer
+        active:
+          type: integer
+
+    Networking:
+      type: object
+      description: >
+        `type` gates egress from the Sprite. For `limited`, `allowed_hosts` is
+        an allow-list of hostnames reachable from inside the Sprite.
+      properties:
+        type:
+          type: string
+          enum: [unrestricted, limited]
+          default: unrestricted
+        allowed_hosts:
+          type: array
+          items:
+            type: string
+      required: [type]
+
+    Packages:
+      type: object
+      description: >
+        Packages to install during environment provisioning, keyed by package
+        manager. Known managers: `apt`, `cargo`, `gem`, `go`, `npm`, `pip`.
+      additionalProperties:
+        type: array
+        items:
+          type: string
+
+    McpServer:
+      type: object
+      description: >
+        MCP server config. `type=url` requires `url`; `type=stdio` requires
+        `command`. Names must be unique within the agent.
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+          enum: [url, stdio]
+        url:
+          type: string
+        command:
+          type: string
+      required: [name, type]
+
+    Skill:
+      type: object
+      description: >
+        Opaque skill definition — shape depends on the runtime. Validated
+        server-side; see `agent_on_demand/runtimes.py`.
+      additionalProperties: true
+
     Agent:
       type: object
       properties:
         id:
           type: string
           format: uuid
+        type:
+          type: string
+          enum: [agent]
         name:
           type: string
+        description:
+          type: string
+          nullable: true
+        system:
+          type: string
+          nullable: true
+          description: System prompt prepended to first-turn user prompts.
         model:
           type: string
         runtime:
           type: string
-        system_prompt:
+        environment_id:
           type: string
+          format: uuid
           nullable: true
+        skills:
+          type: array
+          items:
+            $ref: "#/components/schemas/Skill"
+        mcp_servers:
+          type: array
+          items:
+            $ref: "#/components/schemas/McpServer"
         metadata:
           type: object
           additionalProperties: true
@@ -510,27 +669,36 @@ components:
       properties:
         name:
           type: string
+          maxLength: 200
         model:
           type: string
+          maxLength: 100
+          description: Must match one of the known `AgentModel` values.
         runtime:
           type: string
-        system_prompt:
+          maxLength: 32
+        system:
           type: string
-        metadata:
-          type: object
-          additionalProperties: true
-        tools:
-          type: array
-          items:
-            type: object
-        mcp_servers:
-          type: array
-          items:
-            type: object
+          default: ""
+        description:
+          type: string
+          default: ""
+        environment_id:
+          type: string
+          format: uuid
+          nullable: true
         skills:
           type: array
           items:
-            type: object
+            $ref: "#/components/schemas/Skill"
+        mcp_servers:
+          type: array
+          items:
+            $ref: "#/components/schemas/McpServer"
+          description: Maximum 20 per agent.
+        metadata:
+          type: object
+          additionalProperties: true
 
     AgentUpdate:
       type: object
@@ -538,47 +706,74 @@ components:
       properties:
         version:
           type: integer
+          description: Current version — optimistic concurrency check.
         name:
           type: string
         model:
           type: string
         runtime:
           type: string
-        system_prompt:
+        system:
           type: string
-        metadata:
-          type: object
-          additionalProperties: true
-        tools:
-          type: array
-          items:
-            type: object
-        mcp_servers:
-          type: array
-          items:
-            type: object
+        description:
+          type: string
+        environment_id:
+          type: string
+          format: uuid
+          nullable: true
         skills:
           type: array
           items:
-            type: object
+            $ref: "#/components/schemas/Skill"
+        mcp_servers:
+          type: array
+          items:
+            $ref: "#/components/schemas/McpServer"
+        metadata:
+          type: object
+          additionalProperties: true
 
     AgentVersion:
       type: object
+      description: >
+        Historical snapshot of an agent at a specific `version`. The `id`
+        field is the owning agent's id, not a version-specific id.
       properties:
-        version:
-          type: integer
+        id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          enum: [agent]
         name:
           type: string
+        description:
+          type: string
+          nullable: true
+        system:
+          type: string
+          nullable: true
         model:
           type: string
         runtime:
           type: string
-        system_prompt:
+        environment_id:
           type: string
+          format: uuid
           nullable: true
+        skills:
+          type: array
+          items:
+            $ref: "#/components/schemas/Skill"
+        mcp_servers:
+          type: array
+          items:
+            $ref: "#/components/schemas/McpServer"
         metadata:
           type: object
           additionalProperties: true
+        version:
+          type: integer
         created_at:
           type: string
           format: date-time
@@ -589,22 +784,19 @@ components:
         id:
           type: string
           format: uuid
+        type:
+          type: string
+          enum: [environment]
         name:
           type: string
-        resources:
-          type: array
-          items:
-            type: object
-        setup_commands:
-          type: array
-          items:
-            type: string
-        network_policy:
-          type: object
+        packages:
+          $ref: "#/components/schemas/Packages"
+        setup_script:
+          type: string
           nullable: true
-        metadata:
-          type: object
-          additionalProperties: true
+          description: Shell script executed during Sprite provisioning.
+        networking:
+          $ref: "#/components/schemas/Networking"
         version:
           type: integer
         archived_at:
@@ -624,23 +816,20 @@ components:
       properties:
         name:
           type: string
-        resources:
-          type: array
-          items:
-            type: object
-        setup_commands:
-          type: array
-          items:
-            type: string
+          maxLength: 200
+        packages:
+          $ref: "#/components/schemas/Packages"
         env_vars:
           type: object
+          description: >
+            Encrypted at rest; never returned in responses. Values of empty
+            string on a PUT delete the key (see `test_metadata_merge_semantics`).
           additionalProperties:
             type: string
-        network_policy:
-          type: object
-        metadata:
-          type: object
-          additionalProperties: true
+        setup_script:
+          type: string
+        networking:
+          $ref: "#/components/schemas/Networking"
 
     EnvironmentUpdate:
       type: object
@@ -648,50 +837,77 @@ components:
       properties:
         version:
           type: integer
+          description: Current version — optimistic concurrency check.
         name:
           type: string
-        resources:
-          type: array
-          items:
-            type: object
-        setup_commands:
-          type: array
-          items:
-            type: string
+        packages:
+          $ref: "#/components/schemas/Packages"
         env_vars:
           type: object
           additionalProperties:
             type: string
-        network_policy:
-          type: object
-        metadata:
-          type: object
-          additionalProperties: true
+        setup_script:
+          type: string
+        networking:
+          $ref: "#/components/schemas/Networking"
 
     EnvironmentVersion:
       type: object
       properties:
-        version:
-          type: integer
+        id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          enum: [environment]
         name:
           type: string
-        resources:
-          type: array
-          items:
-            type: object
-        setup_commands:
-          type: array
-          items:
-            type: string
-        network_policy:
-          type: object
+        packages:
+          $ref: "#/components/schemas/Packages"
+        setup_script:
+          type: string
           nullable: true
-        metadata:
-          type: object
-          additionalProperties: true
+        networking:
+          $ref: "#/components/schemas/Networking"
+        version:
+          type: integer
         created_at:
           type: string
           format: date-time
+
+    SessionResource:
+      type: object
+      description: >
+        A GitHub repository cloned into the Sprite for the session. Tokens
+        supplied on creation are NOT returned on any response.
+      properties:
+        type:
+          type: string
+          enum: [github_repository]
+        url:
+          type: string
+          description: HTTPS GitHub repo URL.
+        mount_path:
+          type: string
+          nullable: true
+          description: Absolute path inside the Sprite. Defaults to /workspace/<repo>.
+
+    GitHubRepoResourceInput:
+      type: object
+      required: [type, url]
+      properties:
+        type:
+          type: string
+          enum: [github_repository]
+        url:
+          type: string
+        mount_path:
+          type: string
+          nullable: true
+        authorization_token:
+          type: string
+          nullable: true
+          description: GitHub PAT for private repos; encrypted at rest, never echoed back.
 
     Session:
       type: object
@@ -702,29 +918,33 @@ components:
         agent_id:
           type: string
           format: uuid
+          nullable: true
         environment_id:
           type: string
           format: uuid
           nullable: true
+        runtime:
+          type: string
         status:
           type: string
           enum: [pending, running, completed, failed, terminated]
-        prompt:
-          type: string
-        stream_url:
-          type: string
-        metadata:
-          type: object
-          additionalProperties: true
+        exit_code:
+          type: integer
+          nullable: true
         created_at:
           type: string
           format: date-time
         updated_at:
           type: string
           format: date-time
-        ended_at:
-          type: string
-          format: date-time
+        resources:
+          type: array
+          items:
+            $ref: "#/components/schemas/SessionResource"
+        turn_count:
+          type: integer
+        current_turn:
+          type: integer
           nullable: true
 
     SessionTurn:
@@ -759,13 +979,84 @@ components:
         agent_id:
           type: string
           format: uuid
-        environment_id:
-          type: string
-          format: uuid
         prompt:
           type: string
         timeout:
-          type: number
-        metadata:
-          type: object
-          additionalProperties: true
+          type: integer
+          minimum: 10
+          maximum: 3600
+          default: 600
+          description: Per-turn timeout in seconds.
+        environment_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Overrides the agent's default environment when set.
+        resources:
+          type: array
+          description: >
+            GitHub repositories to clone into the session. Max 10 per session;
+            `mount_path`s must be unique.
+          items:
+            $ref: "#/components/schemas/GitHubRepoResourceInput"
+
+    SessionCreateAck:
+      type: object
+      description: >
+        Trimmed ack returned by `POST /sessions`. Fetch the full `Session`
+        via `GET /sessions/{id}`.
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [pending]
+        stream_url:
+          type: string
+        environment_id:
+          type: string
+          format: uuid
+          nullable: true
+        resources:
+          type: array
+          items:
+            $ref: "#/components/schemas/SessionResource"
+        current_turn:
+          type: integer
+
+    SessionPromptRequest:
+      type: object
+      required: [prompt]
+      properties:
+        prompt:
+          type: string
+        timeout:
+          type: integer
+          minimum: 10
+          maximum: 3600
+          default: 600
+
+    SessionPromptAck:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [pending]
+        stream_url:
+          type: string
+        current_turn:
+          type: integer
+
+    SessionTerminateAck:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [terminated]
