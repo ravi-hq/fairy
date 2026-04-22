@@ -8,12 +8,14 @@ PATH, and alias it.
 
     alias agent=/path/to/example-cli.py
     agent "work on the latest open issue in ravi-hq/fairy"
+    agent --session <uuid> "now open a PR with the fix"
 
 Requires: Python 3.11+, AOD_API_URL, AOD_API_TOKEN.
 """
 
 from __future__ import annotations
 
+import argparse
 import os
 import sys
 
@@ -25,7 +27,7 @@ from claude_format import ClaudeFormatter
 AGENT = {
     "name": "example-cli",
     "model": "claude-sonnet-4-6",
-    "runtime": "claude",
+    "runtime": "claude-oauth",
     "system": (
         "You are a senior engineer working inside a Sprite sandbox. "
         "Investigate thoroughly before editing. Keep changes minimal and "
@@ -85,32 +87,48 @@ def _handle_stream(client: AodClient, session_id: str) -> int:
     return 1
 
 
+def _new_session(client: AodClient, prompt: str) -> dict:
+    env_id = client.ensure("environments", ENVIRONMENT["name"], ENVIRONMENT)
+    agent_id = client.ensure("agents", AGENT["name"], {**AGENT, "environment_id": env_id})
+    gh_token = os.environ.get("GITHUB_TOKEN")
+    return client.create_session(
+        agent_id=agent_id,
+        prompt=prompt,
+        timeout=TIMEOUT,
+        resources=[
+            {"type": "github_repository", "url": url, "authorization_token": gh_token}
+            for url in REPOS
+        ],
+    )
+
+
 def main() -> int:
-    if len(sys.argv) < 2:
-        sys.exit(f"usage: {sys.argv[0]} '<prompt>'")
-    prompt = " ".join(sys.argv[1:])
+    parser = argparse.ArgumentParser(
+        prog=os.path.basename(sys.argv[0]),
+        usage="%(prog)s [--session <id>] '<prompt>'",
+    )
+    parser.add_argument(
+        "--session",
+        metavar="ID",
+        help="Continue an existing session instead of creating a new one.",
+    )
+    parser.add_argument("prompt", nargs="+", help="Prompt to send to the agent.")
+    args = parser.parse_args()
+    prompt = " ".join(args.prompt)
 
     client = AodClient(_env("AOD_API_URL", "http://localhost:8777"), _env("AOD_API_TOKEN"))
 
     try:
-        env_id = client.ensure("environments", ENVIRONMENT["name"], ENVIRONMENT)
-        agent_id = client.ensure("agents", AGENT["name"], {**AGENT, "environment_id": env_id})
-        gh_token = os.environ.get("GITHUB_TOKEN")
-        session = client.create_session(
-            agent_id=agent_id,
-            prompt=prompt,
-            timeout=TIMEOUT,
-            resources=[
-                {
-                    "type": "github_repository",
-                    "url": url,
-                    "authorization_token": gh_token,
-                }
-                for url in REPOS
-            ],
-        )
-        print(f"# session {session['id']}", file=sys.stderr)
-        return _handle_stream(client, session["id"])
+        if args.session:
+            resp = client.continue_session(args.session, prompt=prompt, timeout=TIMEOUT)
+            print(
+                f"# session {resp['id']} (turn {resp.get('current_turn')})",
+                file=sys.stderr,
+            )
+        else:
+            resp = _new_session(client, prompt)
+            print(f"# session {resp['id']}", file=sys.stderr)
+        return _handle_stream(client, resp["id"])
     except AodError as e:
         sys.exit(str(e))
 

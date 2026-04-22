@@ -73,6 +73,9 @@ class AodClient:
             body["environment_id"] = environment_id
         return self.post("/sessions", body)
 
+    def continue_session(self, session_id: str, *, prompt: str, timeout: int) -> dict:
+        return self.post(f"/sessions/{session_id}/prompt", {"prompt": prompt, "timeout": timeout})
+
     def stream_session(self, session_id: str) -> Iterator[dict]:
         """Yield parsed SSE event payloads for a session, one per `data:` line.
         Skips heartbeats, `id:` lines, and blanks. Closes when the stream ends."""

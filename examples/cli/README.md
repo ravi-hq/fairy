@@ -8,7 +8,8 @@ runs inside a Sprite sandbox against a pinned agent, tool set, and repo list.
 ```
 $ export AOD_API_URL=https://aod.example.com
 $ export AOD_API_TOKEN=aod_xxxxxxxx
-$ ./example-cli.py "what does /workspace/fairy do?"
+$ ./example-cli.py "what does /workspace/fairy do?"     # new session
+$ ./example-cli.py --session <uuid> "open a PR"          # continue that session
 # session 8f3a...
 ⚙️  Session init · model=claude-sonnet-4-6, tools=27, mcp=[context7]
 
@@ -47,13 +48,19 @@ Fork the file per team or per workflow — one binary, one alias.
 
 ## How "ensure they exist" works
 
-On every run the CLI:
+On every **new-session** run the CLI:
 
 1. `GET /environments` — if a non-archived environment with the configured
    name exists, reuse its id; otherwise `POST /environments` to create it.
 2. Same for the agent via `GET /agents` / `POST /agents`.
 3. `POST /sessions` with `agent_id`, the prompt, and the repo list, then
    streams `GET /sessions/{id}/stream` to stdout.
+
+When `--session <id>` is passed, the ensure steps are skipped and the CLI
+calls `POST /sessions/{id}/prompt` directly to queue another turn against
+the same Sprite (same filesystem, same runtime history). The session must
+be in a `pending` or `completed` state — `running`, `failed`, and
+`terminated` all return `409`.
 
 The CLI does **not** reconcile drift. If the named agent already exists with
 a different model or system prompt, it's reused as-is. To roll out a config
