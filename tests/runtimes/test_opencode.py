@@ -1,6 +1,6 @@
-"""OpencodeRuntime behavior: install (npm), build_command (run + --continue),
-write_config (JSON at /home/sprite/.config/opencode/opencode.json with
-opencode's schema), skills_root."""
+"""OpencodeRuntime behavior: install (npm + symlink + pinned HOME),
+build_command (cd + HOME wrapper, run + --continue), write_config (JSON
+under the pinned HOME), skills_root."""
 
 from __future__ import annotations
 
@@ -9,9 +9,17 @@ import json
 import pytest
 from django.contrib.auth.models import User
 
-from agent_on_demand.runtimes.opencode import OPENCODE_VERSION, OpencodeRuntime
+from agent_on_demand.runtimes.opencode import (
+    OPENCODE_CONFIG_DIR,
+    OPENCODE_HOME,
+    OPENCODE_VERSION,
+    OpencodeRuntime,
+)
 from agent_on_demand.session_service.specs import McpServerSpec, SessionSpec
 from tests.fakes.sprite import RecordingSprite
+
+
+CONFIG_PATH = f"{OPENCODE_CONFIG_DIR}/opencode.json"
 
 
 @pytest.fixture
@@ -34,7 +42,7 @@ def _spec(user, model: str = "anthropic/claude-haiku-4-5") -> SessionSpec:
 
 
 def test_skills_root():
-    assert OpencodeRuntime().skills_root == "/home/sprite/.config/opencode/skills"
+    assert OpencodeRuntime().skills_root == f"{OPENCODE_CONFIG_DIR}/skills"
 
 
 def test_providers():
@@ -53,42 +61,37 @@ def test_install_runs_npm_global():
     assert "npm install -g" in script
     # Symlink into a PATH-visible location (nvm prefix bin isn't on PATH).
     assert "/home/sprite/.local/bin/opencode" in script
-    # Pre-create the legacy config dir so first-run migration can read it.
-    assert "/home/sprite/.opencode" in script
+    # Pre-create the pinned HOME's config dir so write_config + per-turn
+    # cd both succeed.
+    assert OPENCODE_CONFIG_DIR in script
 
 
 @pytest.mark.django_db
 def test_build_command_run(user):
     argv = OpencodeRuntime().build_command(_spec(user), "run")
-    assert argv == [
-        "opencode",
-        "run",
-        "--model",
-        "anthropic/claude-haiku-4-5",
-        "--format",
-        "json",
-    ]
+    # bash -c wrapper that pins cwd + HOME outside /home/sprite.
+    assert argv[0] == "bash"
+    assert argv[1] == "-c"
+    script = argv[2]
+    assert script.startswith(f"cd {OPENCODE_HOME} && ")
+    assert f"exec env HOME={OPENCODE_HOME}" in script
+    assert "opencode run --model anthropic/claude-haiku-4-5 --format json" in script
+    assert "--continue" not in script
 
 
 @pytest.mark.django_db
 def test_build_command_continue(user):
     argv = OpencodeRuntime().build_command(_spec(user), "continue")
-    assert argv == [
-        "opencode",
-        "run",
-        "--model",
-        "anthropic/claude-haiku-4-5",
-        "--format",
-        "json",
-        "--continue",
-    ]
+    assert argv[0] == "bash"
+    assert argv[1] == "-c"
+    assert argv[2].endswith(" --continue")
 
 
 @pytest.mark.django_db
 def test_build_command_passes_through_provider_prefix(user):
     """Model string passes through unchanged — opencode takes provider/model_id."""
     argv = OpencodeRuntime().build_command(_spec(user, model="openai/gpt-4.1"), "run")
-    assert argv[3] == "openai/gpt-4.1"
+    assert "--model openai/gpt-4.1" in argv[2]
 
 
 @pytest.mark.django_db
@@ -99,7 +102,7 @@ def test_write_config_url_server(user):
         _spec(user),
         [McpServerSpec(name="github", type="url", url="https://mcp.github.com/mcp")],
     )
-    cfg = json.loads(sprite.write_map()["/home/sprite/.config/opencode/opencode.json"])
+    cfg = json.loads(sprite.write_map()[CONFIG_PATH])
     assert cfg == {
         "mcp": {
             "github": {
@@ -126,7 +129,7 @@ def test_write_config_url_server_with_headers(user):
             )
         ],
     )
-    cfg = json.loads(sprite.write_map()["/home/sprite/.config/opencode/opencode.json"])
+    cfg = json.loads(sprite.write_map()[CONFIG_PATH])
     assert cfg["mcp"]["private"]["headers"] == {"Authorization": "Bearer ${SECRET}"}
 
 
@@ -146,7 +149,7 @@ def test_write_config_stdio_server(user):
             )
         ],
     )
-    cfg = json.loads(sprite.write_map()["/home/sprite/.config/opencode/opencode.json"])
+    cfg = json.loads(sprite.write_map()[CONFIG_PATH])
     # Opencode quirks: `command` is a single combined array (not command+args
     # split), env key is `environment`, type is `local` (not `stdio`).
     assert cfg["mcp"]["local"] == {
@@ -161,4 +164,4 @@ def test_write_config_stdio_server(user):
 def test_write_config_empty_mcp_servers_writes_nothing(user):
     sprite = RecordingSprite("s")
     OpencodeRuntime().write_config(sprite, _spec(user), [])
-    assert "/home/sprite/.config/opencode/opencode.json" not in sprite.write_map()
+    assert CONFIG_PATH not in sprite.write_map()

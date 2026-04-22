@@ -370,9 +370,8 @@ def _directories_for_post_script_writes(spec: SessionSpec) -> list[str]:
             dirs.append("/home/sprite/.codex")
         elif spec.runtime.name == "gemini":
             dirs.append("/home/sprite/.gemini")
-        elif spec.runtime.name == "opencode":
-            dirs.append("/home/sprite/.config/opencode")
         # claude writes to /home/sprite/.claude.json (no mkdir).
+        # opencode's install hook pre-creates its config dir.
     if spec.skills and spec.runtime.skills_root:
         for s in spec.skills:
             dirs.append(f"{spec.runtime.skills_root}/{s.name}")
