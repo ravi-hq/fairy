@@ -2,31 +2,59 @@
 
 This page walks through the minimum-viable flow: create an agent, start a session, and stream its output. All you need is a running Agent on Demand deployment and an API token.
 
+Python examples use the official [`aod-sdk`](../sdks/python.md) package (`pip install aod-sdk`). `Client()` reads `AOD_API_URL` and `AOD_API_TOKEN` from the environment when no explicit arguments are passed.
+
 ## Prerequisites
 
 - **Local**: run `make dev` — the server starts on `http://localhost:8777`.
 - **Remote**: set `BASE` to your deployment URL.
 - A valid API token (created server-side via `APIKey.create_key`).
 
-```bash
-BASE=http://localhost:8777
-TOKEN=aod_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-```
+=== "curl"
+
+    ```bash
+    BASE=http://localhost:8777
+    TOKEN=aod_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+    ```
+
+=== "Python"
+
+    ```bash
+    export AOD_API_URL=http://localhost:8777
+    export AOD_API_TOKEN=aod_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+    pip install aod-sdk
+    ```
 
 ## Step 1 — Create an agent
 
 An agent is a reusable template. The minimum required fields are `name`, `model`, and `runtime`.
 
-```bash
-curl -X POST "$BASE/agents" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "hello",
-    "model": "claude-sonnet-4-6",
-    "runtime": "claude"
-  }'
-```
+=== "curl"
+
+    ```bash
+    curl -X POST "$BASE/agents" \
+      -H "Authorization: Bearer $TOKEN" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "name": "hello",
+        "model": "claude-sonnet-4-6",
+        "runtime": "claude"
+      }'
+    ```
+
+=== "Python"
+
+    ```python
+    from aod import Client
+
+    client = Client()  # reads AOD_API_URL + AOD_API_TOKEN
+    agent = client.agents.create(
+        name="hello",
+        model="claude-sonnet-4-6",
+        runtime="claude",
+    )
+    print(agent.id)
+    ```
 
 Response (`201 Created`):
 
@@ -56,16 +84,29 @@ Save the `id` — you'll need it to create a session.
 
 A session runs the agent with a prompt inside a Sprite. Execution is asynchronous; the response comes back immediately with `status: "pending"`.
 
-```bash
-curl -X POST "$BASE/sessions" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d "{
-    \"agent_id\": \"<agent-uuid>\",
-    \"prompt\": \"Print the current date.\",
-    \"timeout\": 120
-  }"
-```
+=== "curl"
+
+    ```bash
+    curl -X POST "$BASE/sessions" \
+      -H "Authorization: Bearer $TOKEN" \
+      -H "Content-Type: application/json" \
+      -d "{
+        \"agent_id\": \"<agent-uuid>\",
+        \"prompt\": \"Print the current date.\",
+        \"timeout\": 120
+      }"
+    ```
+
+=== "Python"
+
+    ```python
+    ack = client.sessions.create(
+        agent_id=agent.id,
+        prompt="Print the current date.",
+        timeout=120,
+    )
+    print(ack.id, ack.status)  # <session-uuid> pending
+    ```
 
 Response (`202 Accepted`):
 
@@ -81,51 +122,92 @@ Response (`202 Accepted`):
 
 ## Step 3 — Stream output
 
-Connect to the SSE stream to receive agent output in real time. The `-N` flag disables curl's output buffering.
+Connect to the SSE stream to receive agent output in real time.
 
-```bash
-curl -N -H "Authorization: Bearer $TOKEN" "$BASE/sessions/<session-uuid>/stream"
-```
+=== "curl"
 
-You'll see a sequence of `data:` lines:
+    The `-N` flag disables curl's output buffering.
 
-```
-data: {"type":"start","runtime":"claude","session_id":"<session-uuid>"}
+    ```bash
+    curl -N -H "Authorization: Bearer $TOKEN" "$BASE/sessions/<session-uuid>/stream"
+    ```
 
-data: {"type":"output","stream":"stdout","data":"Thu Apr 17 14:00:00 UTC 2026\n"}
+    You'll see a sequence of `data:` lines:
 
-data: {"type":"exit","code":0}
-```
+    ```
+    data: {"type":"start","runtime":"claude","session_id":"<session-uuid>"}
+
+    data: {"type":"output","stream":"stdout","data":"Thu Apr 17 14:00:00 UTC 2026\n"}
+
+    data: {"type":"exit","code":0}
+    ```
+
+=== "Python"
+
+    `client.sessions.stream(session_id)` is a context manager yielding typed `StreamEvent` objects.
+
+    ```python
+    with client.sessions.stream(ack.id) as events:
+        for event in events:
+            if event.type == "output":
+                print(event.extra["data"], end="")
+            elif event.type == "exit":
+                print(f"\n[exit {event.extra['code']}]")
+    ```
 
 The stream closes after the terminal event (`exit`, `error`, or `terminated`). Reconnecting replays all output from the beginning — useful if your connection drops.
 
 ## Full scripted example
 
-```bash
-BASE=http://localhost:8777
-TOKEN=aod_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-AUTH="Authorization: Bearer $TOKEN"
-JSON="Content-Type: application/json"
+=== "curl"
 
-# Create agent
-AGENT_ID=$(curl -s -X POST "$BASE/agents" -H "$AUTH" -H "$JSON" \
-  -d '{"name":"demo","model":"claude-sonnet-4-6","runtime":"claude"}' \
-  | jq -r .id)
+    ```bash
+    BASE=http://localhost:8777
+    TOKEN=aod_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+    AUTH="Authorization: Bearer $TOKEN"
+    JSON="Content-Type: application/json"
 
-# Create session
-SESS_ID=$(curl -s -X POST "$BASE/sessions" -H "$AUTH" -H "$JSON" \
-  -d "{\"agent_id\":\"$AGENT_ID\",\"prompt\":\"Say hello.\",\"timeout\":120}" \
-  | jq -r .id)
+    # Create agent
+    AGENT_ID=$(curl -s -X POST "$BASE/agents" -H "$AUTH" -H "$JSON" \
+      -d '{"name":"demo","model":"claude-sonnet-4-6","runtime":"claude"}' \
+      | jq -r .id)
 
-# Stream output
-curl -N -H "$AUTH" "$BASE/sessions/$SESS_ID/stream"
+    # Create session
+    SESS_ID=$(curl -s -X POST "$BASE/sessions" -H "$AUTH" -H "$JSON" \
+      -d "{\"agent_id\":\"$AGENT_ID\",\"prompt\":\"Say hello.\",\"timeout\":120}" \
+      | jq -r .id)
 
-# Clean up
-curl -s -X POST -H "$AUTH" "$BASE/agents/$AGENT_ID/archive"
-```
+    # Stream output
+    curl -N -H "$AUTH" "$BASE/sessions/$SESS_ID/stream"
+
+    # Clean up
+    curl -s -X POST -H "$AUTH" "$BASE/agents/$AGENT_ID/archive"
+    ```
+
+=== "Python"
+
+    ```python
+    from aod import Client
+
+    with Client() as client:
+        agent = client.agents.create(
+            name="demo", model="claude-sonnet-4-6", runtime="claude"
+        )
+        ack = client.sessions.create(
+            agent_id=agent.id, prompt="Say hello.", timeout=120
+        )
+        with client.sessions.stream(ack.id) as events:
+            for event in events:
+                if event.type == "output":
+                    print(event.extra["data"], end="")
+                elif event.type == "exit":
+                    break
+        client.agents.archive(agent.id)
+    ```
 
 ## What's next
 
 - [Core Concepts](concepts.md) — understand agents, environments, sessions, and versioning.
 - [API Reference](reference.md) — browse all endpoints interactively.
+- [Python SDK](../sdks/python.md) — full surface, typed errors, async client, SSE helpers.
 - [Streaming](streaming.md) — full SSE event reference and reconnect guidance.

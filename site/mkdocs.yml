@@ -39,6 +39,8 @@ nav:
     - Streaming: api/streaming.md
     - Errors: api/errors.md
     - Pagination: api/pagination.md
+  - SDKs:
+    - Python: sdks/python.md
   - Patterns:
     - CLI Wrapper: patterns/cli-wrapper.md
     - Chat Bot: patterns/chat-bot.md
