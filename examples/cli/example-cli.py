@@ -52,6 +52,27 @@ REPOS = [
 
 TIMEOUT = 1200
 
+# Human-readable labels for the `stage` SSE events AoD emits during session
+# provisioning. See site/docs/api/streaming.md for the full list of stage
+# names. Anything missing here falls through to the raw stage identifier.
+STAGE_LABELS = {
+    "create_sprite": "creating sandbox",
+    "network_policy": "applying network policy",
+    "env_file": "writing env file",
+    "clone_repos": "cloning repos",
+    "user_setup": "running setup script",
+    "mcp_config": "writing mcp config",
+    "skills": "writing skills",
+    "runtime_start": "starting agent",
+}
+
+
+def _stage_label(stage: str) -> str:
+    if stage.startswith("packages."):
+        return f"installing {stage.split('.', 1)[1]} packages"
+    return STAGE_LABELS.get(stage, stage)
+
+
 # ---------------------------------------------------------------------------
 
 
@@ -92,6 +113,11 @@ class _Spinner:
         sys.stderr.flush()
         self._thread = None
 
+    def set_message(self, message: str) -> None:
+        # String assignment is atomic in CPython; no lock needed for the
+        # spinner thread to pick up the new value on its next tick.
+        self._message = message
+
     def _run(self) -> None:
         i = 0
         while not self._stop.wait(0.1):
@@ -102,6 +128,28 @@ class _Spinner:
             i += 1
 
 
+def _handle_stage(event: dict, spinner: _Spinner, idle_message: str) -> None:
+    stage = event.get("stage", "")
+    state = event.get("state", "")
+    label = _stage_label(stage)
+    if state == "started":
+        spinner.set_message(label)
+        return
+    secs = (event.get("duration_ms") or 0) / 1000
+    spinner.stop()
+    if state == "done":
+        print(f"✓ {label} · {secs:.1f}s", file=sys.stderr)
+        spinner.set_message(idle_message)
+        spinner.start()
+    elif state == "failed":
+        msg = event.get("message") or ""
+        line = f"✗ {label} failed · {secs:.1f}s"
+        if msg:
+            line += f": {msg}"
+        print(line, file=sys.stderr)
+        # No restart — a session-level error/terminated event is coming.
+
+
 def _handle_stream(client: AodClient, session_id: str, waiting_for: str) -> int:
     formatter = ClaudeFormatter()
     spinner = _Spinner(waiting_for)
@@ -109,7 +157,9 @@ def _handle_stream(client: AodClient, session_id: str, waiting_for: str) -> int:
     try:
         for event in client.stream_session(session_id):
             kind = event.get("type")
-            if kind == "output":
+            if kind == "stage":
+                _handle_stage(event, spinner, waiting_for)
+            elif kind == "output":
                 data = event.get("data", "")
                 if event.get("stream") == "stderr":
                     spinner.stop()

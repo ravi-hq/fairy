@@ -11,7 +11,12 @@ $ export AOD_API_TOKEN=aod_xxxxxxxx
 $ ./example-cli.py "what does /workspace/fairy do?"     # new session
 $ ./example-cli.py --session <uuid> "open a PR"          # continue that session
 # session 8f3a...
-⠋ preparing sandbox · 42s      # (clears when the first event arrives)
+⠋ creating sandbox · 12s       # spinner updates as each provision stage starts
+✓ creating sandbox · 15.2s     # one line per completed stage (stderr)
+✓ writing env file · 0.3s
+✓ cloning repos · 4.2s
+✓ writing mcp config · 0.2s
+⠋ starting agent · 21s         # runtime_start — clears on first output
 ⚙️  Session init · model=claude-sonnet-4-6, tools=27, mcp=[context7]
 
 💭 Let me explore /workspace/fairy to understand what it does.
@@ -34,6 +39,8 @@ $ ./example-cli.py --session <uuid> "open a PR"          # continue that session
 | [`example-cli.py`](./example-cli.py) | Config + `main()`. The file you fork per team. |
 | [`aod_client.py`](./aod_client.py) | `AodClient` — stdlib HTTP + SSE wrapper over the AoD API. Reusable across examples. |
 | [`claude_format.py`](./claude_format.py) | Pretty-prints Claude `stream-json` events (tool uses, thinking, final text, result) as one-liners with emoji prefixes. Claude-runtime-specific. |
+
+The CLI also consumes AoD's `stage` SSE events to show provisioning progress on stderr (see [streaming.md](../../site/docs/api/streaming.md#provisioning-stages)). As each stage runs the spinner updates in place; when a stage finishes, a `✓ <label> · <duration>s` line is left in the scrollback.
 
 ## Configure
 
