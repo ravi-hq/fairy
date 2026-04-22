@@ -92,6 +92,23 @@ class RecordingSprite:
         """Flat list of 'arg1 arg2 ...' for each recorded command (nicer to grep)."""
         return [" ".join(c.argv) for c in self.commands]
 
+    def shell_strings(self) -> list[str]:
+        """Every grep-able shell line: each recorded command, plus each
+        non-comment line of any `.sh` scripts written to the filesystem.
+
+        Use this when asserting that a shell operation happened — it doesn't
+        matter whether the real invocation was a direct `sprite.command()`
+        or a line inside a bulk provisioning script. Use `command_strings()`
+        when asserting the *count* of sprite.command round trips."""
+        out: list[str] = [" ".join(c.argv) for c in self.commands]
+        for w in self.writes:
+            if w.path.endswith(".sh"):
+                for line in w.text.splitlines():
+                    stripped = line.strip()
+                    if stripped and not stripped.startswith("#"):
+                        out.append(stripped)
+        return out
+
     def raise_on(self, predicate, exc: Exception) -> None:
         """Arrange for the next command matching `predicate(argv_tuple)` to
         raise `exc` instead of succeeding. Predicate can also be the string

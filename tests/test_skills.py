@@ -89,7 +89,7 @@ class TestSessionSkillsIntegration:
         assert resp.status_code == 202
         sprite = fake_sprites.last_sprite()
         assert "/home/sprite/.claude/skills/web-search/SKILL.md" in sprite.write_map()
-        cmds = sprite.command_strings()
+        cmds = sprite.shell_strings()
         assert "mkdir -p /home/sprite/.claude/skills/web-search" in cmds
 
     def test_codex_skill_writes_under_dot_codex(

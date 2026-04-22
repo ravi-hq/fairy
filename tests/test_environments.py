@@ -122,7 +122,7 @@ class TestProvisioningStages:
             **auth_headers,
         )
         assert resp.status_code == 202
-        cmds = fake_sprites.last_sprite().command_strings()
+        cmds = fake_sprites.last_sprite().shell_strings()
         # Order: apt → npm → pip (alphabetical across PACKAGE_MANAGER_ORDER)
         apt_i = _index_of(cmds, "apt-get install")
         npm_i = _index_of(cmds, "npm install --global")
@@ -167,7 +167,7 @@ class TestProvisioningStages:
             **auth_headers,
         )
         assert resp.status_code == 202
-        cmds = fake_sprites.last_sprite().command_strings()
+        cmds = fake_sprites.last_sprite().shell_strings()
         assert "chmod 600 /tmp/aod-env" in cmds
 
     def test_user_setup_script_runs_once(
@@ -192,7 +192,7 @@ class TestProvisioningStages:
             **auth_headers,
         )
         assert resp.status_code == 202
-        cmds = fake_sprites.last_sprite().command_strings()
+        cmds = fake_sprites.last_sprite().shell_strings()
         setup_cmds = [c for c in cmds if "createdb myapp" in c]
         assert len(setup_cmds) == 1
 
@@ -223,7 +223,7 @@ class TestProvisioningStages:
             **auth_headers,
         )
         assert resp.status_code == 202
-        cmds = fake_sprites.last_sprite().command_strings()
+        cmds = fake_sprites.last_sprite().shell_strings()
         chmod_env_i = _index_of(cmds, "chmod 600 /tmp/aod-env")
         pip_i = _index_of(cmds, "pip install")
         clone_i = _index_of(cmds, "git clone")
@@ -249,7 +249,7 @@ class TestProvisioningStages:
             **auth_headers,
         )
         assert resp.status_code == 202
-        cmds = fake_sprites.last_sprite().command_strings()
+        cmds = fake_sprites.last_sprite().shell_strings()
         assert not any("pip install" in c for c in cmds)
         assert not any("apt-get install" in c for c in cmds)
 
@@ -275,7 +275,7 @@ class TestProvisioningStages:
             **auth_headers,
         )
         assert resp.status_code == 202
-        cmds = fake_sprites.last_sprite().command_strings()
+        cmds = fake_sprites.last_sprite().shell_strings()
         cargo_cmds = [c for c in cmds if "cargo install" in c]
         assert len(cargo_cmds) == 2
 
@@ -301,7 +301,7 @@ class TestProvisioningStages:
             **auth_headers,
         )
         assert resp.status_code == 202
-        cmds = fake_sprites.last_sprite().command_strings()
+        cmds = fake_sprites.last_sprite().shell_strings()
         assert any("gem install rails" in c for c in cmds)
         assert any("go install" in c for c in cmds)
 
@@ -636,7 +636,7 @@ class TestSessionEnvironmentIntegration:
         data = resp.json()
         assert data["environment_id"] == str(environment.id)
         sprite = fake_sprites.last_sprite()
-        cmds = sprite.command_strings()
+        cmds = sprite.shell_strings()
         assert any("apt-get install" in c for c in cmds)
         assert any("pip install" in c for c in cmds)
         assert any("echo 'ready'" in c for c in cmds)
@@ -662,7 +662,7 @@ class TestSessionEnvironmentIntegration:
         assert resp.status_code == 202
         data = resp.json()
         assert data["environment_id"] == str(environment.id)
-        cmds = fake_sprites.last_sprite().command_strings()
+        cmds = fake_sprites.last_sprite().shell_strings()
         assert any("pip install" in c for c in cmds)
 
     def test_explicit_environment_overrides_agent(
@@ -697,7 +697,7 @@ class TestSessionEnvironmentIntegration:
         assert resp.status_code == 202
         data = resp.json()
         assert data["environment_id"] == str(other_env.id)
-        cmds = fake_sprites.last_sprite().command_strings()
+        cmds = fake_sprites.last_sprite().shell_strings()
         assert any("npm install --global express" in c for c in cmds)
         assert not any("pandas" in c for c in cmds)
 
