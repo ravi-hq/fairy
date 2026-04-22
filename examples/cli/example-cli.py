@@ -18,6 +18,8 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+import threading
+import time
 
 from aod_client import AodClient, AodError
 from claude_format import ClaudeFormatter
@@ -65,26 +67,70 @@ def _emit(formatted: str) -> None:
     print(flush=True)
 
 
-def _handle_stream(client: AodClient, session_id: str) -> int:
+class _Spinner:
+    _FRAMES = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+
+    def __init__(self, message: str) -> None:
+        self._message = message
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+        self._started_at = 0.0
+
+    def start(self) -> None:
+        if self._thread or not sys.stderr.isatty():
+            return
+        self._started_at = time.monotonic()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def stop(self) -> None:
+        if not self._thread:
+            return
+        self._stop.set()
+        self._thread.join(timeout=0.5)
+        sys.stderr.write("\r\x1b[K")
+        sys.stderr.flush()
+        self._thread = None
+
+    def _run(self) -> None:
+        i = 0
+        while not self._stop.wait(0.1):
+            elapsed = int(time.monotonic() - self._started_at)
+            frame = self._FRAMES[i % len(self._FRAMES)]
+            sys.stderr.write(f"\r{frame} {self._message} · {elapsed}s")
+            sys.stderr.flush()
+            i += 1
+
+
+def _handle_stream(client: AodClient, session_id: str, waiting_for: str) -> int:
     formatter = ClaudeFormatter()
-    for event in client.stream_session(session_id):
-        kind = event.get("type")
-        if kind == "output":
-            data = event.get("data", "")
-            if event.get("stream") == "stderr":
-                sys.stderr.write(data)
-                sys.stderr.flush()
-                continue
-            for line in formatter.feed(data):
-                _emit(line)
-        elif kind == "exit":
-            for line in formatter.flush():
-                _emit(line)
-            return int(event.get("code") or 0)
-        elif kind in ("error", "terminated", "stale"):
-            print(f"\n[{kind}] {event.get('message', '')}", file=sys.stderr)
-            return 1
-    return 1
+    spinner = _Spinner(waiting_for)
+    spinner.start()
+    try:
+        for event in client.stream_session(session_id):
+            kind = event.get("type")
+            if kind == "output":
+                data = event.get("data", "")
+                if event.get("stream") == "stderr":
+                    spinner.stop()
+                    sys.stderr.write(data)
+                    sys.stderr.flush()
+                    continue
+                for line in formatter.feed(data):
+                    spinner.stop()
+                    _emit(line)
+            elif kind == "exit":
+                spinner.stop()
+                for line in formatter.flush():
+                    _emit(line)
+                return int(event.get("code") or 0)
+            elif kind in ("error", "terminated", "stale"):
+                spinner.stop()
+                print(f"\n[{kind}] {event.get('message', '')}", file=sys.stderr)
+                return 1
+        return 1
+    finally:
+        spinner.stop()
 
 
 def _new_session(client: AodClient, prompt: str) -> dict:
@@ -125,10 +171,12 @@ def main() -> int:
                 f"# session {resp['id']} (turn {resp.get('current_turn')})",
                 file=sys.stderr,
             )
+            waiting_for = "resuming session"
         else:
             resp = _new_session(client, prompt)
             print(f"# session {resp['id']}", file=sys.stderr)
-        return _handle_stream(client, resp["id"])
+            waiting_for = "preparing sandbox"
+        return _handle_stream(client, resp["id"], waiting_for)
     except AodError as e:
         sys.exit(str(e))
 

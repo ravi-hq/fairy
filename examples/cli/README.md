@@ -11,6 +11,7 @@ $ export AOD_API_TOKEN=aod_xxxxxxxx
 $ ./example-cli.py "what does /workspace/fairy do?"     # new session
 $ ./example-cli.py --session <uuid> "open a PR"          # continue that session
 # session 8f3a...
+⠋ preparing sandbox · 42s      # (clears when the first event arrives)
 ⚙️  Session init · model=claude-sonnet-4-6, tools=27, mcp=[context7]
 
 💭 Let me explore /workspace/fairy to understand what it does.
