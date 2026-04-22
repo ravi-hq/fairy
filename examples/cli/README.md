@@ -22,7 +22,7 @@ $ ./example-cli.py "what does /workspace/fairy do?"
 
 ✉️  /workspace/fairy is a Django REST API for running AI coding agents...
 
-✨ Done · 12.3s, 15 turns, $0.0234
+✨ Done · agent 12.3s, 15 turns, tokens $0.0234
 ```
 
 ## Files

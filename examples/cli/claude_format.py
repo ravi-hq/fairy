@@ -143,13 +143,13 @@ def _tool_detail(name: str, args: dict) -> str:
 def _fmt_result(event: dict) -> str:
     subtype = event.get("subtype") or ""
     marker = "✨" if subtype == "success" else "⚠️ "
-    parts = [f"{(event.get('duration_ms') or 0) / 1000:.1f}s"]
+    parts = [f"agent {(event.get('duration_ms') or 0) / 1000:.1f}s"]
     turns = event.get("num_turns")
     if turns:
         parts.append(f"{turns} turns")
     cost = event.get("total_cost_usd")
     if cost is not None:
-        parts.append(f"${cost:.4f}")
+        parts.append(f"tokens ${cost:.4f}")
     return f"{marker} Done · {', '.join(parts)}"
 
 
