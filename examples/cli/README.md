@@ -6,8 +6,8 @@ like `claude --dangerously-skip-permissions -p "<prompt>"` with a version that
 runs inside a Sprite sandbox against a pinned agent, tool set, and repo list.
 
 ```
-$ export AOD_URL=https://aod.example.com
-$ export AOD_TOKEN=aod_xxxxxxxx
+$ export AOD_API_URL=https://aod.example.com
+$ export AOD_API_TOKEN=aod_xxxxxxxx
 $ ./example-cli.py "work on the latest open issue in ravi-hq/fairy"
 # session 8f3a...
 Let me look at the issue list...
@@ -55,7 +55,7 @@ Safe to chain: `./example-cli.py "fix the lint" && git diff`.
 
 ## Prerequisites on the Agent on Demand side
 
-- A valid API token (`AOD_TOKEN`, `aod_...`).
+- A valid API token (`AOD_API_TOKEN`, `aod_...`).
 - A runtime API key configured on your user for the agent's runtime —
   without it, `POST /sessions` returns `400 "No API key configured for
   runtime: claude"`.

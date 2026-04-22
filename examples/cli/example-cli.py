@@ -9,7 +9,7 @@ PATH, and alias it.
     alias agent=/path/to/example-cli.py
     agent "work on the latest open issue in ravi-hq/fairy"
 
-Requires: Python 3.11+, AOD_URL, AOD_TOKEN.
+Requires: Python 3.11+, AOD_API_URL, AOD_API_TOKEN.
 """
 
 from __future__ import annotations
@@ -77,7 +77,7 @@ def main() -> int:
         sys.exit(f"usage: {sys.argv[0]} '<prompt>'")
     prompt = " ".join(sys.argv[1:])
 
-    client = AodClient(_env("AOD_URL", "http://localhost:8777"), _env("AOD_TOKEN"))
+    client = AodClient(_env("AOD_API_URL", "http://localhost:8777"), _env("AOD_API_TOKEN"))
 
     try:
         env_id = client.ensure("environments", ENVIRONMENT["name"], ENVIRONMENT)
