@@ -22,6 +22,7 @@ RUNTIME_MODELS = {
     "claude": "anthropic/claude-haiku-4-5",
     "codex": "openai/o4-mini",
     "gemini": "google/gemini-2.5-flash",
+    "opencode": "anthropic/claude-haiku-4-5",
 }
 
 DEFAULT_TIMEOUT = int(os.environ.get("E2E_TIMEOUT", "180"))

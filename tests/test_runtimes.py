@@ -1,6 +1,6 @@
 """Generic registry-level tests for the runtime package. Per-runtime
 build_command / write_config / skills behavior is exercised in
-`tests/runtimes/test_{claude,codex,gemini}.py`."""
+`tests/runtimes/test_{claude,codex,gemini,opencode}.py`."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from agent_on_demand.runtimes import RUNTIMES, Runtime
 
 
 def test_all_runtimes_defined():
-    assert set(RUNTIMES) == {"claude", "codex", "gemini"}
+    assert set(RUNTIMES) == {"claude", "codex", "gemini", "opencode"}
 
 
 def test_every_runtime_has_non_empty_providers():
