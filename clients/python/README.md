@@ -136,3 +136,55 @@ pytest
 ruff check
 mypy
 ```
+
+## Releases (maintainers)
+
+Published to PyPI via GitHub Actions using [Trusted
+Publishing](https://docs.pypi.org/trusted-publishers/) — no API tokens to
+manage. Two workflows live in `.github/workflows/`:
+
+- `sdk-release.yml` — fires on GitHub Release creation with tag
+  `aod-sdk-v<version>`, publishes to [pypi.org/p/aod-sdk](https://pypi.org/p/aod-sdk).
+- `sdk-release-test.yml` — manual `workflow_dispatch`, publishes to
+  [test.pypi.org/p/aod-sdk](https://test.pypi.org/p/aod-sdk) for dry-run
+  validation.
+
+### One-time setup
+
+1. **Reserve the name on PyPI (and TestPyPI)**. On both
+   [pypi.org](https://pypi.org/manage/account/publishing/) and
+   [test.pypi.org](https://test.pypi.org/manage/account/publishing/), add a
+   *pending* trusted publisher:
+
+   | Field | Value |
+   | ----- | ----- |
+   | Project name | `aod-sdk` |
+   | Owner | `ravi-hq` |
+   | Repository | `agent-on-demand` |
+   | Workflow | `sdk-release.yml` (PyPI) / `sdk-release-test.yml` (TestPyPI) |
+   | Environment | `pypi` / `testpypi` |
+
+2. **(Recommended) Create protected GitHub environments**. In
+   *Settings → Environments*, create `pypi` with required reviewers, and
+   `testpypi` with no protections.
+
+### Cutting a release
+
+1. Bump the version in **both** `clients/python/pyproject.toml` and
+   `clients/python/src/aod/__init__.py` (the workflow verifies the
+   pyproject value matches the tag). PR + merge to `main`.
+2. (Recommended) Run `sdk-release-test.yml` against `main` and
+   `pip install -i https://test.pypi.org/simple/ aod-sdk==<version>` in a
+   throwaway venv to confirm the wheel installs and imports cleanly.
+3. Tag and create a GitHub Release:
+
+   ```bash
+   gh release create aod-sdk-v0.2.0 \
+     --title "aod-sdk v0.2.0" \
+     --notes "..." \
+     --target main
+   ```
+
+   `sdk-release.yml` fires on `published`, verifies the tag matches
+   `pyproject.toml`, runs the tests, builds sdist + wheel, and uploads to
+   PyPI.
