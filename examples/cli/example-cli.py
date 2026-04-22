@@ -10,7 +10,7 @@ PATH, and alias it.
     agent "work on the latest open issue in ravi-hq/fairy"
     agent --session <uuid> "now open a PR with the fix"
 
-Requires: Python 3.11+, AOD_API_URL, AOD_API_TOKEN.
+Requires: Python 3.11+, `pip install aod-sdk`, AOD_API_URL, AOD_API_TOKEN.
 """
 
 from __future__ import annotations
@@ -20,13 +20,14 @@ import os
 import sys
 import threading
 import time
+from typing import Any
 
-from aod_client import AodClient, AodError
+from aod import AodError, Client, SessionAck, StreamEvent
 from claude_format import ClaudeFormatter
 
 # -------- configure me ------------------------------------------------------
 
-AGENT = {
+AGENT: dict[str, Any] = {
     "name": "example-cli",
     "model": "claude-sonnet-4-6",
     "runtime": "claude-oauth",
@@ -40,7 +41,7 @@ AGENT = {
     ],
 }
 
-ENVIRONMENT = {
+ENVIRONMENT: dict[str, Any] = {
     "name": "example-cli",
     "packages": {},
     "networking": {"type": "unrestricted"},
@@ -72,13 +73,6 @@ def _stage_label(stage: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-
-
-def _env(name: str, default: str | None = None) -> str:
-    val = os.environ.get(name, default)
-    if val is None:
-        sys.exit(f"{name} must be set")
-    return val
 
 
 def _emit(formatted: str) -> None:
@@ -129,21 +123,21 @@ class _Spinner:
             i += 1
 
 
-def _handle_stage(event: dict, spinner: _Spinner, idle_message: str) -> None:
-    stage = event.get("stage", "")
-    state = event.get("state", "")
+def _handle_stage(event: StreamEvent, spinner: _Spinner, idle_message: str) -> None:
+    stage = event.extra.get("stage", "")
+    state = event.extra.get("state", "")
     label = _stage_label(stage)
     if state == "started":
         spinner.set_message(label)
         return
-    secs = (event.get("duration_ms") or 0) / 1000
+    secs = (event.extra.get("duration_ms") or 0) / 1000
     spinner.stop()
     if state == "done":
         print(f"✓ {label} · {secs:.1f}s", file=sys.stderr)
         spinner.set_message(idle_message)
         spinner.start()
     elif state == "failed":
-        msg = event.get("message") or ""
+        msg = event.extra.get("message") or ""
         line = f"✗ {label} failed · {secs:.1f}s"
         if msg:
             line += f": {msg}"
@@ -151,44 +145,62 @@ def _handle_stage(event: dict, spinner: _Spinner, idle_message: str) -> None:
         # No restart — a session-level error/terminated event is coming.
 
 
-def _handle_stream(client: AodClient, session_id: str, waiting_for: str) -> int:
+def _handle_stream(client: Client, session_id: str, waiting_for: str) -> int:
     formatter = ClaudeFormatter()
     spinner = _Spinner(waiting_for)
     spinner.start()
     try:
-        for event in client.stream_session(session_id):
-            kind = event.get("type")
-            if kind == "stage":
-                _handle_stage(event, spinner, waiting_for)
-            elif kind == "output":
-                data = event.get("data", "")
-                if event.get("stream") == "stderr":
+        with client.sessions.stream(session_id) as events:
+            for event in events:
+                if event.type == "stage":
+                    _handle_stage(event, spinner, waiting_for)
+                elif event.type == "output":
+                    data = event.extra.get("data", "")
+                    if event.extra.get("stream") == "stderr":
+                        spinner.stop()
+                        sys.stderr.write(data)
+                        sys.stderr.flush()
+                        continue
+                    for line in formatter.feed(data):
+                        spinner.stop()
+                        _emit(line)
+                elif event.type == "exit":
                     spinner.stop()
-                    sys.stderr.write(data)
-                    sys.stderr.flush()
-                    continue
-                for line in formatter.feed(data):
+                    for line in formatter.flush():
+                        _emit(line)
+                    return int(event.extra.get("code") or 0)
+                elif event.type in ("error", "terminated", "stale"):
                     spinner.stop()
-                    _emit(line)
-            elif kind == "exit":
-                spinner.stop()
-                for line in formatter.flush():
-                    _emit(line)
-                return int(event.get("code") or 0)
-            elif kind in ("error", "terminated", "stale"):
-                spinner.stop()
-                print(f"\n[{kind}] {event.get('message', '')}", file=sys.stderr)
-                return 1
+                    print(
+                        f"\n[{event.type}] {event.extra.get('message', '')}",
+                        file=sys.stderr,
+                    )
+                    return 1
         return 1
     finally:
         spinner.stop()
 
 
-def _new_session(client: AodClient, prompt: str) -> dict:
-    env_id = client.ensure("environments", ENVIRONMENT["name"], ENVIRONMENT)
-    agent_id = client.ensure("agents", AGENT["name"], {**AGENT, "environment_id": env_id})
+def _ensure_environment(client: Client) -> str:
+    """Return the id of the configured environment, creating it if missing."""
+    for env in client.environments.list():
+        if env.name == ENVIRONMENT["name"]:
+            return str(env.id)
+    return str(client.environments.create(**ENVIRONMENT).id)
+
+
+def _ensure_agent(client: Client, environment_id: str) -> str:
+    for agent in client.agents.list():
+        if agent.name == AGENT["name"]:
+            return str(agent.id)
+    return str(client.agents.create(**AGENT, environment_id=environment_id).id)
+
+
+def _new_session(client: Client, prompt: str) -> SessionAck:
+    env_id = _ensure_environment(client)
+    agent_id = _ensure_agent(client, env_id)
     gh_token = os.environ.get("GITHUB_TOKEN")
-    return client.create_session(
+    return client.sessions.create(
         agent_id=agent_id,
         prompt=prompt,
         timeout=TIMEOUT,
@@ -213,21 +225,25 @@ def main() -> int:
     args = parser.parse_args()
     prompt = " ".join(args.prompt)
 
-    client = AodClient(_env("AOD_API_URL", "http://localhost:8777"), _env("AOD_API_TOKEN"))
+    # Client() reads AOD_API_URL and AOD_API_TOKEN from the environment.
+    try:
+        client = Client()
+    except ValueError as e:
+        sys.exit(str(e))
 
     try:
-        if args.session:
-            resp = client.continue_session(args.session, prompt=prompt, timeout=TIMEOUT)
-            print(
-                f"# session {resp['id']} (turn {resp.get('current_turn')})",
-                file=sys.stderr,
-            )
-            waiting_for = "resuming session"
-        else:
-            resp = _new_session(client, prompt)
-            print(f"# session {resp['id']}", file=sys.stderr)
-            waiting_for = "preparing sandbox"
-        return _handle_stream(client, resp["id"], waiting_for)
+        with client:
+            if args.session:
+                ack = client.sessions.prompt(args.session, prompt=prompt, timeout=TIMEOUT)
+                print(f"# session {ack.id} (turn {ack.current_turn})", file=sys.stderr)
+                waiting_for = "resuming session"
+                session_id = args.session
+            else:
+                ack = _new_session(client, prompt)
+                print(f"# session {ack.id}", file=sys.stderr)
+                waiting_for = "preparing sandbox"
+                session_id = str(ack.id)
+            return _handle_stream(client, session_id, waiting_for)
     except AodError as e:
         sys.exit(str(e))
 
