@@ -21,6 +21,7 @@ from agent_on_demand.models import (
     Environment,
     SessionResource,
     SessionTurn,
+    UserQuota,
     UserRuntimeKey,
 )
 from agent_on_demand.runtimes import RUNTIMES
@@ -164,6 +165,21 @@ def _create_session(request):
         req = RunRequest(**body)
     except ValidationError as e:
         return JsonResponse({"detail": e.errors(include_context=False)}, status=422)
+
+    max_concurrent = UserQuota.max_concurrent_sessions_for(request.user)
+    active_count = UserQuota.active_session_count_for(request.user)
+    if active_count >= max_concurrent:
+        return JsonResponse(
+            {
+                "detail": (
+                    f"Concurrent session limit reached ({active_count}/{max_concurrent}). "
+                    "Terminate an active session before starting a new one."
+                ),
+                "limit": max_concurrent,
+                "active": active_count,
+            },
+            status=429,
+        )
 
     try:
         agent_obj = Agent.objects.get(pk=req.agent_id, user=request.user)

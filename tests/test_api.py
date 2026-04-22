@@ -11,6 +11,7 @@ from agent_on_demand.models import (
     AgentSession,
     AgentSessionLog,
     SessionTurn,
+    UserQuota,
     UserRuntimeKey,
     UserSpritesKey,
 )
@@ -248,6 +249,83 @@ def test_run_returns_202_with_session_id(
     assert session.prompt == "hello"
     assert session.user == runtime_key.user
     assert session.agent == agent
+
+
+@pytest.mark.django_db
+def test_run_blocked_at_concurrency_cap(
+    client: Client, auth_headers, runtime_key, agent, user, settings
+):
+    """POST /sessions returns 429 once the user is at their concurrency cap."""
+    settings.DEFAULT_MAX_CONCURRENT_SESSIONS = 2
+    AgentSession.objects.create(user=user, runtime="claude", prompt="a", status="pending")
+    AgentSession.objects.create(user=user, runtime="claude", prompt="b", status="running")
+
+    resp = client.post(
+        "/sessions",
+        data=json.dumps({"agent_id": str(agent.id), "prompt": "hello"}),
+        content_type="application/json",
+        **auth_headers,
+    )
+    assert resp.status_code == 429
+    body = resp.json()
+    assert body["limit"] == 2
+    assert body["active"] == 2
+
+
+@pytest.mark.django_db
+def test_run_terminal_sessions_do_not_count(
+    client: Client, auth_headers, runtime_key, agent, user, fake_sprites, settings
+):
+    """Completed / failed / terminated sessions don't consume quota."""
+    settings.DEFAULT_MAX_CONCURRENT_SESSIONS = 2
+    for status in ("completed", "failed", "terminated"):
+        AgentSession.objects.create(user=user, runtime="claude", prompt="x", status=status)
+
+    resp = client.post(
+        "/sessions",
+        data=json.dumps({"agent_id": str(agent.id), "prompt": "hello"}),
+        content_type="application/json",
+        **auth_headers,
+    )
+    assert resp.status_code == 202
+
+
+@pytest.mark.django_db
+def test_run_per_user_quota_override(
+    client: Client, auth_headers, runtime_key, agent, user, settings
+):
+    """A UserQuota row overrides the default cap."""
+    settings.DEFAULT_MAX_CONCURRENT_SESSIONS = 10
+    UserQuota.objects.create(user=user, max_concurrent_sessions=1)
+    AgentSession.objects.create(user=user, runtime="claude", prompt="a", status="running")
+
+    resp = client.post(
+        "/sessions",
+        data=json.dumps({"agent_id": str(agent.id), "prompt": "hello"}),
+        content_type="application/json",
+        **auth_headers,
+    )
+    assert resp.status_code == 429
+    assert resp.json()["limit"] == 1
+
+
+@pytest.mark.django_db
+def test_run_other_users_sessions_do_not_count(
+    client: Client, auth_headers, runtime_key, agent, fake_sprites, settings
+):
+    """Another user's active sessions don't consume this user's quota."""
+    settings.DEFAULT_MAX_CONCURRENT_SESSIONS = 1
+    other = User.objects.create_user(username="other", password="pass")
+    for _ in range(5):
+        AgentSession.objects.create(user=other, runtime="claude", prompt="x", status="running")
+
+    resp = client.post(
+        "/sessions",
+        data=json.dumps({"agent_id": str(agent.id), "prompt": "hello"}),
+        content_type="application/json",
+        **auth_headers,
+    )
+    assert resp.status_code == 202
 
 
 @pytest.mark.django_db

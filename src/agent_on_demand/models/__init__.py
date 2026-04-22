@@ -1,6 +1,7 @@
 from agent_on_demand.models.agents import Agent, AgentVersion
 from agent_on_demand.models.auth import APIKey, UserRuntimeKey, UserSpritesKey
 from agent_on_demand.models.environments import Environment, EnvironmentVersion
+from agent_on_demand.models.quota import UserQuota
 from agent_on_demand.models.sessions import (
     AgentSession,
     AgentSessionLog,
@@ -18,6 +19,7 @@ __all__ = [
     "EnvironmentVersion",
     "SessionResource",
     "SessionTurn",
+    "UserQuota",
     "UserRuntimeKey",
     "UserSpritesKey",
 ]
