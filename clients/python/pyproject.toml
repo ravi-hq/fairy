@@ -11,7 +11,7 @@ version = "0.1.0"
 description = "Python SDK for the Agent on Demand API"
 requires-python = ">=3.11"
 license = "Apache-2.0"
-license-files = ["../../LICENSE"]
+license-files = ["LICENSE"]
 readme = "README.md"
 authors = [{ name = "Ravi" }]
 dependencies = [
@@ -30,8 +30,8 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/ravi-hq/fairy"
-Source = "https://github.com/ravi-hq/fairy/tree/main/clients/python"
+Homepage = "https://github.com/ravi-hq/agent-on-demand"
+Source = "https://github.com/ravi-hq/agent-on-demand/tree/main/clients/python"
 
 [tool.ruff]
 target-version = "py311"
