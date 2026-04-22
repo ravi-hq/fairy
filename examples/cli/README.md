@@ -8,14 +8,21 @@ runs inside a Sprite sandbox against a pinned agent, tool set, and repo list.
 ```
 $ export AOD_URL=https://aod.example.com
 $ export AOD_TOKEN=aod_xxxxxxxx
-$ ./example-cli "work on the latest open issue in ravi-hq/fairy"
+$ ./example-cli.py "work on the latest open issue in ravi-hq/fairy"
 # session 8f3a...
 Let me look at the issue list...
 ```
 
+## Files
+
+| File | Role |
+|---|---|
+| [`example-cli.py`](./example-cli.py) | Config + `main()`. The file you fork per team. |
+| [`aod_client.py`](./aod_client.py) | `AodClient` — stdlib HTTP + SSE wrapper over the AoD API. Reusable across examples. |
+
 ## Configure
 
-Edit the three blocks at the top of [`example-cli`](./example-cli):
+Edit the three blocks at the top of [`example-cli.py`](./example-cli.py):
 
 | Block | What it controls |
 |---|---|
@@ -44,7 +51,7 @@ the old one via `POST /agents/{id}/archive`.
 
 The CLI exits with the runtime's exit code — `0` on clean completion, the
 runtime's non-zero code on agent failure, `1` on stream-level error/terminate.
-Safe to chain: `./example-cli "fix the lint" && git diff`.
+Safe to chain: `./example-cli.py "fix the lint" && git diff`.
 
 ## Prerequisites on the Agent on Demand side
 
