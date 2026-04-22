@@ -76,3 +76,20 @@ lint:
 
 fmt:
 	uv run ruff format && ruff check --fix
+
+# --- Python SDK (clients/python) ---------------------------------------------
+
+SDK_DIR := clients/python
+
+sdk-install:
+	cd $(SDK_DIR) && uv pip install -e ".[dev]"
+
+test-sdk:
+	cd $(SDK_DIR) && uv run pytest -q
+
+lint-sdk:
+	cd $(SDK_DIR) && uv run ruff check src tests && uv run ruff format --check src tests
+
+# Verify the SDK covers every endpoint in docs/openapi.yaml.
+check-sdk-parity:
+	uv run python scripts/check_sdk_parity.py
