@@ -1,14 +1,25 @@
-"""Stage-by-stage Sprite provisioning.
+"""Sprite provisioning — writes all setup files via the fs API and executes
+one combined bash script to do the shell work (chmod, package install, git
+clone, user setup).
 
-Each stage is its own `sprite.command()` or filesystem write, so a failure in
-any stage surfaces with its own exit code and stderr. Errors are wrapped as
-`ProvisionError(stage=...)` for server-side logging; the stage tag is never
-included in API responses.
+Each `sprite.command()` round trip costs ~5s of WebSocket-layer overhead
+regardless of what it runs, so the provisioning flow is shaped to minimize
+the number of commands:
+
+  • Files go through `sprite.filesystem()` (~0.2s each).
+  • All shell work (chmod, install, clone, user setup) is combined into one
+    `/tmp/aod-provision.sh` script invoked with a single
+    `sprite.command("bash", "-l", "/tmp/aod-provision.sh").run()`.
+
+Stages that previously each cost a full round trip (packages.*, clone_repos,
+user_setup) are now folded into the `provision_setup` stage. See
+site/docs/api/streaming.md for the current event schema.
 """
 
 from __future__ import annotations
 
 import contextlib
+import io
 import json
 import logging
 import shlex
@@ -25,6 +36,8 @@ from .errors import ProvisionError
 from .specs import McpServerSpec, RepoSpec, SessionSpec, SkillSpec
 
 ENV_FILE_PATH = "/tmp/aod-env"
+GIT_CREDS_PATH = "/tmp/.git-credentials"
+PROVISION_SCRIPT_PATH = "/tmp/aod-provision.sh"
 
 logger = logging.getLogger(__name__)
 
@@ -35,9 +48,8 @@ PACKAGE_MANAGER_ORDER = ["apt", "cargo", "gem", "go", "npm", "pip"]
 STAGE_CREATE_SPRITE = "create_sprite"
 STAGE_NETWORK_POLICY = "network_policy"
 STAGE_ENV_FILE = "env_file"
-STAGE_PACKAGES = "packages"  # emitters append ".{manager}" to distinguish.
-STAGE_CLONE_REPOS = "clone_repos"
-STAGE_USER_SETUP = "user_setup"
+STAGE_GIT_CREDENTIALS = "git_credentials"
+STAGE_PROVISION_SETUP = "provision_setup"
 STAGE_MCP_CONFIG = "mcp_config"
 STAGE_SKILLS = "skills"
 STAGE_RUNTIME_START = "runtime_start"
@@ -139,9 +151,8 @@ def provision_session(user, spec: SessionSpec, session_id: str | None = None) ->
         try:
             _apply_network_policy(sprite, env, session_id)
             _write_env_file(sprite, spec, session_id)
-            _install_packages(sprite, env, session_id)
-            _clone_repos(sprite, spec.repos, session_id)
-            _run_user_setup(sprite, env, session_id)
+            _write_git_credentials(sprite, spec.repos, session_id)
+            _run_provision_setup(sprite, spec, session_id)
             _write_mcp_config(sprite, spec.runtime.name, spec.mcp_servers, session_id)
             _write_skills(sprite, spec.runtime.name, spec.skills, session_id)
         except ProvisionError as e:
@@ -197,8 +208,8 @@ def _apply_network_policy(sprite: Sprite, env: Environment | None, session_id: s
 
 
 def _write_env_file(sprite: Sprite, spec: SessionSpec, session_id: str | None) -> None:
-    """Write /tmp/aod-env holding the runtime API key, AOD_SESSION_ID, and
-    Environment.env_vars. The file is sourced (with `set -a`) by the dispatcher,
+    """Write /tmp/aod-env (fs.write only — chmod happens in the provision
+    script). The file is sourced (with `set -a`) by the per-turn dispatcher,
     so every line must be a valid KEY=value shell assignment."""
     lines: list[str] = [f"{spec.runtime.env_var}={shlex.quote(spec.api_key)}"]
     if spec.runtime_session_id:
@@ -212,35 +223,148 @@ def _write_env_file(sprite: Sprite, spec: SessionSpec, session_id: str | None) -
         try:
             fs = sprite.filesystem()
             (fs / ENV_FILE_PATH.lstrip("/")).write_text(body)
-            sprite.command("chmod", "600", ENV_FILE_PATH).run()
         except SpriteError as e:
             raise ProvisionError(f"Failed to prepare Sprite: {e}", stage=STAGE_ENV_FILE) from e
 
 
-def _install_packages(sprite: Sprite, env: Environment | None, session_id: str | None) -> None:
-    if env is None or not env.packages:
+def _write_git_credentials(sprite: Sprite, repos: list[RepoSpec], session_id: str | None) -> None:
+    """Write /tmp/.git-credentials if any repo has a token (fs.write only;
+    chmod + `git config credential.helper` live in the provision script)."""
+    cred_lines = [f"https://{r.token}:x-oauth-basic@github.com" for r in repos if r.token]
+    if not cred_lines:
         return
-    for manager in PACKAGE_MANAGER_ORDER:
-        pkgs = env.packages.get(manager, [])
-        if not pkgs:
-            continue
-        stage_name = f"{STAGE_PACKAGES}.{manager}"
-        commands = _package_commands(manager, pkgs)
-        with stage_timer(session_id, stage_name):
-            for argv in commands:
-                try:
-                    sprite.command("bash", "-lc", argv).run()
-                except SpriteError as e:
-                    raise ProvisionError(
-                        f"Failed to install {manager} packages: {e}",
-                        stage=stage_name,
-                    ) from e
+    with stage_timer(session_id, STAGE_GIT_CREDENTIALS):
+        try:
+            fs = sprite.filesystem()
+            (fs / GIT_CREDS_PATH.lstrip("/")).write_text("\n".join(cred_lines) + "\n")
+        except SpriteError as e:
+            raise ProvisionError(
+                f"Failed to prepare Sprite: {e}", stage=STAGE_GIT_CREDENTIALS
+            ) from e
+
+
+def _run_provision_setup(sprite: Sprite, spec: SessionSpec, session_id: str | None) -> None:
+    """Write /tmp/aod-provision.sh and invoke it as one `sprite.command`. This
+    is the single expensive round trip — everything shell-flavoured
+    (chmod, package install, git clone, user setup) runs inside it."""
+    script = _build_provision_script(spec)
+    if script is None:
+        # Nothing to do (no packages, no repos, no user setup, no /tmp files
+        # to chmod... actually chmod on /tmp/aod-env always needs running).
+        # _build_provision_script always returns non-None because chmod on
+        # ENV_FILE_PATH is unconditional, so we shouldn't hit this.
+        return
+    with stage_timer(session_id, STAGE_PROVISION_SETUP):
+        try:
+            fs = sprite.filesystem()
+            (fs / PROVISION_SCRIPT_PATH.lstrip("/")).write_text(script)
+            err_buf = io.BytesIO()
+            cmd = sprite.command("bash", "-l", PROVISION_SCRIPT_PATH)
+            # Capture stderr so a failure message carries useful context
+            # (apt errors, git errors, user-setup stderr). Best-effort: if
+            # the Sprite SDK doesn't support the assignment, the attribute
+            # is silently ignored and err_buf stays empty.
+            try:
+                cmd.stderr = err_buf
+            except AttributeError:
+                pass
+            cmd.run()
+        except SpriteError as e:
+            stderr_tail = err_buf.getvalue().decode("utf-8", errors="replace")[-2000:]
+            detail = f"Provisioning script failed: {e}"
+            if stderr_tail.strip():
+                detail = f"{detail}\nstderr:\n{stderr_tail}"
+            raise ProvisionError(detail, stage=STAGE_PROVISION_SETUP) from e
+
+
+def _build_provision_script(spec: SessionSpec) -> str:
+    """Render the combined shell script invoked as the single `sprite.command`.
+
+    Order matters:
+      1. `set -e` so any step failing aborts the rest.
+      2. mkdir any parent dirs for MCP/skill files written after the script.
+      3. chmod the pre-written /tmp files.
+      4. Install packages (apt first; managers that rely on login PATH work
+         because the script is invoked with `bash -l`).
+      5. Git clones.
+      6. User setup script, last (runs in an env that has packages + repos).
+    """
+    env = spec.environment
+    lines: list[str] = ["#!/bin/bash", "set -e", ""]
+
+    # mkdir for files that get fs.written AFTER the script runs (MCP config
+    # for codex/gemini, every skill dir). /home/sprite already exists, so
+    # Claude's .claude.json and default skills root don't need to be created
+    # here — only the per-skill directories.
+    dirs_to_make = _directories_for_post_script_writes(spec)
+    if dirs_to_make:
+        quoted = " ".join(shlex.quote(d) for d in dirs_to_make)
+        lines.append(f"mkdir -p {quoted}")
+        lines.append("")
+
+    # chmod files pre-written to /tmp. ENV_FILE_PATH always exists at this
+    # point; git creds only if any repo had a token.
+    lines.append(f"chmod 600 {shlex.quote(ENV_FILE_PATH)}")
+    if any(r.token for r in spec.repos):
+        lines.append(f"chmod 600 {shlex.quote(GIT_CREDS_PATH)}")
+    lines.append("")
+
+    # Packages
+    if env and env.packages:
+        for manager in PACKAGE_MANAGER_ORDER:
+            pkgs = env.packages.get(manager, [])
+            if not pkgs:
+                continue
+            for cmd in _package_commands(manager, pkgs):
+                lines.append(cmd)
+        lines.append("")
+
+    # Git clones
+    if spec.repos:
+        if any(r.token for r in spec.repos):
+            lines.append(
+                f"git config --global credential.helper "
+                f"{shlex.quote(f'store --file={GIT_CREDS_PATH}')}"
+            )
+        for repo in spec.repos:
+            lines.append(
+                f"git clone --depth=1 --quiet "
+                f"{shlex.quote(repo.url)} {shlex.quote(repo.mount_path)}"
+            )
+        lines.append("")
+
+    # User-provided setup script, last (packages and repos are in place).
+    if env is not None:
+        user_script = (env.setup_script or "").strip()
+        if user_script:
+            lines.append(user_script)
+            lines.append("")
+
+    return "\n".join(lines)
+
+
+def _directories_for_post_script_writes(spec: SessionSpec) -> list[str]:
+    """Which dirs need to exist before post-script fs.writes (MCP config +
+    skills). `/home/sprite` is assumed to already exist."""
+    dirs: list[str] = []
+    if spec.mcp_servers:
+        if spec.runtime.name == "codex":
+            dirs.append("/home/sprite/.codex")
+        elif spec.runtime.name == "gemini":
+            dirs.append("/home/sprite/.gemini")
+        # claude/claude-oauth write to /home/sprite/.claude.json (no mkdir).
+    if spec.skills:
+        root = _SKILLS_ROOTS.get(spec.runtime.name)
+        if root:
+            for s in spec.skills:
+                dirs.append(f"{root}/{s.name}")
+    return dirs
 
 
 def _package_commands(manager: str, pkgs: list[str]) -> list[str]:
-    """Shell command strings for a single package manager. Kept as strings
-    (run via `bash -lc`) because several managers rely on shell features like
-    `&&` chaining and PATH resolution from the user's login shell."""
+    """Shell command strings for a single package manager, inlined into the
+    provision script. They rely on login-shell PATH (script is invoked with
+    `bash -l`)."""
     quoted = " ".join(shlex.quote(p) for p in pkgs)
     if manager == "apt":
         return [f"apt-get update -qq && apt-get install -y {quoted}"]
@@ -255,62 +379,6 @@ def _package_commands(manager: str, pkgs: list[str]) -> list[str]:
     if manager == "go":
         return [f"go install {shlex.quote(p)}" for p in pkgs]
     return []
-
-
-def _clone_repos(sprite: Sprite, repos: list[RepoSpec], session_id: str | None) -> None:
-    if not repos:
-        return
-    cred_path = "/tmp/.git-credentials"
-    cred_lines: list[str] = []
-    for repo in repos:
-        if repo.token:
-            cred_lines.append(f"https://{repo.token}:x-oauth-basic@github.com")
-
-    with stage_timer(session_id, STAGE_CLONE_REPOS):
-        try:
-            if cred_lines:
-                with stage_timer(session_id, f"{STAGE_CLONE_REPOS}.setup"):
-                    fs = sprite.filesystem()
-                    (fs / cred_path.lstrip("/")).write_text("\n".join(cred_lines) + "\n")
-                    sprite.command("chmod", "600", cred_path).run()
-                    sprite.command(
-                        "git",
-                        "config",
-                        "--global",
-                        "credential.helper",
-                        f"store --file={cred_path}",
-                    ).run()
-            for repo in repos:
-                with stage_timer(session_id, f"{STAGE_CLONE_REPOS}.download"):
-                    sprite.command(
-                        "git", "clone", "--depth=1", "--quiet", repo.url, repo.mount_path
-                    ).run()
-        except SpriteError as e:
-            raise ProvisionError(f"Failed to clone repos: {e}", stage=STAGE_CLONE_REPOS) from e
-        finally:
-            # Always attempt cleanup, even on clone failure. Cleanup errors are
-            # logged but don't shadow the real failure.
-            try:
-                with stage_timer(session_id, f"{STAGE_CLONE_REPOS}.cleanup"):
-                    sprite.command("rm", "-f", cred_path).run()
-                    sprite.command(
-                        "git", "config", "--global", "--unset", "credential.helper"
-                    ).run()
-            except SpriteError:
-                logger.warning("Failed to clean git credentials on Sprite", exc_info=True)
-
-
-def _run_user_setup(sprite: Sprite, env: Environment | None, session_id: str | None) -> None:
-    if env is None:
-        return
-    script = (env.setup_script or "").strip()
-    if not script:
-        return
-    with stage_timer(session_id, STAGE_USER_SETUP):
-        try:
-            sprite.command("bash", "-lc", script).run()
-        except SpriteError as e:
-            raise ProvisionError(f"Custom setup failed: {e}", stage=STAGE_USER_SETUP) from e
 
 
 def _write_mcp_config(
@@ -351,7 +419,6 @@ def _write_mcp_claude(sprite: Sprite, servers: list[McpServerSpec]) -> None:
 
 
 def _write_mcp_codex(sprite: Sprite, servers: list[McpServerSpec]) -> None:
-    sprite.command("mkdir", "-p", "/home/sprite/.codex").run()
     lines: list[str] = []
     for s in servers:
         lines.append(f"[mcp_servers.{s.name}]")
@@ -378,7 +445,6 @@ def _write_mcp_codex(sprite: Sprite, servers: list[McpServerSpec]) -> None:
 
 
 def _write_mcp_gemini(sprite: Sprite, servers: list[McpServerSpec]) -> None:
-    sprite.command("mkdir", "-p", "/home/sprite/.gemini").run()
     config: dict[str, dict] = {}
     for s in servers:
         if s.type == "url":
@@ -413,7 +479,6 @@ def _write_skills(
             fs = sprite.filesystem()
             for s in skills:
                 dir_path = f"{root}/{s.name}"
-                sprite.command("mkdir", "-p", dir_path).run()
                 (fs / f"{dir_path.lstrip('/')}/SKILL.md").write_text(s.content)
         except SpriteError as e:
             raise ProvisionError(f"Failed to write skills: {e}", stage=STAGE_SKILLS) from e

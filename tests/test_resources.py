@@ -65,7 +65,7 @@ def agent(user):
 
 
 def _clone_commands(sprite) -> list[str]:
-    return [c for c in sprite.command_strings() if c.startswith("git clone")]
+    return [c for c in sprite.shell_strings() if c.startswith("git clone")]
 
 
 @pytest.mark.django_db
@@ -106,7 +106,7 @@ class TestCloneStage:
         ]
         assert "/tmp/.git-credentials" not in sprite.write_map()
 
-    def test_private_repo_writes_credentials_and_unsets(
+    def test_private_repo_writes_credentials(
         self, client: Client, auth_headers, runtime_key, agent, fake_sprites
     ):
         resp = client.post(
@@ -132,11 +132,11 @@ class TestCloneStage:
         creds = sprite.write_map().get("/tmp/.git-credentials")
         assert creds is not None
         assert "ghp_tok" in creds
-        cmds = sprite.command_strings()
+        cmds = sprite.shell_strings()
         assert any("git config --global credential.helper" in c for c in cmds)
-        # Cleanup fires after the clone (same stage, finally block).
-        assert "rm -f /tmp/.git-credentials" in cmds
-        assert "git config --global --unset credential.helper" in cmds
+        # No explicit cleanup: the Sprite is session-scoped and torn down on
+        # terminate/delete. Adding cleanup inside the provisioning script would
+        # cost another sprite.command round trip for no practical benefit.
 
     def test_multiple_repos_all_cloned(
         self, client: Client, auth_headers, runtime_key, agent, fake_sprites
