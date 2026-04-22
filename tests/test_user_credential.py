@@ -9,7 +9,7 @@ User = get_user_model()
 
 @pytest.fixture
 def user(db):
-    return User.objects.create_user(username="credtestuser", password="tp")
+    return User.objects.create_user(username="credtestuser", password="testpass")
 
 
 def test_credential_env_var_importable():

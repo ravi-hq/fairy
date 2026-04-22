@@ -81,13 +81,11 @@ class UserRuntimeKey(models.Model):
             return None
 
 
-# Derive env var names from the canonical runtimes to avoid duplication.
-# The "openai" provider env var differs from the codex runtime's key name.
 CREDENTIAL_ENV_VAR: dict[str, str] = {
-    "provider:anthropic": RUNTIMES["claude"].env_var,
-    "provider:openai": RUNTIMES["codex"].env_var.replace("CODEX", "OPENAI"),
-    "provider:google": RUNTIMES["gemini"].env_var,
-    "runtime_token:claude-oauth": RUNTIMES["claude-oauth"].env_var,
+    "provider:anthropic": "ANTHROPIC_API_KEY",
+    "provider:openai": "OPENAI_API_KEY",
+    "provider:google": "GEMINI_API_KEY",
+    "runtime_token:claude-oauth": "CLAUDE_CODE_OAUTH_TOKEN",
 }
 
 
