@@ -44,10 +44,9 @@ Possible `stage` values:
 |-------|-------------|
 | `create_sprite` | Always — first thing after `POST /sessions`. Typically the longest stage. |
 | `network_policy` | Only when `environment.networking.type == "limited"`. |
-| `env_file` | Always — writes the runtime API key and any `environment.env_vars`. |
-| `packages.apt`, `packages.pip`, `packages.npm`, `packages.cargo`, `packages.gem`, `packages.go` | One per non-empty entry in `environment.packages`. |
-| `clone_repos` | When the session has GitHub repo resources. |
-| `user_setup` | When `environment.setup_script` is non-empty. |
+| `env_file` | Always — writes the runtime API key and any `environment.env_vars` to the Sprite. |
+| `git_credentials` | When at least one repo resource has an `authorization_token`. |
+| `provision_setup` | Always — runs the batched provisioning script (chmod of pre-written files, package installs, git clones, user setup). Covers what used to be reported as `packages.*`, `clone_repos`, and `user_setup` separately; those discrete stages are no longer emitted. |
 | `mcp_config` | When the agent has MCP servers configured. |
 | `skills` | When the agent has skills configured. |
 | `runtime_start` | `started` only — emitted just before the runtime CLI launches. `output` events follow once the runtime writes to stdout/stderr. |

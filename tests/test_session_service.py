@@ -45,10 +45,19 @@ def _spec(**overrides) -> SessionSpec:
 
 
 class TestProvisionSessionOrder:
-    def test_env_file_is_chmod_600(self, user, fake_sprites):
+    def test_env_file_chmod_is_in_provision_script(self, user, fake_sprites):
         provision_session(user, _spec())
         sprite = fake_sprites.last_sprite()
-        assert "chmod 600 /tmp/aod-env" in sprite.command_strings()
+        # Provision script is the single bash invocation; chmod lives inside it.
+        script = sprite.write_map()["/tmp/aod-provision.sh"]
+        assert "chmod 600 /tmp/aod-env" in script
+
+    def test_single_bash_command_invokes_provision_script(self, user, fake_sprites):
+        provision_session(user, _spec())
+        sprite = fake_sprites.last_sprite()
+        # The whole provisioning phase uses exactly one sprite.command —
+        # invoking the provision script. No per-stage chmod / clone commands.
+        assert sprite.command_strings() == ["bash -l /tmp/aod-provision.sh"]
 
     def test_env_file_contains_api_key_and_session_id(self, user, fake_sprites):
         provision_session(user, _spec())
@@ -59,8 +68,8 @@ class TestProvisionSessionOrder:
         assert "AOD_SESSION_ID=11111111-2222-3333-4444-555555555555" in env_file
 
     def test_no_run_agent_script_is_written(self, user, fake_sprites):
-        """The per-turn runtime-CLI invocation is assembled inline in
-        `run_session_background`; nothing is written to /run-agent.sh."""
+        """The per-turn runtime-CLI invocation is assembled inline in the
+        worker task; nothing is written to /run-agent.sh."""
         provision_session(user, _spec())
         writes = fake_sprites.last_sprite().writes
         assert all(w.path != "/run-agent.sh" for w in writes)
@@ -77,27 +86,28 @@ class TestProvisionSessionFailureHandling:
         # Nothing was created, so nothing should be deleted.
         assert fake_sprites.deleted == []
 
-    def test_stage_failure_tags_stage_and_triggers_cleanup(self, user, fake_sprites, mocker):
+    def test_provision_script_failure_tags_stage_and_triggers_cleanup(
+        self, user, fake_sprites, mocker
+    ):
         env = Environment.objects.create(
             user=user,
             name="env",
             packages={"pip": ["pandas"]},
             version=1,
         )
-        # Have the first sprite.command call raise — that'll be `chmod 600
-        # /tmp/aod-env` in the env-file stage.
+        # Fail the single bash invocation that runs the provision script.
         original_create = fake_sprites.create_sprite
 
         def wrapped(name):
             sprite = original_create(name)
-            sprite.raise_on(lambda argv: argv[:2] == ("chmod", "600"), SpriteError("nope"))
+            sprite.raise_on(lambda argv: argv[:2] == ("bash", "-l"), SpriteError("nope"))
             return sprite
 
         mocker.patch.object(fake_sprites, "create_sprite", side_effect=wrapped)
 
         with pytest.raises(ProvisionError) as ei:
             provision_session(user, _spec(environment=env))
-        assert ei.value.stage == "env_file"
+        assert ei.value.stage == "provision_setup"
         assert fake_sprites.deleted == ["sprite-x"]
 
 
@@ -112,7 +122,7 @@ class TestProvisionStageEvents:
             user=user, runtime="claude", prompt="t", status="pending"
         )
 
-    def test_minimal_spec_emits_only_create_sprite(self, user, fake_sprites):
+    def test_minimal_spec_emits_expected_stages(self, user, fake_sprites):
         session = self._make_session(user)
         provision_session(user, _spec(), session_id=str(session.id))
         events = list(
@@ -120,13 +130,16 @@ class TestProvisionStageEvents:
             .order_by("id")
             .values("stage", "state")
         )
-        # env_file always runs (writes the API key file). No packages, repos,
-        # setup, mcp, or skills in _spec(), so those stages are skipped.
+        # env_file always runs; provision_setup always runs (at minimum it
+        # chmods the env file). No tokens, packages, mcp, or skills in
+        # _spec(), so git_credentials / mcp_config / skills are skipped.
         assert events == [
             {"stage": "create_sprite", "state": "started"},
             {"stage": "create_sprite", "state": "done"},
             {"stage": "env_file", "state": "started"},
             {"stage": "env_file", "state": "done"},
+            {"stage": "provision_setup", "state": "started"},
+            {"stage": "provision_setup", "state": "done"},
         ]
 
     def test_done_events_carry_duration_ms(self, user, fake_sprites):
