@@ -32,6 +32,7 @@ dependencies = [
     "opentelemetry-instrumentation-psycopg>=0.50b0",
     "opentelemetry-instrumentation-requests>=0.50b0",
     "opentelemetry-instrumentation-logging>=0.50b0",
+    "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]

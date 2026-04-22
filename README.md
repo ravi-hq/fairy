@@ -66,18 +66,28 @@ Authentication is via `Authorization: Bearer <token>`.
 Supported runtimes (selected by `runtime` on an agent) and their models.
 Model strings follow the canonical `provider/model_id` form:
 
-| Runtime    | Providers                       | Example models                                                                   |
-| ---------- | ------------------------------- | -------------------------------------------------------------------------------- |
-| `claude`   | `anthropic`                     | `anthropic/claude-opus-4-6`, `anthropic/claude-sonnet-4-6`, `anthropic/claude-haiku-4-5` |
-| `codex`    | `openai`                        | `openai/gpt-4.1`, `openai/o3`, `openai/o4-mini`                                  |
-| `gemini`   | `google`                        | `google/gemini-2.5-pro`, `google/gemini-2.5-flash`                               |
-| `opencode` | `anthropic`, `openai`, `google` | any `anthropic/*`, `openai/*`, or `google/*` in the model catalog                |
+| Runtime    | Providers                       | Skills | Example models                                                                   |
+| ---------- | ------------------------------- | ------ | -------------------------------------------------------------------------------- |
+| `claude`   | `anthropic`                     | yes    | `anthropic/claude-opus-4-6`, `anthropic/claude-sonnet-4-6`, `anthropic/claude-haiku-4-5` |
+| `codex`    | `openai`                        | yes    | `openai/gpt-4.1`, `openai/o3`, `openai/o4-mini`                                  |
+| `gemini`   | `google`                        | yes    | `google/gemini-2.5-pro`, `google/gemini-2.5-flash`                               |
+| `goose`    | `anthropic`, `openai`, `google` | no     | any `anthropic/*`, `openai/*`, or `google/*` in the model catalog                |
+| `opencode` | `anthropic`, `openai`, `google` | yes    | any `anthropic/*`, `openai/*`, or `google/*` in the model catalog                |
 
 A model is servable by a runtime whose `providers` set contains the model's
 `provider`. The Claude runtime authenticates via an Anthropic API key by
 default and falls back to OAuth automatically when the user has a
 `runtime_token:claude-oauth` credential registered — the former `claude-oauth`
 runtime was folded into `claude`.
+
+`goose` is a multi-provider meta-runtime: one `goose` CLI fronts 15+ providers
+via `--provider` + `--model` flags. Like opencode, it reads native provider env
+vars directly from the user's `UserCredential` rows. Goose is **not
+pre-installed** on the Sprite base image — sessions install it via `apt-get` +
+`curl` during the `install_runtime` provisioning stage (~15–45s overhead).
+Goose's "recipes" use a structured YAML format incompatible with the existing
+`SkillSpec` shape, so **skills are not supported on goose in v1** — configured
+skills are silently skipped.
 
 `opencode` is a multi-provider meta-runtime: one `opencode` CLI fronts many
 providers and picks provider+model per invocation via `--model

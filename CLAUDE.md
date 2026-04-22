@@ -59,7 +59,8 @@ directly (without `make`), `tests/e2e/conftest.py` defaults to
 - **Runtimes**: new models go in `src/agent_on_demand/models_catalog.py`; ensure
   the `provider` is in the target `Runtime`'s `providers` set. New runtimes are
   one file per class under `src/agent_on_demand/runtimes/` and must be added to
-  the `RUNTIMES` dict in `runtimes/__init__.py`.
+  the `RUNTIMES` dict in `runtimes/__init__.py`. Current runtimes: `claude`,
+  `codex`, `gemini`, `goose`, `opencode`.
 - **Versioning**: `agents` and `environments` use optimistic concurrency —
   updates require the current `version` and return a new row in
   `{agent,environment}_versions`. Tests to reference: `test_agents.py::TestAgentVersioning`,
