@@ -23,7 +23,7 @@ import time
 from typing import Any
 
 from aod import AodError, Client, SessionAck, StreamEvent
-from claude_format import ClaudeFormatter
+from aod.pretty.claude import ClaudeFormatter
 
 # -------- configure me ------------------------------------------------------
 
@@ -155,13 +155,12 @@ def _handle_stream(client: Client, session_id: str, waiting_for: str) -> int:
                 if event.type == "stage":
                     _handle_stage(event, spinner, waiting_for)
                 elif event.type == "output":
-                    data = event.extra.get("data", "")
                     if event.extra.get("stream") == "stderr":
                         spinner.stop()
-                        sys.stderr.write(data)
+                        sys.stderr.write(event.extra.get("data", ""))
                         sys.stderr.flush()
                         continue
-                    for line in formatter.feed(data):
+                    for line in formatter.consume(event):
                         spinner.stop()
                         _emit(line)
                 elif event.type == "exit":

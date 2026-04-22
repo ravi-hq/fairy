@@ -97,6 +97,36 @@ id. Event types: `start`, `turn_start`, `output`, `stage`, `exit`, `error`,
 `terminated`, `stale`. Everything except the discriminator (`type`) and
 `id` lands in `event.extra`.
 
+## Pretty-printing agent output
+
+`aod.pretty` holds optional, **runtime-scoped** formatters that turn an
+agent's raw stdout into human-readable display lines. Runtime output formats
+are not part of the AoD API, so these helpers live under a separate namespace
+— the core SDK stays runtime-agnostic.
+
+Currently shipped:
+
+| Formatter                       | Runtime         | Input format                  |
+| ------------------------------- | --------------- | ----------------------------- |
+| `aod.pretty.claude.ClaudeFormatter` | `claude-*`  | Claude CLI `stream-json` lines |
+
+```python
+from aod import Client
+from aod.pretty.claude import ClaudeFormatter
+
+fmt = ClaudeFormatter()
+with client.sessions.stream(session_id) as events:
+    for event in events:
+        for line in fmt.consume(event):  # filters to output/stdout
+            print(line)
+    for line in fmt.flush():              # drain any unterminated buffer
+        print(line)
+```
+
+`.consume(event)` is the event-oriented entry point. `.feed(chunk)` and
+`.flush()` are available for lower-level integrations that already extracted
+the stdout bytes themselves.
+
 ## Development
 
 ```bash

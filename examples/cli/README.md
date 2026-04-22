@@ -40,9 +40,8 @@ $ ./example-cli.py --session <uuid> "open a PR"          # continue that session
 | File | Role |
 |---|---|
 | [`example-cli.py`](./example-cli.py) | Config + `main()`. The file you fork per team. |
-| [`claude_format.py`](./claude_format.py) | Pretty-prints Claude `stream-json` events (tool uses, thinking, final text, result) as one-liners with emoji prefixes. Claude-runtime-specific. |
 
-HTTP + SSE are handled by [`aod-sdk`](../../clients/python/) (`Client`, `client.sessions.stream(...)`).
+HTTP + SSE are handled by [`aod-sdk`](../../clients/python/) (`Client`, `client.sessions.stream(...)`). Claude `stream-json` is parsed by `aod.pretty.claude.ClaudeFormatter` — the SDK's runtime-scoped pretty-printer.
 
 The CLI also consumes AoD's `stage` SSE events to show provisioning progress on stderr (see [streaming.md](../../site/docs/api/streaming.md#provisioning-stages)). As each stage runs the spinner updates in place; when a stage finishes, a `✓ <label> · <duration>s` line is left in the scrollback.
 
