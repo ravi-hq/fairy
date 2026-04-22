@@ -26,29 +26,35 @@ class GooseRuntime:
     """
 
     name = "goose"
-    providers: frozenset[str] = frozenset({"anthropic", "openai", "google"})
+    providers: set[str] = {"anthropic", "openai", "google"}
     skills_root: str | None = None  # recipes are YAML; SKILL.md not supported in v1
 
     def install(self, sprite: Sprite) -> None:
         sprite.command(
-            "bash", "-lc",
+            "bash",
+            "-lc",
             f"apt-get install -y -qq bzip2 && curl -fsSL "
             f"https://github.com/block/goose/releases/download/{GOOSE_VERSION}/download_cli.sh "
             f"| CONFIGURE=false bash",
         ).run()
 
-    def build_command(
-        self, spec: "SessionSpec", mode: Literal["run", "continue"]
-    ) -> list[str]:
+    def build_command(self, spec: "SessionSpec", mode: Literal["run", "continue"]) -> list[str]:
         provider, model_id = spec.model.split("/", 1)
         argv = [
-            "goose", "run",
-            "--instructions", "-",   # read prompt from stdin
-            "--output-format", "stream-json",
-            "--mode", "auto",        # bypass approval prompts (fully autonomous)
-            "--name", spec.runtime_session_id or "",
-            "--provider", provider,
-            "--model", model_id,
+            "goose",
+            "run",
+            "--instructions",
+            "-",  # read prompt from stdin
+            "--output-format",
+            "stream-json",
+            "--mode",
+            "auto",  # bypass approval prompts (fully autonomous)
+            "--name",
+            spec.runtime_session_id or "",
+            "--provider",
+            provider,
+            "--model",
+            model_id,
         ]
         if mode == "continue":
             argv.append("--resume")

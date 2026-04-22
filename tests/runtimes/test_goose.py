@@ -38,7 +38,7 @@ def test_skills_root_is_none():
 
 
 def test_providers():
-    assert GooseRuntime().providers == frozenset({"anthropic", "openai", "google"})
+    assert GooseRuntime().providers == {"anthropic", "openai", "google"}
 
 
 def test_install_runs_apt_and_curl():

@@ -18,9 +18,7 @@ class CodexRuntime:
     def install(self, sprite: Sprite) -> None:
         return None
 
-    def build_command(
-        self, spec: "SessionSpec", mode: Literal["run", "continue"]
-    ) -> list[str]:
+    def build_command(self, spec: "SessionSpec", mode: Literal["run", "continue"]) -> list[str]:
         if mode == "continue":
             return [
                 "codex",

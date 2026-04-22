@@ -192,9 +192,7 @@ def test_session_created_event_excludes_prompt_and_repo_url(
             {
                 "agent_id": agent_id,
                 "prompt": SENSITIVE_PROMPT,
-                "resources": [
-                    {"type": "github_repository", "url": SENSITIVE_REPO_URL}
-                ],
+                "resources": [{"type": "github_repository", "url": SENSITIVE_REPO_URL}],
             }
         ),
         content_type="application/json",

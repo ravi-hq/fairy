@@ -24,9 +24,7 @@ class ClaudeRuntime:
     def install(self, sprite: Sprite) -> None:
         return None
 
-    def build_command(
-        self, spec: "SessionSpec", mode: Literal["run", "continue"]
-    ) -> list[str]:
+    def build_command(self, spec: "SessionSpec", mode: Literal["run", "continue"]) -> list[str]:
         session_id = spec.runtime_session_id or ""
         return [
             "claude",
@@ -60,6 +58,4 @@ class ClaudeRuntime:
         if not config:
             return
         fs = sprite.filesystem()
-        (fs / "home/sprite/.claude.json").write_text(
-            json.dumps({"mcpServers": config}, indent=2)
-        )
+        (fs / "home/sprite/.claude.json").write_text(json.dumps({"mcpServers": config}, indent=2))

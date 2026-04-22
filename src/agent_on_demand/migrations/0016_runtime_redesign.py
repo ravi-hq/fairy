@@ -91,7 +91,6 @@ def unmigrate_data(apps, schema_editor):
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("fairy", "0015_usercredential"),
     ]
