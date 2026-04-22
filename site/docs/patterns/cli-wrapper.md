@@ -3,15 +3,18 @@
 Your team needs a one-liner that kicks off an AI coding task without opening a
 browser or writing HTTP boilerplate.
 
+Python examples use the official [`aod-sdk`](../sdks/python.md) package
+(`pip install aod-sdk`).
+
 ## Shape of the solution
 
-Wrap Agent on Demand in a thin CLI that creates a session via `POST /sessions`, then opens
-the SSE stream at `GET /sessions/{id}/stream` and prints each event to the
+Wrap Agent on Demand in a thin CLI that creates a session via `client.sessions.create(...)`, then opens
+the SSE stream with `client.sessions.stream(session_id)` and prints each event to the
 terminal. The user gets a familiar `mytool code "<prompt>"` interface backed by
 a real agent session.
 
 Because Agent on Demand tracks session state, the CLI can also support follow-up prompts
-(`POST /sessions/{id}/prompt`) — but the simplest starting point is
+via `client.sessions.prompt(session_id, ...)` — but the simplest starting point is
 single-shot: create → stream → exit.
 
 ## Example
@@ -19,65 +22,58 @@ single-shot: create → stream → exit.
 ```python
 #!/usr/bin/env python3
 """mytool code <prompt> — run an Agent on Demand session and stream output."""
-import sys
-import httpx
-
 import os
+import sys
 
-AOD_URL = os.environ["AOD_URL"]        # e.g. https://aod.example
-AOD_TOKEN = os.environ["AOD_TOKEN"]    # aod_...
+from aod import Client
+
 AGENT_ID = os.environ["AOD_AGENT_ID"]  # your team's shared agent
 
-def main():
+def main() -> int:
     if len(sys.argv) < 2:
         print("usage: mytool code '<prompt>'", file=sys.stderr)
-        sys.exit(1)
+        return 1
 
     prompt = " ".join(sys.argv[1:])
-    headers = {"Authorization": f"Bearer {AOD_TOKEN}"}
 
-    # 1. Create session
-    resp = httpx.post(
-        f"{AOD_URL}/sessions",
-        json={"agent_id": AGENT_ID, "prompt": prompt},
-        headers=headers,
-        timeout=30,
-    )
-    resp.raise_for_status()
-    session = resp.json()
-    session_id = session["id"]
-    print(f"# session {session_id}", flush=True)
+    with Client() as client:  # reads AOD_API_URL + AOD_API_TOKEN
+        ack = client.sessions.create(agent_id=AGENT_ID, prompt=prompt)
+        print(f"# session {ack.id}", file=sys.stderr)
 
-    # 2. Stream output
-    with httpx.stream(
-        "GET",
-        f"{AOD_URL}/sessions/{session_id}/stream",
-        headers={**headers, "Accept": "text/event-stream"},
-        timeout=None,
-    ) as r:
-        r.raise_for_status()
-        for line in r.iter_lines():
-            if line.startswith("data: "):
-                payload = line[6:]
-                print(payload, flush=True)
+        with client.sessions.stream(ack.id) as events:
+            for event in events:
+                if event.type == "output":
+                    print(event.extra["data"], end="", flush=True)
+                elif event.type == "exit":
+                    return int(event.extra.get("code") or 0)
+                elif event.type in ("error", "terminated", "stale"):
+                    print(f"\n[{event.type}]", file=sys.stderr)
+                    return 1
+        return 1
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
 ```
 
 Install it as a script entry point in your team's internal package, or just
 `chmod +x` and drop it on `$PATH`.
+
+A more complete reference — with a spinner, Claude stream-json formatting, and
+GitHub repo cloning — lives at
+[`examples/cli/`](https://github.com/ravi-hq/agent-on-demand/tree/main/examples/cli)
+in the repo.
 
 ## Trade-offs
 
 | | |
 |---|---|
 | **Simple** | No persistent state needed client-side — Agent on Demand holds the session. |
-| **Streamable** | SSE is plain text; the terminal gets output as it arrives. |
-| **Re-entrant** | Save `session_id` and call `POST /sessions/{id}/prompt` to continue. |
+| **Streamable** | `client.sessions.stream()` yields typed events as they arrive. |
+| **Re-entrant** | Save `session_id` and call `client.sessions.prompt(id, prompt=...)` to continue. |
 | **Long prompts** | For large diffs or file contents, pipe via stdin and pass as the prompt string. |
-| **Auth** | Store the token in `~/.config/mytool/token` or an env var — never hardcode it. |
+| **Auth** | Set `AOD_API_TOKEN` (or `~/.config/mytool/token`) — never hardcode it in source. |
 
-For teams that need richer output formatting (spinners, syntax highlighting),
-feed the SSE events through [Rich](https://github.com/Textualize/rich) before
+For richer output formatting, feed events through
+[`aod.pretty.claude.ClaudeFormatter`](../sdks/python.md#pretty-printing-claude-output)
+(for Claude runtimes) or [Rich](https://github.com/Textualize/rich) before
 printing.

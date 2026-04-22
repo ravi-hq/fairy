@@ -14,6 +14,10 @@ CI runs are short-lived and stateless, so prefer single-shot sessions over
 multi-turn. You don't need to call `POST /sessions/{id}/prompt` or manage
 session continuations.
 
+Teams that already use Python in CI can run the same flow through
+[`aod-sdk`](../sdks/python.md) — see the [CLI Wrapper](cli-wrapper.md) pattern
+for an SDK-based equivalent.
+
 ## Example (GitHub Actions)
 
 ```yaml
