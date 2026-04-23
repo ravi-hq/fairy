@@ -374,9 +374,12 @@ def _directories_for_post_script_writes(spec: SessionSpec) -> list[str]:
         elif spec.runtime.name == "opencode":
             dirs.append("/home/sprite/.config/opencode")
         # claude writes to /home/sprite/.claude.json (no mkdir).
-    if spec.skills and spec.runtime.skills_root:
+    if spec.runtime.skills_root:
+        # Only inline skills need a pre-created target dir; github skills are
+        # installed by `npx skills add`, which makes its own directories.
         for s in spec.skills:
-            dirs.append(f"{spec.runtime.skills_root}/{s.name}")
+            if s.content is not None:
+                dirs.append(f"{spec.runtime.skills_root}/{s.name}")
     return dirs
 
 
@@ -423,16 +426,39 @@ def _write_skills(
     spec: SessionSpec,
     session_id: str | None,
 ) -> None:
+    """Materialize skills onto the Sprite.
+
+    Inline skills are written directly with ``sprite.filesystem()``.
+    Github-source skills are installed via the
+    `skills.sh <https://skills.sh>`_ CLI (``npx -y skills@latest add ...``)
+    which the Sprite has network access for at this point in provisioning.
+
+    Runtimes whose ``skills_root`` is ``None`` skip inline writes; runtimes
+    without a ``skills_sh_agent`` skip github installs.
+    """
     if not spec.skills:
         return
-    root = spec.runtime.skills_root
-    if root is None:
-        return
+    inline = [s for s in spec.skills if s.content is not None]
+    github = [s for s in spec.skills if s.source is not None]
+
     with stage_timer(session_id, STAGE_SKILLS):
         try:
-            fs = sprite.filesystem()
-            for s in spec.skills:
-                dir_path = f"{root}/{s.name}"
-                (fs / f"{dir_path.lstrip('/')}/SKILL.md").write_text(s.content)
+            root = spec.runtime.skills_root
+            if inline and root is not None:
+                fs = sprite.filesystem()
+                for s in inline:
+                    dir_path = f"{root}/{s.name}"
+                    # mypy narrows: s.content was the filter predicate.
+                    assert s.content is not None
+                    (fs / f"{dir_path.lstrip('/')}/SKILL.md").write_text(s.content)
+            agent_id = spec.runtime.skills_sh_agent
+            if github and agent_id is not None:
+                for s in github:
+                    assert s.source is not None
+                    cmd = (
+                        f"npx -y skills@latest add {shlex.quote(s.source)} "
+                        f"--global --agent {shlex.quote(agent_id)} --yes"
+                    )
+                    sprite.command("bash", "-lc", cmd).run()
         except SpriteError as e:
             raise ProvisionError(f"Failed to write skills: {e}", stage=STAGE_SKILLS) from e

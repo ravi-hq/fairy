@@ -218,7 +218,10 @@ def _build_spec_for_session(session: AgentSession) -> SessionSpec:
                 )
             )
         for s in agent.skills or []:
-            skills.append(SkillSpec(name=s["name"], content=s["content"]))
+            if s.get("type") == "github":
+                skills.append(SkillSpec(name=s["name"], source=s["source"]))
+            else:
+                skills.append(SkillSpec(name=s["name"], content=s["content"]))
 
     repos = [
         RepoSpec(url=r.url, mount_path=r.mount_path, token=r.get_token())

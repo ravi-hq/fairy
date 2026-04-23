@@ -30,6 +30,7 @@ class OpencodeRuntime:
     name = "opencode"
     providers: set[str] = {"anthropic", "openai", "google"}
     skills_root: str | None = "/home/sprite/.config/opencode/skills"
+    skills_sh_agent: str | None = "opencode"
 
     def install(self, sprite: Sprite) -> None:
         sprite.command("bash", "-lc", f"npm install -g opencode-ai@{OPENCODE_VERSION}").run()

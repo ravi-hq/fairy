@@ -36,8 +36,59 @@ MAX_SKILL_DESCRIPTION_LEN = 1024
 MAX_SKILL_CONTENT_BYTES = 64 * 1024
 
 _SKILL_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
-_SKILL_ALLOWED_KEYS = {"name", "description", "content"}
+# `owner/repo` — same character class GitHub allows for both segments.
+_GITHUB_SOURCE_RE = re.compile(r"^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$")
+
+# Two skill shapes:
+#   inline: {name, description, content}          ← content shipped in-band
+#   github: {type: "github", name, description, source}
+#                                                 ← installed on the Sprite at
+#                                                   provision time via the
+#                                                   skills.sh CLI
+#                                                   (`npx skills add ...`).
+# Detection: presence of `type` field. Inline shape omits it.
+_INLINE_SKILL_KEYS = {"name", "description", "content"}
+_GITHUB_SKILL_KEYS = {"type", "name", "description", "source"}
+_GITHUB_REQUIRED_KEYS = {"type", "name", "description", "source"}
+
 _SKILL_HEREDOC_DELIMITER = "SKILL_EOF"
+
+
+def _validate_skill_inline(skill: dict, i: int) -> None:
+    extra = set(skill) - _INLINE_SKILL_KEYS
+    if extra:
+        raise ValueError(
+            f"skills[{i}]: unknown keys {sorted(extra)!r}. "
+            f"Allowed for inline skills: {sorted(_INLINE_SKILL_KEYS)}"
+        )
+    for field_name in ("name", "description", "content"):
+        if field_name not in skill:
+            raise ValueError(f"skills[{i}] missing required field: {field_name}")
+        if not isinstance(skill[field_name], str):
+            raise ValueError(f"skills[{i}].{field_name} must be a string")
+    content = skill["content"]
+    if len(content.encode("utf-8")) > MAX_SKILL_CONTENT_BYTES:
+        raise ValueError(f"skills[{i}].content exceeds {MAX_SKILL_CONTENT_BYTES} bytes")
+    if _SKILL_HEREDOC_DELIMITER in content:
+        raise ValueError(f"skills[{i}].content must not contain {_SKILL_HEREDOC_DELIMITER!r}")
+
+
+def _validate_skill_github(skill: dict, i: int) -> None:
+    extra = set(skill) - _GITHUB_SKILL_KEYS
+    if extra:
+        raise ValueError(
+            f"skills[{i}]: unknown keys {sorted(extra)!r}. "
+            f"Allowed for github skills: {sorted(_GITHUB_SKILL_KEYS)}"
+        )
+    for field_name in _GITHUB_REQUIRED_KEYS:
+        if field_name not in skill:
+            raise ValueError(f"skills[{i}] missing required field: {field_name}")
+        if not isinstance(skill[field_name], str):
+            raise ValueError(f"skills[{i}].{field_name} must be a string")
+    if skill["type"] != "github":
+        raise ValueError(f"skills[{i}].type {skill['type']!r} unsupported (only 'github')")
+    if not _GITHUB_SOURCE_RE.match(skill["source"]):
+        raise ValueError(f"skills[{i}].source {skill['source']!r} must be 'owner/repo'")
 
 
 def _validate_skills(skills: list) -> list:
@@ -48,18 +99,13 @@ def _validate_skills(skills: list) -> list:
         if not isinstance(skill, dict):
             raise ValueError(f"skills[{i}] must be an object")
 
-        extra = set(skill) - _SKILL_ALLOWED_KEYS
-        if extra:
-            raise ValueError(
-                f"skills[{i}]: unknown keys {sorted(extra)!r}. "
-                f"Allowed: {sorted(_SKILL_ALLOWED_KEYS)}"
-            )
-        for field_name in ("name", "description", "content"):
-            if field_name not in skill:
-                raise ValueError(f"skills[{i}] missing required field: {field_name}")
-            if not isinstance(skill[field_name], str):
-                raise ValueError(f"skills[{i}].{field_name} must be a string")
+        # Discriminate by presence of `type`. Inline skills omit it.
+        if "type" in skill:
+            _validate_skill_github(skill, i)
+        else:
+            _validate_skill_inline(skill, i)
 
+        # Common per-skill checks (name + description) regardless of type.
         name = skill["name"]
         if not _SKILL_NAME_RE.match(name):
             raise ValueError(f"skills[{i}].name {name!r} must match [a-z0-9][a-z0-9-]{{0,63}}")
@@ -69,12 +115,6 @@ def _validate_skills(skills: list) -> list:
 
         if len(skill["description"]) > MAX_SKILL_DESCRIPTION_LEN:
             raise ValueError(f"skills[{i}].description exceeds {MAX_SKILL_DESCRIPTION_LEN} chars")
-
-        content = skill["content"]
-        if len(content.encode("utf-8")) > MAX_SKILL_CONTENT_BYTES:
-            raise ValueError(f"skills[{i}].content exceeds {MAX_SKILL_CONTENT_BYTES} bytes")
-        if _SKILL_HEREDOC_DELIMITER in content:
-            raise ValueError(f"skills[{i}].content must not contain {_SKILL_HEREDOC_DELIMITER!r}")
     return skills
 
 

@@ -227,3 +227,100 @@ class TestUpdateAgentSkills:
             **auth_headers,
         )
         assert resp.status_code == 422
+
+
+def _github_skill(
+    name: str = "aod-sdk-python",
+    source: str = "ravi-hq/agent-on-demand",
+) -> dict:
+    return {
+        "type": "github",
+        "name": name,
+        "description": "Install aod-sdk-python skill from the AoD repo.",
+        "source": source,
+    }
+
+
+@pytest.mark.django_db
+class TestGithubSkillValidation:
+    """Validation for the github skill reference shape.
+
+    Github references are installed on the Sprite at provision time via the
+    skills.sh CLI (`npx skills add <source> -g -a <runtime-agent> -y`), so
+    the API only needs to validate the shape — not resolve any content.
+    """
+
+    def _post(self, client, auth_headers, skills):
+        return client.post(
+            "/agents",
+            data=json.dumps(
+                {
+                    "name": "GH Agent",
+                    "model": "anthropic/claude-sonnet-4-6",
+                    "runtime": "claude",
+                    "skills": skills,
+                }
+            ),
+            content_type="application/json",
+            **auth_headers,
+        )
+
+    def test_create_with_github_skill(self, client: Client, auth_headers):
+        resp = self._post(client, auth_headers, [_github_skill()])
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["skills"] == [_github_skill()]
+
+    def test_inline_and_github_skill_together(self, client: Client, auth_headers):
+        resp = self._post(client, auth_headers, [_skill(), _github_skill()])
+        assert resp.status_code == 201
+        assert len(resp.json()["skills"]) == 2
+
+    def test_rejects_unknown_type(self, client: Client, auth_headers):
+        skill = _github_skill()
+        skill["type"] = "gitlab"
+        resp = self._post(client, auth_headers, [skill])
+        assert resp.status_code == 422
+        assert "github" in str(resp.json()["detail"]).lower()
+
+    def test_missing_source(self, client: Client, auth_headers):
+        skill = _github_skill()
+        del skill["source"]
+        resp = self._post(client, auth_headers, [skill])
+        assert resp.status_code == 422
+        assert "source" in str(resp.json()["detail"]).lower()
+
+    def test_invalid_source_format(self, client: Client, auth_headers):
+        skill = _github_skill(source="not-a-valid-source")
+        resp = self._post(client, auth_headers, [skill])
+        assert resp.status_code == 422
+        assert "owner/repo" in str(resp.json()["detail"])
+
+    def test_rejects_content_field(self, client: Client, auth_headers):
+        skill = _github_skill()
+        skill["content"] = "body"
+        resp = self._post(client, auth_headers, [skill])
+        assert resp.status_code == 422
+        assert "unknown" in str(resp.json()["detail"]).lower()
+
+    def test_rejects_ref_field_in_v1(self, client: Client, auth_headers):
+        # v1 does not support ref pinning — the skills.sh shorthand doesn't
+        # either. Accepting `ref` silently would mislead callers.
+        skill = _github_skill()
+        skill["ref"] = "main"
+        resp = self._post(client, auth_headers, [skill])
+        assert resp.status_code == 422
+        assert "unknown" in str(resp.json()["detail"]).lower()
+
+    def test_name_still_validated(self, client: Client, auth_headers):
+        skill = _github_skill(name="Bad Name")
+        resp = self._post(client, auth_headers, [skill])
+        assert resp.status_code == 422
+
+    def test_duplicate_names_across_shapes(self, client: Client, auth_headers):
+        # Name is the dedup key regardless of inline vs github shape.
+        inline = _skill(name="shared")
+        github = _github_skill(name="shared")
+        resp = self._post(client, auth_headers, [inline, github])
+        assert resp.status_code == 422
+        assert "duplicate" in str(resp.json()["detail"]).lower()

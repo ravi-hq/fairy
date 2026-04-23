@@ -12,6 +12,7 @@ class Runtime(Protocol):
     name: str
     providers: set[str]  # which providers this runtime can serve; non-empty
     skills_root: str | None  # absolute path on Sprite for SKILL.md files, or None to disable
+    skills_sh_agent: str | None  # `--agent` id for `npx skills add`, or None if unsupported
 
     def install(self, sprite: Sprite) -> None:
         """Install the runtime CLI on the Sprite. No-op if pre-installed in the base image."""
