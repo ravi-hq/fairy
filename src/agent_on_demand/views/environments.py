@@ -1,6 +1,7 @@
 import json
 
 import posthog
+from django.db import IntegrityError, transaction
 from django.http import JsonResponse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
@@ -160,17 +161,24 @@ def environments_list_create(request):
         networking_type = req.networking.get("type", "unrestricted")
         networking_config = {k: v for k, v in req.networking.items() if k != "type"}
 
-        env = Environment.objects.create(
-            user=request.user,
-            name=req.name,
-            packages=req.packages,
-            env_vars=req.env_vars,
-            setup_script=req.setup_script,
-            networking_type=networking_type,
-            networking_config=networking_config,
-            version=1,
-        )
-        _snapshot_environment_version(env)
+        try:
+            with transaction.atomic():
+                env = Environment.objects.create(
+                    user=request.user,
+                    name=req.name,
+                    packages=req.packages,
+                    env_vars=req.env_vars,
+                    setup_script=req.setup_script,
+                    networking_type=networking_type,
+                    networking_config=networking_config,
+                    version=1,
+                )
+                _snapshot_environment_version(env)
+        except IntegrityError:
+            return JsonResponse(
+                {"detail": f"An active environment named {req.name!r} already exists"},
+                status=409,
+            )
 
         with posthog.new_context():
             posthog.identify_context(str(request.user.id))
@@ -246,8 +254,15 @@ def environment_detail(request, environment_id):
 
         if changed:
             env.version += 1
-            env.save()
-            _snapshot_environment_version(env)
+            try:
+                with transaction.atomic():
+                    env.save()
+                    _snapshot_environment_version(env)
+            except IntegrityError:
+                return JsonResponse(
+                    {"detail": f"An active environment named {env.name!r} already exists"},
+                    status=409,
+                )
             with posthog.new_context():
                 posthog.identify_context(str(request.user.id))
                 posthog.capture(

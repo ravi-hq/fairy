@@ -412,6 +412,32 @@ class TestCreateEnvironment:
         )
         assert resp.status_code == 400
 
+    def test_create_duplicate_active_name(self, client: Client, auth_headers, environment):
+        resp = client.post(
+            "/environments",
+            data=json.dumps({"name": environment.name}),
+            content_type="application/json",
+            **auth_headers,
+        )
+        assert resp.status_code == 409
+        assert environment.name in resp.json()["detail"]
+        assert Environment.objects.filter(user=environment.user, name=environment.name).count() == 1
+
+    def test_create_reuses_archived_name(self, client: Client, auth_headers, environment):
+        from django.utils import timezone
+
+        environment.archived_at = timezone.now()
+        environment.save()
+
+        resp = client.post(
+            "/environments",
+            data=json.dumps({"name": environment.name}),
+            content_type="application/json",
+            **auth_headers,
+        )
+        assert resp.status_code == 201
+        assert resp.json()["name"] == environment.name
+
 
 @pytest.mark.django_db
 class TestListEnvironments:
@@ -548,6 +574,44 @@ class TestUpdateEnvironment:
         assert resp.status_code == 200
         assert resp.json()["version"] == 1
         assert not EnvironmentVersion.objects.filter(environment=environment, version=2).exists()
+
+    def test_update_rename_to_existing_active_name(self, client: Client, auth_headers, environment):
+        other = Environment.objects.create(user=environment.user, name="other-env", version=1)
+
+        resp = client.put(
+            f"/environments/{environment.id}",
+            data=json.dumps({"version": 1, "name": other.name}),
+            content_type="application/json",
+            **auth_headers,
+        )
+        assert resp.status_code == 409
+        assert other.name in resp.json()["detail"]
+
+        environment.refresh_from_db()
+        assert environment.name == "test-env"
+        assert environment.version == 1
+        assert not EnvironmentVersion.objects.filter(environment=environment, version=2).exists()
+
+    def test_update_rename_to_archived_name_succeeds(
+        self, client: Client, auth_headers, environment
+    ):
+        from django.utils import timezone
+
+        Environment.objects.create(
+            user=environment.user,
+            name="taken-then-archived",
+            version=1,
+            archived_at=timezone.now(),
+        )
+
+        resp = client.put(
+            f"/environments/{environment.id}",
+            data=json.dumps({"version": 1, "name": "taken-then-archived"}),
+            content_type="application/json",
+            **auth_headers,
+        )
+        assert resp.status_code == 200
+        assert resp.json()["name"] == "taken-then-archived"
 
 
 @pytest.mark.django_db
