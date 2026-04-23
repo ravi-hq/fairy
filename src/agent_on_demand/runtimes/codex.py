@@ -14,6 +14,7 @@ class CodexRuntime:
     name = "codex"
     providers: set[str] = {"openai"}
     skills_root: str | None = "/home/sprite/.codex/skills"
+    skills_sh_agent: str | None = "codex"
 
     def install(self, sprite: Sprite) -> None:
         return None

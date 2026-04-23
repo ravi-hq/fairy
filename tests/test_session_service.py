@@ -24,6 +24,7 @@ from agent_on_demand.session_service import (
     SessionSpec,
     provision_session,
 )
+from agent_on_demand.session_service.specs import SkillSpec
 
 
 @pytest.fixture
@@ -230,3 +231,102 @@ class TestProvisionSessionEnvFileShape:
         b_idx = next(i for i, line in enumerate(lines) if line.startswith("B_SECOND="))
         assert a_idx < b_idx
         assert "'one with space'" in lines[a_idx]
+
+
+class TestProvisionSkills:
+    """_write_skills materializes both inline and github skills on the Sprite.
+
+    Inline skills are written verbatim to
+    `<skills_root>/<name>/SKILL.md`. Github skills shell out to
+    `npx -y skills@latest add <source> --global --agent <runtime-agent> --yes`
+    — the `skills.sh <https://skills.sh>`_ CLI handles discovery + install.
+    """
+
+    SAMPLE_CONTENT = "---\nname: inline-skill\ndescription: Local inline skill.\n---\n\nBody.\n"
+
+    def test_inline_skill_written_to_runtime_skills_root(self, user, fake_sprites):
+        spec = _spec(
+            user,
+            skills=[SkillSpec(name="inline-skill", content=self.SAMPLE_CONTENT)],
+        )
+        provision_session(user, spec)
+        writes = fake_sprites.last_sprite().write_map()
+        assert writes["/home/sprite/.claude/skills/inline-skill/SKILL.md"] == self.SAMPLE_CONTENT
+
+    def test_github_skill_invokes_skills_sh_cli(self, user, fake_sprites):
+        spec = _spec(
+            user,
+            skills=[SkillSpec(name="aod", source="ravi-hq/agent-on-demand")],
+        )
+        provision_session(user, spec)
+        shell_lines = fake_sprites.last_sprite().shell_strings()
+        assert any(
+            "npx -y skills@latest add ravi-hq/agent-on-demand "
+            "--global --agent claude-code --yes" in line
+            for line in shell_lines
+        ), f"no skills.sh install command recorded; got: {shell_lines!r}"
+
+    @pytest.mark.parametrize(
+        "runtime_name,expected_agent",
+        [
+            ("claude", "claude-code"),
+            ("codex", "codex"),
+            ("gemini", "gemini-cli"),
+            ("opencode", "opencode"),
+        ],
+    )
+    def test_github_skill_uses_runtime_specific_agent_identifier(
+        self, user, fake_sprites, runtime_name, expected_agent
+    ):
+        # _write_skills only reads `runtime.skills_sh_agent` and the skill
+        # source; no credentials or env setup are needed, so call it directly
+        # instead of running full provision_session.
+        from agent_on_demand.session_service.provisioning import _write_skills
+        from tests.fakes.sprite import RecordingSprite
+
+        sprite = RecordingSprite("s")
+        spec = _spec(
+            user,
+            runtime=RUNTIMES[runtime_name],
+            skills=[SkillSpec(name="aod", source="ravi-hq/agent-on-demand")],
+        )
+        _write_skills(sprite, spec, session_id=None)
+        shell_lines = sprite.shell_strings()
+        assert any(f"--agent {expected_agent} --yes" in line for line in shell_lines), shell_lines
+
+    def test_github_skill_source_is_shell_quoted(self, user, fake_sprites):
+        # `source` is validated to be owner/repo, so no shell metacharacters
+        # can sneak in — but the call site still quotes it for defense in
+        # depth. Assert that no command substitutions appear in the output.
+        spec = _spec(
+            user,
+            skills=[SkillSpec(name="aod", source="ravi-hq/agent-on-demand")],
+        )
+        provision_session(user, spec)
+        for line in fake_sprites.last_sprite().shell_strings():
+            assert "`" not in line
+            assert "$(" not in line
+
+    def test_mixed_inline_and_github_skills(self, user, fake_sprites):
+        spec = _spec(
+            user,
+            skills=[
+                SkillSpec(name="inline-skill", content=self.SAMPLE_CONTENT),
+                SkillSpec(name="from-gh", source="ravi-hq/agent-on-demand"),
+            ],
+        )
+        provision_session(user, spec)
+        sprite = fake_sprites.last_sprite()
+        assert (
+            sprite.write_map()["/home/sprite/.claude/skills/inline-skill/SKILL.md"]
+            == self.SAMPLE_CONTENT
+        )
+        assert any(
+            "npx -y skills@latest add ravi-hq/agent-on-demand" in line
+            for line in sprite.shell_strings()
+        )
+
+    def test_no_skills_no_install_command(self, user, fake_sprites):
+        provision_session(user, _spec(user, skills=[]))
+        shell_lines = fake_sprites.last_sprite().shell_strings()
+        assert not any("npx -y skills@latest add" in line for line in shell_lines)

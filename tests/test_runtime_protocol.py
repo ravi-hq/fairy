@@ -40,7 +40,7 @@ def test_stub_satisfies_runtime_protocol():
 
 
 def test_runtime_protocol_has_required_annotations():
-    required_attrs = {"name", "providers", "skills_root"}
+    required_attrs = {"name", "providers", "skills_root", "skills_sh_agent"}
     annotations = Runtime.__annotations__
     assert required_attrs == set(annotations.keys())
 

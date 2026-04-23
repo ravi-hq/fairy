@@ -20,6 +20,7 @@ class ClaudeRuntime:
     name = "claude"
     providers: set[str] = {"anthropic"}
     skills_root: str | None = "/home/sprite/.claude/skills"
+    skills_sh_agent: str | None = "claude-code"
 
     def install(self, sprite: Sprite) -> None:
         return None

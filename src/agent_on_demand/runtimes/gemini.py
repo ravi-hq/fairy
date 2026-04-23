@@ -15,6 +15,7 @@ class GeminiRuntime:
     name = "gemini"
     providers: set[str] = {"google"}
     skills_root: str | None = "/home/sprite/.gemini/skills"
+    skills_sh_agent: str | None = "gemini-cli"
 
     def install(self, sprite: Sprite) -> None:
         return None

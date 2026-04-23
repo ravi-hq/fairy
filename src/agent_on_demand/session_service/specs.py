@@ -33,14 +33,26 @@ class McpServerSpec:
 
 @dataclass(frozen=True)
 class SkillSpec:
-    """A SKILL.md file to materialize onto the Sprite filesystem.
+    """A skill to materialize on the Sprite.
 
-    `content` is the full SKILL.md text including YAML frontmatter. `name`
-    is the directory slug, validated upstream to match [a-z0-9][a-z0-9-]{0,63}.
+    Exactly one of ``content`` / ``source`` is set:
+
+    - inline: ``content`` carries the full SKILL.md text (including YAML
+      frontmatter). Written directly to ``<skills_root>/<name>/SKILL.md``.
+    - github: ``source`` is an ``owner/repo`` identifier. Installed on the
+      Sprite during provisioning by invoking the
+      `skills.sh <https://skills.sh>`_ CLI
+      (``npx -y skills@latest add <source> -g -a <runtime-agent> -y``),
+      which handles discovery, symlinking and per-agent path layout.
+
+    ``name`` is the directory slug for inline skills, and a display/dedup
+    identifier for github skills (it is not passed to the skills.sh CLI —
+    the CLI discovers skill names from the repo itself).
     """
 
     name: str
-    content: str
+    content: str | None = None
+    source: str | None = None
 
 
 @dataclass(frozen=True)

@@ -21,7 +21,7 @@ def test_every_runtime_implements_the_protocol():
     """Runtime is a Protocol — instances don't inherit from it, but must
     still expose `name`, `providers`, `skills_root`, `install`, `build_command`,
     and `write_config`."""
-    required_attrs = ("name", "providers", "skills_root")
+    required_attrs = ("name", "providers", "skills_root", "skills_sh_agent")
     required_methods = ("install", "build_command", "write_config")
     for runtime in RUNTIMES.values():
         for attr in required_attrs:
