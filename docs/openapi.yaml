@@ -615,15 +615,16 @@ components:
         Inline (default — omit `type`): {name, description, content}. The
         full SKILL.md text is shipped in `content` and is written directly
         onto the Sprite at `<runtime-skills-root>/<name>/SKILL.md`. Subject
-        to MAX_SKILL_CONTENT_BYTES.
+        to MAX_SKILL_CONTENT_BYTES. `name` is required.
 
-        GitHub reference (type: "github"): {type, name, description, source}.
+        GitHub reference (type: "github"): {type, description, source, name?}.
         `source` is `owner/repo`. At session-provision time the Sprite runs
         `npx -y skills@latest add <source> --global --agent <runtime-agent>
-        --yes` (the [skills.sh](https://skills.sh) CLI) to materialize every
-        SKILL.md from the repo into the runtime-appropriate global path. For
-        `networking_type: "limited"` Environments, the allowed-hosts list
-        must include `registry.npmjs.org`, `github.com`, and
+        --yes` (the [skills.sh](https://skills.sh) CLI). When `name` is set,
+        `--skill <name>` is appended so only that one SKILL.md from the repo
+        is installed; omit `name` to install every skill the repo exposes.
+        For `networking_type: "limited"` Environments, the allowed-hosts
+        list must include `registry.npmjs.org`, `github.com`, and
         `codeload.github.com`.
       additionalProperties: true
       properties:
@@ -633,7 +634,11 @@ components:
           description: Omit for inline skills; "github" for github references.
         name:
           type: string
-          description: Directory slug. Matches [a-z0-9][a-z0-9-]{0,63}.
+          description: >
+            Directory slug. Matches [a-z0-9][a-z0-9-]{0,63}. Required for
+            inline skills. Optional for github skills — present means
+            "install only this skill from the repo"; absent means "install
+            every skill the repo exposes".
         description:
           type: string
           description: Up to 1024 chars.

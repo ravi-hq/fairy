@@ -38,19 +38,18 @@ class SkillSpec:
     Exactly one of ``content`` / ``source`` is set:
 
     - inline: ``content`` carries the full SKILL.md text (including YAML
-      frontmatter). Written directly to ``<skills_root>/<name>/SKILL.md``.
+      frontmatter). Written directly to ``<skills_root>/<name>/SKILL.md`` —
+      ``name`` is required for this shape.
     - github: ``source`` is an ``owner/repo`` identifier. Installed on the
       Sprite during provisioning by invoking the
       `skills.sh <https://skills.sh>`_ CLI
-      (``npx -y skills@latest add <source> -g -a <runtime-agent> -y``),
-      which handles discovery, symlinking and per-agent path layout.
-
-    ``name`` is the directory slug for inline skills, and a display/dedup
-    identifier for github skills (it is not passed to the skills.sh CLI —
-    the CLI discovers skill names from the repo itself).
+      (``npx -y skills@latest add <source> -g -a <runtime-agent> -y``).
+      ``name`` is optional: when set, it is forwarded to the CLI as
+      ``--skill <name>`` to install a single SKILL.md from the repo; when
+      omitted, every skill in the repo is installed.
     """
 
-    name: str
+    name: str | None = None
     content: str | None = None
     source: str | None = None
 

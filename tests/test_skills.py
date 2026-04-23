@@ -230,15 +230,17 @@ class TestUpdateAgentSkills:
 
 
 def _github_skill(
-    name: str = "aod-sdk-python",
+    name: str | None = "aod-sdk-python",
     source: str = "ravi-hq/agent-on-demand",
 ) -> dict:
-    return {
+    payload: dict = {
         "type": "github",
-        "name": name,
         "description": "Install aod-sdk-python skill from the AoD repo.",
         "source": source,
     }
+    if name is not None:
+        payload["name"] = name
+    return payload
 
 
 @pytest.mark.django_db
@@ -324,3 +326,30 @@ class TestGithubSkillValidation:
         resp = self._post(client, auth_headers, [inline, github])
         assert resp.status_code == 422
         assert "duplicate" in str(resp.json()["detail"]).lower()
+
+    def test_github_skill_without_name_is_accepted(self, client: Client, auth_headers):
+        # Omitting name == "install every SKILL.md from the repo".
+        resp = self._post(client, auth_headers, [_github_skill(name=None)])
+        assert resp.status_code == 201, resp.json()
+        assert resp.json()["skills"][0] == {
+            "type": "github",
+            "description": "Install aod-sdk-python skill from the AoD repo.",
+            "source": "ravi-hq/agent-on-demand",
+        }
+
+    def test_two_whole_repo_entries_for_same_source_collide(self, client: Client, auth_headers):
+        skill = _github_skill(name=None)
+        resp = self._post(client, auth_headers, [skill, skill])
+        assert resp.status_code == 422
+        assert "duplicate" in str(resp.json()["detail"]).lower()
+
+    def test_named_and_whole_repo_entries_for_same_source_coexist(
+        self, client: Client, auth_headers
+    ):
+        # `--skill foo` install and a `--all from same repo` install have
+        # different dedup keys; both should be accepted on one agent.
+        named = _github_skill(name="aod-sdk-python")
+        whole = _github_skill(name=None)
+        resp = self._post(client, auth_headers, [named, whole])
+        assert resp.status_code == 201, resp.json()
+        assert len(resp.json()["skills"]) == 2
