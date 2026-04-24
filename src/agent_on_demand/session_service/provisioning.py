@@ -379,6 +379,8 @@ def _directories_for_post_script_writes(spec: SessionSpec) -> list[str]:
         # installed by `npx skills add`, which makes its own directories.
         for s in spec.skills:
             if s.content is not None:
+                # Inline skills always carry a name (validator enforces it).
+                assert s.name is not None
                 dirs.append(f"{spec.runtime.skills_root}/{s.name}")
     return dirs
 
@@ -447,9 +449,10 @@ def _write_skills(
             if inline and root is not None:
                 fs = sprite.filesystem()
                 for s in inline:
-                    dir_path = f"{root}/{s.name}"
-                    # mypy narrows: s.content was the filter predicate.
+                    # Inline skills must have a name (validated upstream).
+                    assert s.name is not None
                     assert s.content is not None
+                    dir_path = f"{root}/{s.name}"
                     (fs / f"{dir_path.lstrip('/')}/SKILL.md").write_text(s.content)
             agent_id = spec.runtime.skills_sh_agent
             if github and agent_id is not None:
@@ -459,6 +462,10 @@ def _write_skills(
                         f"npx -y skills@latest add {shlex.quote(s.source)} "
                         f"--global --agent {shlex.quote(agent_id)} --yes"
                     )
+                    if s.name:
+                        # Pin to a single skill from the repo. Without --skill,
+                        # the CLI installs every SKILL.md it finds.
+                        cmd += f" --skill {shlex.quote(s.name)}"
                     sprite.command("bash", "-lc", cmd).run()
         except SpriteError as e:
             raise ProvisionError(f"Failed to write skills: {e}", stage=STAGE_SKILLS) from e

@@ -219,7 +219,9 @@ def _build_spec_for_session(session: AgentSession) -> SessionSpec:
             )
         for s in agent.skills or []:
             if s.get("type") == "github":
-                skills.append(SkillSpec(name=s["name"], source=s["source"]))
+                # name is optional for github refs (omit → install all skills
+                # from the repo); pass it through verbatim, including absent.
+                skills.append(SkillSpec(name=s.get("name"), source=s["source"]))
             else:
                 skills.append(SkillSpec(name=s["name"], content=s["content"]))
 

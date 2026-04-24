@@ -253,18 +253,36 @@ class TestProvisionSkills:
         writes = fake_sprites.last_sprite().write_map()
         assert writes["/home/sprite/.claude/skills/inline-skill/SKILL.md"] == self.SAMPLE_CONTENT
 
-    def test_github_skill_invokes_skills_sh_cli(self, user, fake_sprites):
+    def test_github_skill_invokes_skills_sh_cli_with_skill_flag(self, user, fake_sprites):
         spec = _spec(
             user,
-            skills=[SkillSpec(name="aod", source="ravi-hq/agent-on-demand")],
+            skills=[SkillSpec(name="aod-sdk-python", source="ravi-hq/agent-on-demand")],
         )
         provision_session(user, spec)
         shell_lines = fake_sprites.last_sprite().shell_strings()
+        # When a name is provided we MUST pass --skill so only that one
+        # SKILL.md from the repo is installed (not every skill in the repo).
         assert any(
             "npx -y skills@latest add ravi-hq/agent-on-demand "
-            "--global --agent claude-code --yes" in line
+            "--global --agent claude-code --yes --skill aod-sdk-python" in line
             for line in shell_lines
         ), f"no skills.sh install command recorded; got: {shell_lines!r}"
+
+    def test_github_skill_without_name_installs_whole_repo(self, user, fake_sprites):
+        # Omitting `name` is the explicit signal "install every skill from
+        # this repo" — no `--skill` flag should appear.
+        spec = _spec(
+            user,
+            skills=[SkillSpec(source="ravi-hq/agent-on-demand")],
+        )
+        provision_session(user, spec)
+        shell_lines = fake_sprites.last_sprite().shell_strings()
+        install_lines = [line for line in shell_lines if "npx -y skills@latest add" in line]
+        assert len(install_lines) == 1, install_lines
+        assert "--skill" not in install_lines[0]
+        assert (
+            "npx -y skills@latest add ravi-hq/agent-on-demand --global --agent claude-code --yes"
+        ) in install_lines[0]
 
     @pytest.mark.parametrize(
         "runtime_name,expected_agent",
