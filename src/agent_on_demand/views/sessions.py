@@ -258,9 +258,12 @@ def _create_session(request):
         # Re-check the concurrent session quota inside a transaction, locking
         # the UserQuota row so two simultaneous requests cannot both pass the
         # pre-check above and each create a session, silently exceeding the limit.
-        UserQuota.objects.get_or_create(user=request.user)
-        UserQuota.objects.select_for_update().filter(user=request.user).get()
-        locked_max = UserQuota.max_concurrent_sessions_for(request.user)
+        # We read locked_max directly from the locked row rather than going
+        # through user.quota (which Django caches on the instance and may
+        # reflect state from before the get_or_create below).
+        locked_quota, _ = UserQuota.objects.get_or_create(user=request.user)
+        locked_quota = UserQuota.objects.select_for_update().get(pk=locked_quota.pk)
+        locked_max = locked_quota.max_concurrent_sessions or settings.DEFAULT_MAX_CONCURRENT_SESSIONS
         locked_count = UserQuota.active_session_count_for(request.user)
         if locked_count >= locked_max:
             return JsonResponse(
