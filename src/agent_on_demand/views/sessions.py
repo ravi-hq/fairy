@@ -283,13 +283,13 @@ def _create_session(request):
                 sr.set_token(resource.authorization_token)
             sr.save()
 
-    session_service.provision_session_task.defer(
-        session_id=str(session.id),
-        turn_id=turn.id,
-        prompt=effective_prompt,
-        mode="run",
-        timeout=float(req.timeout),
-    )
+        session_service.provision_session_task.defer(
+            session_id=str(session.id),
+            turn_id=turn.id,
+            prompt=effective_prompt,
+            mode="run",
+            timeout=float(req.timeout),
+        )
 
     with posthog.new_context():
         posthog.identify_context(str(request.user.id))
@@ -359,7 +359,11 @@ async def stream_session(request, session_id):
             else:
                 payload = json.loads(event)
                 log_id = payload.get("id")
-                if log_id:
+                # turn_start is a synthetic event derived from the same DB row
+                # as the output event that follows it. Advancing the SSE cursor
+                # on turn_start would cause the output event (same id) to be
+                # skipped on reconnect. Only real log row events advance it.
+                if log_id and payload.get("type") != "turn_start":
                     yield f"id: {log_id}\n"
                 yield f"data: {event}\n\n"
 
@@ -415,9 +419,10 @@ def send_prompt(request, session_id):
     except session_service.SessionHandleNotFound as e:
         return JsonResponse({"detail": str(e)}, status=404)
 
-    # Atomically lock the session row, re-check state, and allocate a turn
-    # number. Prevents two concurrent POSTs from both creating turn N+1 or
-    # transitioning the session to running.
+    # Atomically lock the session row, re-check state, allocate a turn number,
+    # and enqueue the worker task. All four steps are inside the same
+    # transaction so a task is never deferred without its turn row committed,
+    # and a turn row is never committed without a task enqueued to drive it.
     try:
         with transaction.atomic():
             locked = AgentSession.objects.select_for_update().get(pk=session.id)
@@ -445,10 +450,9 @@ def send_prompt(request, session_id):
             locked.exit_code = None
             locked.save(update_fields=["prompt", "status", "exit_code", "updated_at"])
             session = locked
+            session_service.run_turn(session, turn, sprite, req.prompt, "continue", float(req.timeout))
     except AgentSession.DoesNotExist:
         return JsonResponse({"detail": "Session not found"}, status=404)
-
-    session_service.run_turn(session, turn, sprite, req.prompt, "continue", float(req.timeout))
 
     with posthog.new_context():
         posthog.identify_context(str(request.user.id))
