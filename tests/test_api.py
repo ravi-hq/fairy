@@ -343,7 +343,6 @@ def test_locked_quota_check_catches_race(
     settings.DEFAULT_MAX_CONCURRENT_SESSIONS = 1
 
     call_count = {"n": 0}
-    original = UserQuota.active_session_count_for
 
     def _simulate_race(u):
         call_count["n"] += 1

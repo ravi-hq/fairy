@@ -99,5 +99,10 @@ check_untyped_defs = false
 disable_error_code = ["annotation-unchecked", "import-untyped"]
 follow_imports = "silent"
 
+[tool.pip-audit]
+# CVE-2026-3219: vulnerability in pip itself (not our code). Newly published
+# after the last main-branch CI run; no fixed version is available yet.
+ignore-vulns = ["CVE-2026-3219"]
+
 [tool.bandit]
 exclude_dirs = ["tests", ".venv", "src/agent_on_demand/migrations"]
