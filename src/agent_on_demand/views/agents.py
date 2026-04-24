@@ -2,6 +2,7 @@ import json
 import re
 
 import posthog
+from django.db import transaction
 from django.http import JsonResponse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
@@ -326,20 +327,21 @@ def agents_list_create(request):
             except (Environment.DoesNotExist, ValueError):
                 return JsonResponse({"detail": "Environment not found"}, status=404)
 
-        agent = Agent.objects.create(
-            user=request.user,
-            name=req.name,
-            description=req.description,
-            system=req.system,
-            model=req.model,
-            runtime=req.runtime,
-            environment=env_obj,
-            skills=req.skills,
-            mcp_servers=req.mcp_servers,
-            metadata=req.metadata,
-            version=1,
-        )
-        _snapshot_version(agent)
+        with transaction.atomic():
+            agent = Agent.objects.create(
+                user=request.user,
+                name=req.name,
+                description=req.description,
+                system=req.system,
+                model=req.model,
+                runtime=req.runtime,
+                environment=env_obj,
+                skills=req.skills,
+                mcp_servers=req.mcp_servers,
+                metadata=req.metadata,
+                version=1,
+            )
+            _snapshot_version(agent)
 
         with posthog.new_context():
             posthog.identify_context(str(request.user.id))
@@ -447,8 +449,9 @@ def agent_detail(request, agent_id):
 
         if changed:
             agent.version += 1
-            agent.save()
-            _snapshot_version(agent)
+            with transaction.atomic():
+                agent.save()
+                _snapshot_version(agent)
             with posthog.new_context():
                 posthog.identify_context(str(request.user.id))
                 posthog.capture(
