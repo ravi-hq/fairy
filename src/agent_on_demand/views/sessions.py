@@ -263,7 +263,9 @@ def _create_session(request):
         # reflect state from before the get_or_create below).
         locked_quota, _ = UserQuota.objects.get_or_create(user=request.user)
         locked_quota = UserQuota.objects.select_for_update().get(pk=locked_quota.pk)
-        locked_max = locked_quota.max_concurrent_sessions or settings.DEFAULT_MAX_CONCURRENT_SESSIONS
+        locked_max = (
+            locked_quota.max_concurrent_sessions or settings.DEFAULT_MAX_CONCURRENT_SESSIONS
+        )
         locked_count = UserQuota.active_session_count_for(request.user)
         if locked_count >= locked_max:
             return JsonResponse(
