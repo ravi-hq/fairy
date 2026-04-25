@@ -167,21 +167,6 @@ def _create_session(request):
     except ValidationError as e:
         return JsonResponse({"detail": e.errors(include_context=False)}, status=422)
 
-    max_concurrent = UserQuota.max_concurrent_sessions_for(request.user)
-    active_count = UserQuota.active_session_count_for(request.user)
-    if active_count >= max_concurrent:
-        return JsonResponse(
-            {
-                "detail": (
-                    f"Concurrent session limit reached ({active_count}/{max_concurrent}). "
-                    "Terminate an active session before starting a new one."
-                ),
-                "limit": max_concurrent,
-                "active": active_count,
-            },
-            status=429,
-        )
-
     try:
         agent_obj = Agent.objects.get(pk=req.agent_id, user=request.user)
     except (Agent.DoesNotExist, ValueError):
@@ -226,19 +211,25 @@ def _create_session(request):
             status=400,
         )
 
-    # Agent's model must be servable by the agent's runtime.
-    if agent_obj.model in MODELS:
-        model = MODELS[agent_obj.model]
-        if model.provider not in runtime_obj.providers:
-            return JsonResponse(
-                {
-                    "detail": (
-                        f"Runtime {runtime} cannot serve model {agent_obj.model}: "
-                        f"provider {model.provider} not in {sorted(runtime_obj.providers)}"
-                    )
-                },
-                status=422,
-            )
+    # Agent's model must be known and servable by the agent's runtime.
+    # An unknown model is rejected immediately rather than silently skipping
+    # the provider compatibility check and failing later at provision time.
+    if agent_obj.model not in MODELS:
+        return JsonResponse(
+            {"detail": f"Unknown model: {agent_obj.model}"},
+            status=422,
+        )
+    model = MODELS[agent_obj.model]
+    if model.provider not in runtime_obj.providers:
+        return JsonResponse(
+            {
+                "detail": (
+                    f"Runtime {runtime} cannot serve model {agent_obj.model}: "
+                    f"provider {model.provider} not in {sorted(runtime_obj.providers)}"
+                )
+            },
+            status=422,
+        )
 
     # Sync pre-check so missing Sprites creds return 400 immediately rather
     # than surfacing as a failed session the client has to poll for.
@@ -255,6 +246,26 @@ def _create_session(request):
         effective_prompt = f"{agent_obj.system}\n\n{req.prompt}"
 
     with transaction.atomic():
+        # Lock the quota row (creating it if absent) so the active-session count
+        # check and the session INSERT are serialized. Without this, two concurrent
+        # requests can both read count < limit and both create a session, exceeding
+        # the user's concurrent-session quota.
+        UserQuota.objects.select_for_update().get_or_create(user=request.user)
+        max_concurrent = UserQuota.max_concurrent_sessions_for(request.user)
+        active_count = UserQuota.active_session_count_for(request.user)
+        if active_count >= max_concurrent:
+            return JsonResponse(
+                {
+                    "detail": (
+                        f"Concurrent session limit reached ({active_count}/{max_concurrent}). "
+                        "Terminate an active session before starting a new one."
+                    ),
+                    "limit": max_concurrent,
+                    "active": active_count,
+                },
+                status=429,
+            )
+
         session = AgentSession.objects.create(
             user=request.user,
             agent=agent_obj,
