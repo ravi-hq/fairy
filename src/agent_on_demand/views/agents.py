@@ -417,15 +417,24 @@ def agent_detail(request, agent_id):
         # Detect changes
         changed = False
 
-        # Resolve environment_id if provided
-        if req.environment_id is not None:
-            try:
-                env_obj = Environment.objects.get(pk=req.environment_id, user=request.user)
-            except (Environment.DoesNotExist, ValueError):
-                return JsonResponse({"detail": "Environment not found"}, status=404)
-            if env_obj.id != agent.environment_id:
-                agent.environment = env_obj
-                changed = True
+        # Resolve environment_id only when the key was explicitly present in the
+        # request body. model_fields_set distinguishes:
+        #   key absent            → no-op (caller did not intend to touch environment)
+        #   key present as null   → clear the agent’s environment
+        #   key present as a UUID → set / change the agent’s environment
+        if "environment_id" in req.model_fields_set:
+            if req.environment_id is None:
+                if agent.environment_id is not None:
+                    agent.environment = None
+                    changed = True
+            else:
+                try:
+                    env_obj = Environment.objects.get(pk=req.environment_id, user=request.user)
+                except (Environment.DoesNotExist, ValueError):
+                    return JsonResponse({"detail": "Environment not found"}, status=404)
+                if env_obj.id != agent.environment_id:
+                    agent.environment = env_obj
+                    changed = True
 
         for field in ("name", "model", "runtime", "system", "description", "skills", "mcp_servers"):
             value = getattr(req, field)
