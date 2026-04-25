@@ -255,11 +255,15 @@ def _mark_provision_failed(session: AgentSession, turn_id: int, message: str) ->
     )
     now = timezone.now()
 
-    session.refresh_from_db(fields=["status"])
-    if session.status != "terminated":
-        session.status = "failed"
-        session.sprite_name = ""
-        session.save(update_fields=["status", "sprite_name", "updated_at"])
+    # Use a single atomic conditional UPDATE instead of read-then-write.
+    # refresh_from_db + conditional save is a race: terminate_session can
+    # commit status="terminated" between the refresh read and the save,
+    # causing the save to silently overwrite "terminated" with "failed".
+    AgentSession.objects.filter(pk=session.pk).exclude(status="terminated").update(
+        status="failed",
+        sprite_name="",
+        updated_at=now,
+    )
 
     SessionTurn.objects.filter(pk=turn_id).update(
         status="failed",
