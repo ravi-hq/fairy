@@ -534,8 +534,8 @@ def delete_session(request, session_id):
     except (AgentSession.DoesNotExist, ValueError):
         return JsonResponse({"detail": "Session not found"}, status=404)
 
-    if session.status == "running":
-        return JsonResponse({"detail": "Cannot delete a running session"}, status=409)
+    if session.status in ("running", "pending"):
+        return JsonResponse({"detail": "Cannot delete an active session"}, status=409)
 
     session_id_str = str(session.id)
     session.delete()  # pre_delete signal handles Sprite cleanup

@@ -309,18 +309,19 @@ def environment_delete(request, environment_id):
         return JsonResponse({"detail": "Method not allowed"}, status=405)
 
     try:
-        env = Environment.objects.get(pk=environment_id, user=request.user)
+        with transaction.atomic():
+            env = Environment.objects.select_for_update().get(
+                pk=environment_id, user=request.user
+            )
+            if env.sessions.exists():
+                return JsonResponse(
+                    {"detail": "Cannot delete environment with existing sessions"},
+                    status=409,
+                )
+            env_id_str = str(env.id)
+            env.delete()
     except (Environment.DoesNotExist, ValueError):
         return JsonResponse({"detail": "Environment not found"}, status=404)
-
-    if env.sessions.exists():
-        return JsonResponse(
-            {"detail": "Cannot delete environment with existing sessions"},
-            status=409,
-        )
-
-    env_id_str = str(env.id)
-    env.delete()
 
     with posthog.new_context():
         posthog.identify_context(str(request.user.id))
