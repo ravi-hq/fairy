@@ -43,7 +43,6 @@ def _serialize_resources(session: AgentSession) -> list[dict]:
 
 def _serialize_session(session: AgentSession) -> dict:
     latest = session.turns.order_by("-turn_number").first()
-    turn_count = latest.turn_number if latest else 0
     return {
         "id": str(session.id),
         "agent_id": str(session.agent_id) if session.agent_id else None,
@@ -54,7 +53,7 @@ def _serialize_session(session: AgentSession) -> dict:
         "created_at": session.created_at.isoformat(),
         "updated_at": session.updated_at.isoformat(),
         "resources": _serialize_resources(session),
-        "turn_count": turn_count,
+        "turn_count": session.turns.count(),
         "current_turn": latest.turn_number if latest else None,
     }
 
@@ -412,8 +411,15 @@ def send_prompt(request, session_id):
         sprite = session_service.resume_session(request.user, session.sprite_name)
     except session_service.NoSpritesKeyError as e:
         return JsonResponse({"detail": str(e)}, status=400)
-    except session_service.SessionHandleNotFound as e:
-        return JsonResponse({"detail": str(e)}, status=404)
+    except session_service.SessionHandleNotFound:
+        # The Sprite is gone (e.g. idle timeout on the Sprites platform). The
+        # session record still exists, so 404 would be misleading — callers
+        # cannot distinguish "session not found" from "Sprite no longer
+        # available". Return 409 with an actionable message instead.
+        return JsonResponse(
+            {"detail": "Session sprite is no longer available; start a new session."},
+            status=409,
+        )
 
     # Atomically lock the session row, re-check state, and allocate a turn
     # number. Prevents two concurrent POSTs from both creating turn N+1 or
