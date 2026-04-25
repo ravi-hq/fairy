@@ -2,6 +2,7 @@ import json
 import re
 
 import posthog
+from django.db import transaction
 from django.http import JsonResponse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
@@ -373,18 +374,14 @@ def agents_list_create(request):
 @require_api_key
 def agent_detail(request, agent_id):
     """GET: retrieve agent. PUT: update agent."""
-    try:
-        agent = Agent.objects.get(pk=agent_id, user=request.user)
-    except (Agent.DoesNotExist, ValueError):
-        return JsonResponse({"detail": "Agent not found"}, status=404)
-
     if request.method == "GET":
+        try:
+            agent = Agent.objects.get(pk=agent_id, user=request.user)
+        except (Agent.DoesNotExist, ValueError):
+            return JsonResponse({"detail": "Agent not found"}, status=404)
         return JsonResponse(_serialize_agent(agent))
 
     if request.method == "PUT":
-        if agent.is_archived:
-            return JsonResponse({"detail": "Cannot update an archived agent"}, status=409)
-
         try:
             body = json.loads(request.body)
         except (json.JSONDecodeError, ValueError):
@@ -395,60 +392,77 @@ def agent_detail(request, agent_id):
         except ValidationError as e:
             return JsonResponse({"detail": e.errors(include_context=False)}, status=422)
 
-        if req.version != agent.version:
-            return JsonResponse(
-                {"detail": f"Version mismatch: expected {agent.version}, got {req.version}"},
-                status=409,
-            )
-
         if req.runtime is not None and req.runtime not in RUNTIMES:
             return JsonResponse(
                 {"detail": f"Unknown runtime: {req.runtime}. Must be one of: {list(RUNTIMES)}"},
                 status=400,
             )
 
-        effective_runtime = req.runtime or agent.runtime
-        effective_model = req.model or agent.model
-        if effective_runtime in RUNTIMES and effective_model in MODELS:
-            compat_err = _check_runtime_model_compat(effective_runtime, effective_model)
-            if compat_err is not None:
-                return JsonResponse({"detail": compat_err}, status=422)
-
-        # Detect changes
-        changed = False
-
-        # Resolve environment_id if provided
-        if req.environment_id is not None:
+        # Resolve environment before acquiring the row lock (fast 404 path).
+        env_obj = None
+        env_id_provided = req.environment_id is not None
+        if env_id_provided:
             try:
                 env_obj = Environment.objects.get(pk=req.environment_id, user=request.user)
             except (Environment.DoesNotExist, ValueError):
                 return JsonResponse({"detail": "Environment not found"}, status=404)
-            if env_obj.id != agent.environment_id:
-                agent.environment = env_obj
-                changed = True
 
-        for field in ("name", "model", "runtime", "system", "description", "skills", "mcp_servers"):
-            value = getattr(req, field)
-            if value is not None and value != getattr(agent, field):
-                setattr(agent, field, value)
-                changed = True
+        changed = False
+        with transaction.atomic():
+            try:
+                agent = Agent.objects.select_for_update().get(pk=agent_id, user=request.user)
+            except (Agent.DoesNotExist, ValueError):
+                return JsonResponse({"detail": "Agent not found"}, status=404)
 
-        # Metadata merges at key level (matching Anthropic semantics)
-        if req.metadata is not None:
-            merged = dict(agent.metadata)
-            for k, v in req.metadata.items():
-                if v == "":
-                    merged.pop(k, None)
-                else:
-                    merged[k] = v
-            if merged != agent.metadata:
-                agent.metadata = merged
-                changed = True
+            if agent.is_archived:
+                return JsonResponse({"detail": "Cannot update an archived agent"}, status=409)
+
+            if req.version != agent.version:
+                return JsonResponse(
+                    {"detail": f"Version mismatch: expected {agent.version}, got {req.version}"},
+                    status=409,
+                )
+
+            effective_runtime = req.runtime or agent.runtime
+            effective_model = req.model or agent.model
+            if effective_runtime in RUNTIMES and effective_model in MODELS:
+                compat_err = _check_runtime_model_compat(effective_runtime, effective_model)
+                if compat_err is not None:
+                    return JsonResponse({"detail": compat_err}, status=422)
+
+            if env_id_provided:
+                if env_obj.id != agent.environment_id:
+                    agent.environment = env_obj
+                    changed = True
+
+            for field in ("name", "model", "runtime", "system", "description", "skills", "mcp_servers"):
+                value = getattr(req, field)
+                if value is not None and value != getattr(agent, field):
+                    setattr(agent, field, value)
+                    changed = True
+
+            # Metadata merges at key level (matching Anthropic semantics)
+            if req.metadata is not None:
+                merged = dict(agent.metadata)
+                for k, v in req.metadata.items():
+                    if v == "":
+                        merged.pop(k, None)
+                    else:
+                        merged[k] = v
+                if merged != agent.metadata:
+                    agent.metadata = merged
+                    changed = True
+
+            if changed:
+                agent.version += 1
+                agent.save(update_fields=[
+                    "name", "description", "system", "model", "runtime",
+                    "environment_id", "skills", "mcp_servers", "metadata",
+                    "version", "updated_at",
+                ])
+                _snapshot_version(agent)
 
         if changed:
-            agent.version += 1
-            agent.save()
-            _snapshot_version(agent)
             with posthog.new_context():
                 posthog.identify_context(str(request.user.id))
                 posthog.capture(
