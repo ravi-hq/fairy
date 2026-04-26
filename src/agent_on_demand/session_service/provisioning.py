@@ -32,6 +32,7 @@ from agent_on_demand.observability import get_tracer
 
 from .client import best_effort_delete, require_client
 from .errors import ProvisionError
+from .post_script_dirs import directories_for_post_script_writes
 from .specs import RepoSpec, SessionSpec
 
 # Paths inside the single-tenant Sprite VM, not the host — B108 doesn't apply.
@@ -309,7 +310,7 @@ def _build_provision_script(spec: SessionSpec) -> str:
     # for codex/gemini, every skill dir). /home/sprite already exists, so
     # Claude's .claude.json and default skills root don't need to be created
     # here — only the per-skill directories.
-    dirs_to_make = _directories_for_post_script_writes(spec)
+    dirs_to_make = directories_for_post_script_writes(spec)
     if dirs_to_make:
         quoted = " ".join(shlex.quote(d) for d in dirs_to_make)
         lines.append(f"mkdir -p {quoted}")
@@ -354,29 +355,6 @@ def _build_provision_script(spec: SessionSpec) -> str:
             lines.append("")
 
     return "\n".join(lines)
-
-
-def _directories_for_post_script_writes(spec: SessionSpec) -> list[str]:
-    """Which dirs need to exist before post-script fs.writes (MCP config +
-    skills). `/home/sprite` is assumed to already exist."""
-    dirs: list[str] = []
-    if spec.mcp_servers:
-        if spec.runtime.name == "codex":
-            dirs.append("/home/sprite/.codex")
-        elif spec.runtime.name == "gemini":
-            dirs.append("/home/sprite/.gemini")
-        elif spec.runtime.name == "opencode":
-            dirs.append("/home/sprite/.config/opencode")
-        # claude writes to /home/sprite/.claude.json (no mkdir).
-    if spec.runtime.skills_root:
-        # Only inline skills need a pre-created target dir; github skills are
-        # installed by `npx skills add`, which makes its own directories.
-        for s in spec.skills:
-            if s.content is not None:
-                # Inline skills always carry a name (validator enforces it).
-                assert s.name is not None
-                dirs.append(f"{spec.runtime.skills_root}/{s.name}")
-    return dirs
 
 
 def _package_commands(manager: str, pkgs: list[str]) -> list[str]:
