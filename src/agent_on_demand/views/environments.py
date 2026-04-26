@@ -46,14 +46,15 @@ class CreateEnvironmentRequest(BaseModel):
     @field_validator("packages")
     @classmethod
     def validate_packages(cls, v: dict) -> dict:
-        for manager, pkgs in v.items():
+        # The list[str] shape check is enforced by pydantic's
+        # `dict[str, list[str]]` annotation; we only need to validate the
+        # manager name here.
+        for manager in v:
             if manager not in VALID_PACKAGE_MANAGERS:
                 raise ValueError(
                     f"Unknown package manager: {manager}. "
                     f"Must be one of: {sorted(VALID_PACKAGE_MANAGERS)}"
                 )
-            if not isinstance(pkgs, list) or not all(isinstance(p, str) for p in pkgs):
-                raise ValueError(f"packages.{manager} must be a list of strings")
         return v
 
     @field_validator("env_vars")
@@ -88,15 +89,16 @@ class UpdateEnvironmentRequest(BaseModel):
     @field_validator("packages")
     @classmethod
     def validate_packages(cls, v: dict | None) -> dict | None:
+        # The list[str] shape check is enforced by pydantic's
+        # `dict[str, list[str]] | None` annotation; we only need to validate
+        # the manager name here.
         if v is not None:
-            for manager, pkgs in v.items():
+            for manager in v:
                 if manager not in VALID_PACKAGE_MANAGERS:
                     raise ValueError(
                         f"Unknown package manager: {manager}. "
                         f"Must be one of: {sorted(VALID_PACKAGE_MANAGERS)}"
                     )
-                if not isinstance(pkgs, list) or not all(isinstance(p, str) for p in pkgs):
-                    raise ValueError(f"packages.{manager} must be a list of strings")
         return v
 
     @field_validator("env_vars")
