@@ -59,8 +59,9 @@ def build_provision_script(spec: SessionSpec) -> str:
     # mkdir for files that get fs.written AFTER the script runs (MCP config
     # for codex/gemini/opencode, every inline-skill dir). /home/sprite already
     # exists, so Claude's .claude.json and the default skills root don't need
-    # to be created here.
-    dirs_to_make = directories_for_post_script_writes(spec)
+    # to be created here. Sorted so the rendered script is deterministic
+    # regardless of helper iteration order.
+    dirs_to_make = sorted(directories_for_post_script_writes(spec))
     if dirs_to_make:
         quoted = " ".join(shlex.quote(d) for d in dirs_to_make)
         lines.append(f"mkdir -p {quoted}")
@@ -74,7 +75,7 @@ def build_provision_script(spec: SessionSpec) -> str:
     lines.append("")
 
     # Packages — iterate the canonical order so apt always runs first.
-    if env and env.packages:
+    if env is not None and env.packages:
         for manager in PACKAGE_MANAGER_ORDER:
             pkgs = env.packages.get(manager, [])
             if not pkgs:

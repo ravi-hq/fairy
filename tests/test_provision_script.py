@@ -406,9 +406,10 @@ def test_user_setup_script_skipped_when_only_whitespace():
     """``"   \n\t  "``.strip() is empty — must be skipped, not run.
     Distinguishes a mutant that drops the ``.strip()`` call."""
     script = build_provision_script(_spec(environment=_env(setup_script="  \n\t  ")))
-    # Whitespace-only setup_script must not produce a setup line.
+    # Whitespace-only setup_script must not produce a setup line — last
+    # non-blank line is the chmod from the standard header.
     lines = script.strip().splitlines()
-    assert lines[-1].startswith("chmod ") or lines[-1] == ""
+    assert lines[-1].startswith("chmod ")
 
 
 def test_user_setup_script_when_none_produces_no_extra_lines():
