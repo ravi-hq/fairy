@@ -54,6 +54,7 @@ dev = [
     "pylint>=3.2",
     "pyyaml>=6.0",
     "mutmut>=3.0",
+    "django-migration-linter>=5.0",
 ]
 
 [tool.ruff]

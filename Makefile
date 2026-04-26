@@ -78,6 +78,10 @@ test-e2e-mcp:
 test-all:
 	uv run pytest tests/ -v
 
+# Lint new (unapplied) migrations for safety issues. Requires `make db-up` first.
+check-migrations:
+	uv run python manage.py lintmigrations --include-apps fairy --exclude-applied-migrations
+
 lint:
 	uv run ruff check src/ tests/
 
