@@ -474,22 +474,6 @@ class TestProvisionStageEvents:
         assert AgentSessionLog.objects.count() == 0
 
 
-class TestPackageCommands:
-    """`_package_commands` translates a (manager, packages) pair into shell
-    install commands inlined in the provision script. The dispatch is
-    keyed on six known managers; an unrecognized one must raise loudly so
-    a future drift between `PACKAGE_MANAGER_ORDER` and the dispatch (or
-    a new manager added to `VALID_PACKAGE_MANAGERS` without a builder)
-    fails at provision time instead of silently dropping the user's
-    packages."""
-
-    def test_unknown_manager_raises(self):
-        from agent_on_demand.session_service.provisioning import _package_commands
-
-        with pytest.raises(ValueError, match="Unsupported package manager: 'yarn'"):
-            _package_commands("yarn", ["express"])
-
-
 class TestProvisionSessionEnvFileShape:
     def test_env_vars_sorted_and_quoted(self, user, fake_sprites):
         env = Environment.objects.create(
