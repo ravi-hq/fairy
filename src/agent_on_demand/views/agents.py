@@ -419,14 +419,22 @@ def agent_detail(request, agent_id):
         # Detect changes
         changed = False
 
-        # Resolve environment_id if provided
-        if req.environment_id is not None:
-            try:
-                env_obj = Environment.objects.get(pk=req.environment_id, user=request.user)
-            except (Environment.DoesNotExist, ValueError):
-                return JsonResponse({"detail": "Environment not found"}, status=404)
-            if env_obj.id != agent.environment_id:
-                agent.environment = env_obj
+        # Resolve environment_id only when it was explicitly included in the
+        # request body. environment_id defaults to None in the schema, so we
+        # must consult model_fields_set to distinguish "absent from payload"
+        # from "explicitly set to null" (which clears the environment).
+        if "environment_id" in req.model_fields_set:
+            if req.environment_id is not None:
+                try:
+                    env_obj = Environment.objects.get(pk=req.environment_id, user=request.user)
+                except (Environment.DoesNotExist, ValueError):
+                    return JsonResponse({"detail": "Environment not found"}, status=404)
+                if env_obj.id != agent.environment_id:
+                    agent.environment = env_obj
+                    changed = True
+            elif agent.environment_id is not None:
+                # Explicit null — detach the environment.
+                agent.environment = None
                 changed = True
 
         for field in ("name", "model", "runtime", "system", "description", "skills", "mcp_servers"):
