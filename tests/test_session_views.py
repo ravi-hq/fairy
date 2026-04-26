@@ -1,0 +1,234 @@
+"""Cover error-path branches in views/sessions.py that test_api.py left untouched.
+
+Each test pins a specific 4xx response shape — a refactor that returned
+500 (or the wrong 4xx) would break SDK behavior in subtle ways. The
+404/409/422 branches are particularly worth pinning because the SDK
+parses `detail` strings to surface human-readable errors.
+"""
+
+from __future__ import annotations
+
+import json
+import uuid
+
+import pytest
+from django.contrib.auth.models import User
+from django.test import Client
+
+from agent_on_demand.models import (
+    Agent,
+    AgentSession,
+    APIKey,
+    SessionTurn,
+    UserCredential,
+    UserSpritesKey,
+)
+
+
+@pytest.fixture
+def user(db):
+    return User.objects.create_user(username="svuser", password="x")
+
+
+@pytest.fixture
+def auth_headers(user):
+    _, raw = APIKey.create_key(user, "k")
+    return {"HTTP_AUTHORIZATION": f"Bearer {raw}"}
+
+
+@pytest.fixture
+def sprites_key(user):
+    usk = UserSpritesKey(user=user)
+    usk.set_api_key("fake-sprites")
+    usk.save()
+    return usk
+
+
+@pytest.fixture
+def runtime_key(user, sprites_key):
+    cred = UserCredential(user=user, kind="provider:anthropic")
+    cred.set_value("fake-anthropic")
+    cred.save()
+    return cred
+
+
+@pytest.fixture
+def agent(user):
+    return Agent.objects.create(
+        user=user,
+        name="A",
+        model="anthropic/claude-sonnet-4-6",
+        runtime="claude",
+        version=1,
+    )
+
+
+@pytest.mark.django_db
+def test_sessions_collection_rejects_unknown_method(client: Client, auth_headers):
+    """PATCH /sessions → 405. The collection endpoint dispatches on POST/GET
+    and falls through; previously uncovered."""
+    resp = client.patch("/sessions", **auth_headers)
+    assert resp.status_code == 405
+    assert resp.json()["detail"] == "Method not allowed"
+
+
+@pytest.mark.django_db
+def test_create_session_with_unknown_model_returns_422(client, auth_headers, runtime_key, user):
+    """An agent persisted with a model string that's no longer in MODELS
+    (e.g. catalog removal) must reject session creation up-front rather
+    than silently failing later at provision time. Pin the contract so a
+    refactor that elided the check leaves this stops at 422."""
+    bogus_agent = Agent.objects.create(
+        user=user,
+        name="bogus-model",
+        model="unknown/model-id-not-in-catalog",
+        runtime="claude",
+        version=1,
+    )
+    resp = client.post(
+        "/sessions",
+        data=json.dumps({"agent_id": str(bogus_agent.id), "prompt": "hi"}),
+        content_type="application/json",
+        **auth_headers,
+    )
+    assert resp.status_code == 422
+    assert "Unknown model" in resp.json()["detail"]
+
+
+@pytest.mark.django_db
+def test_create_session_with_runtime_provider_mismatch_returns_422(
+    client, auth_headers, runtime_key, user
+):
+    """An agent persisted with a runtime/model whose provider isn't in
+    runtime.providers must reject at session-create. Real failure mode:
+    catalog edits where a model's provider was retroactively changed."""
+    bad_agent = Agent.objects.create(
+        user=user,
+        name="bad",
+        model="openai/gpt-4.1",
+        runtime="claude",  # claude doesn't serve openai/*
+        version=1,
+    )
+    resp = client.post(
+        "/sessions",
+        data=json.dumps({"agent_id": str(bad_agent.id), "prompt": "hi"}),
+        content_type="application/json",
+        **auth_headers,
+    )
+    assert resp.status_code == 422
+    assert "cannot serve" in resp.json()["detail"]
+
+
+@pytest.mark.django_db
+def test_send_prompt_session_not_found(client, auth_headers):
+    fake = uuid.uuid4()
+    resp = client.post(
+        f"/sessions/{fake}/prompt",
+        data=json.dumps({"prompt": "hi"}),
+        content_type="application/json",
+        **auth_headers,
+    )
+    assert resp.status_code == 404
+    assert "Session not found" in resp.json()["detail"]
+
+
+@pytest.mark.django_db
+def test_send_prompt_invalid_json(client, auth_headers, user):
+    """Invalid JSON on prompt endpoint must return 400, not 500."""
+    session = AgentSession.objects.create(
+        user=user, runtime="claude", prompt="x", status="completed"
+    )
+    resp = client.post(
+        f"/sessions/{session.id}/prompt",
+        data="{not json",
+        content_type="application/json",
+        **auth_headers,
+    )
+    assert resp.status_code == 400
+    assert "Invalid JSON" in resp.json()["detail"]
+
+
+@pytest.mark.django_db
+def test_send_prompt_missing_required_field_returns_422(client, auth_headers, user):
+    """PromptRequest requires `prompt`; sending an empty body must 422."""
+    session = AgentSession.objects.create(
+        user=user, runtime="claude", prompt="x", status="completed"
+    )
+    resp = client.post(
+        f"/sessions/{session.id}/prompt",
+        data=json.dumps({}),
+        content_type="application/json",
+        **auth_headers,
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.django_db
+def test_send_prompt_to_running_session_rejected(client, auth_headers, user):
+    """check_can_accept_prompt rejects 'running' state — a turn is in flight,
+    enqueueing another would cause the runtime CLI to clobber the in-progress
+    session state."""
+    session = AgentSession.objects.create(user=user, runtime="claude", prompt="x", status="running")
+    resp = client.post(
+        f"/sessions/{session.id}/prompt",
+        data=json.dumps({"prompt": "next"}),
+        content_type="application/json",
+        **auth_headers,
+    )
+    assert resp.status_code == 409
+
+
+@pytest.mark.django_db
+def test_send_prompt_to_failed_session_rejected(client, auth_headers, user):
+    """`failed` is terminal — the Sprite may have been left in a bad state
+    by the failure. Resuming would risk colliding with whatever the runtime
+    half-completed."""
+    session = AgentSession.objects.create(user=user, runtime="claude", prompt="x", status="failed")
+    resp = client.post(
+        f"/sessions/{session.id}/prompt",
+        data=json.dumps({"prompt": "retry"}),
+        content_type="application/json",
+        **auth_headers,
+    )
+    assert resp.status_code == 409
+
+
+@pytest.mark.django_db
+def test_list_session_turns_not_found(client, auth_headers):
+    resp = client.get(f"/sessions/{uuid.uuid4()}/turns", **auth_headers)
+    assert resp.status_code == 404
+    assert "Session not found" in resp.json()["detail"]
+
+
+@pytest.mark.django_db
+def test_list_session_turns_returns_ordered_history(client, auth_headers, user):
+    """Turns must come back ordered by turn_number — SDK consumers rely on
+    the order to reconstruct conversation history."""
+    session = AgentSession.objects.create(
+        user=user, runtime="claude", prompt="x", status="completed"
+    )
+    SessionTurn.objects.create(session=session, turn_number=2, prompt="b", status="completed")
+    SessionTurn.objects.create(session=session, turn_number=1, prompt="a", status="completed")
+    resp = client.get(f"/sessions/{session.id}/turns", **auth_headers)
+    assert resp.status_code == 200
+    nums = [t["turn_number"] for t in resp.json()["data"]]
+    assert nums == [1, 2]
+
+
+@pytest.mark.django_db
+def test_list_session_turns_other_user_returns_404(client, auth_headers, user):
+    """Cross-user listing must look indistinguishable from missing — same
+    contract as session detail and delete: don't leak existence."""
+    other = User.objects.create_user(username="other-stl", password="x")
+    theirs = AgentSession.objects.create(
+        user=other, runtime="claude", prompt="x", status="completed"
+    )
+    SessionTurn.objects.create(session=theirs, turn_number=1, prompt="p", status="completed")
+    resp = client.get(f"/sessions/{theirs.id}/turns", **auth_headers)
+    assert resp.status_code == 404
+
+
+@pytest.mark.django_db
+def test_terminate_session_not_found(client, auth_headers):
+    resp = client.post(f"/sessions/{uuid.uuid4()}/terminate", **auth_headers)
+    assert resp.status_code == 404

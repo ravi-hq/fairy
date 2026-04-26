@@ -535,6 +535,104 @@ def test_terminate_already_terminated(client: Client, auth_headers, user):
     assert "already terminated" in resp.json()["detail"]
 
 
+# DELETE /sessions/{id}/delete — endpoint had only e2e coverage before. Unit
+# tests pin every state-machine branch (200 on terminal states, 409 on active,
+# 404 on missing/cross-user) plus the Sprite-cleanup-on-delete signal. This
+# matches what test_terminate_session pins for the terminate endpoint.
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("status", ["completed", "failed", "terminated"])
+def test_delete_session_terminal_states_succeed(
+    client: Client, auth_headers, user, fake_sprites, status
+):
+    """Terminal states (completed, failed, terminated) are deletable; the
+    pre_delete signal should still enqueue Sprite cleanup whenever sprite_name
+    is set."""
+    session = AgentSession.objects.create(
+        user=user,
+        runtime="claude",
+        prompt="x",
+        sprite_name="aod-del-1",
+        status=status,
+    )
+    resp = client.delete(f"/sessions/{session.id}/delete", **auth_headers)
+    assert resp.status_code == 200
+    assert resp.json()["detail"] == "Session deleted"
+    assert not AgentSession.objects.filter(pk=session.id).exists()
+    assert fake_sprites.deleted == ["aod-del-1"]
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("status", ["pending", "running"])
+def test_delete_session_active_states_rejected(client: Client, auth_headers, user, status):
+    """pending/running sessions must not be deletable: pending has a
+    provision_session_task in flight and running would orphan a Sprite."""
+    session = AgentSession.objects.create(
+        user=user, runtime="claude", prompt="x", sprite_name="aod-keep", status=status
+    )
+    resp = client.delete(f"/sessions/{session.id}/delete", **auth_headers)
+    assert resp.status_code == 409
+    assert "active" in resp.json()["detail"].lower()
+    assert AgentSession.objects.filter(pk=session.id).exists()
+
+
+@pytest.mark.django_db
+def test_delete_session_no_sprite_name_does_not_enqueue_cleanup(
+    client: Client, auth_headers, user, fake_sprites
+):
+    """An empty sprite_name (e.g. terminate already cleared it) must not fire
+    the destroy task — otherwise we'd queue cleanup for a non-existent Sprite."""
+    session = AgentSession.objects.create(
+        user=user, runtime="claude", prompt="x", sprite_name="", status="terminated"
+    )
+    resp = client.delete(f"/sessions/{session.id}/delete", **auth_headers)
+    assert resp.status_code == 200
+    assert fake_sprites.deleted == []
+
+
+@pytest.mark.django_db
+def test_delete_session_missing_returns_404(client: Client, auth_headers):
+    fake_id = uuid.uuid4()
+    resp = client.delete(f"/sessions/{fake_id}/delete", **auth_headers)
+    assert resp.status_code == 404
+
+
+@pytest.mark.django_db
+def test_delete_session_other_user_returns_404(client: Client, auth_headers, user):
+    """Cross-user delete attempts must look indistinguishable from missing —
+    don't leak existence of another user's session via the status code."""
+    other = User.objects.create_user(username="other-deleter", password="x")
+    session = AgentSession.objects.create(
+        user=other, runtime="claude", prompt="x", sprite_name="", status="completed"
+    )
+    resp = client.delete(f"/sessions/{session.id}/delete", **auth_headers)
+    assert resp.status_code == 404
+    # Ensure the other user's session was not deleted.
+    assert AgentSession.objects.filter(pk=session.id).exists()
+
+
+@pytest.mark.django_db
+def test_delete_session_wrong_method_returns_405(client: Client, auth_headers, user):
+    session = AgentSession.objects.create(
+        user=user, runtime="claude", prompt="x", sprite_name="", status="completed"
+    )
+    resp = client.post(f"/sessions/{session.id}/delete", **auth_headers)
+    assert resp.status_code == 405
+    assert "Method not allowed" in resp.json()["detail"]
+    assert AgentSession.objects.filter(pk=session.id).exists()
+
+
+@pytest.mark.django_db
+def test_delete_session_requires_auth(client: Client, user):
+    session = AgentSession.objects.create(
+        user=user, runtime="claude", prompt="x", sprite_name="", status="completed"
+    )
+    resp = client.delete(f"/sessions/{session.id}/delete")
+    assert resp.status_code == 401
+    assert AgentSession.objects.filter(pk=session.id).exists()
+
+
 @pytest.mark.django_db
 def test_create_session_creates_turn_one(
     client: Client, auth_headers, runtime_key, agent, fake_sprites
