@@ -32,6 +32,7 @@ from agent_on_demand.observability import get_tracer
 
 from .client import best_effort_delete, require_client
 from .errors import ProvisionError
+from .package_commands import PACKAGE_MANAGER_ORDER, package_commands
 from .post_script_dirs import directories_for_post_script_writes
 from .specs import RepoSpec, SessionSpec
 
@@ -41,8 +42,6 @@ GIT_CREDS_PATH = "/tmp/.git-credentials"  # nosec B108
 PROVISION_SCRIPT_PATH = "/tmp/aod-provision.sh"  # nosec B108
 
 logger = logging.getLogger(__name__)
-
-PACKAGE_MANAGER_ORDER = ["apt", "cargo", "gem", "go", "npm", "pip"]
 
 # Stage names emitted both as `ProvisionError.stage` tags (server-side logging)
 # and as `stage` SSE events (see site/docs/api/streaming.md). Keep in sync.
@@ -329,7 +328,7 @@ def _build_provision_script(spec: SessionSpec) -> str:
             pkgs = env.packages.get(manager, [])
             if not pkgs:
                 continue
-            for cmd in _package_commands(manager, pkgs):
+            for cmd in package_commands(manager, pkgs):
                 lines.append(cmd)
         lines.append("")
 
@@ -355,34 +354,6 @@ def _build_provision_script(spec: SessionSpec) -> str:
             lines.append("")
 
     return "\n".join(lines)
-
-
-def _package_commands(manager: str, pkgs: list[str]) -> list[str]:
-    """Shell command strings for a single package manager, inlined into the
-    provision script. They rely on login-shell PATH (script is invoked with
-    `bash -l`).
-
-    The API validator (`VALID_PACKAGE_MANAGERS` in `views/environments.py`)
-    blocks unknown managers at request time, and the caller iterates
-    `PACKAGE_MANAGER_ORDER`, so in practice this only sees the six managers
-    branched on below. Raising on a mismatch turns a future drift bug
-    (manager added to ORDER but not to this dispatch, or vice versa) into a
-    loud provision-time failure instead of silently dropping the user's
-    packages."""
-    quoted = " ".join(shlex.quote(p) for p in pkgs)
-    if manager == "apt":
-        return [f"apt-get update -qq && apt-get install -y {quoted}"]
-    if manager == "pip":
-        return [f"pip install {quoted}"]
-    if manager == "npm":
-        return [f"npm install --global {quoted}"]
-    if manager == "cargo":
-        return [f"cargo install {shlex.quote(p)}" for p in pkgs]
-    if manager == "gem":
-        return [f"gem install {quoted}"]
-    if manager == "go":
-        return [f"go install {shlex.quote(p)}" for p in pkgs]
-    raise ValueError(f"Unsupported package manager: {manager!r}")
 
 
 def _write_runtime_config(
