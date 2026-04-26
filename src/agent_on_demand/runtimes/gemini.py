@@ -5,6 +5,8 @@ from typing import TYPE_CHECKING, Literal
 
 from sprites import Sprite
 
+from agent_on_demand.runtimes.gemini_config import render_gemini_mcp_config
+
 if TYPE_CHECKING:
     from agent_on_demand.session_service.specs import McpServerSpec, SessionSpec
 
@@ -31,19 +33,8 @@ class GeminiRuntime:
         spec: "SessionSpec",
         mcp_servers: list["McpServerSpec"],
     ) -> None:
-        config: dict[str, dict] = {}
-        for s in mcp_servers:
-            if s.type == "url":
-                entry: dict = {"httpUrl": s.url, "trust": True}
-                if s.headers:
-                    entry["headers"] = s.headers
-                config[s.name] = entry
-            elif s.type == "stdio":
-                entry = {"command": s.command, "args": s.args, "trust": True}
-                if s.env:
-                    entry["env"] = s.env
-                config[s.name] = entry
-        if not config:
+        config = render_gemini_mcp_config(mcp_servers)
+        if config is None:
             return
         fs = sprite.filesystem()
         (fs / "home/sprite/.gemini/settings.json").write_text(
