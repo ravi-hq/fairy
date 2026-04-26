@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 
+import pytest
 
 from agent_on_demand import observability
 
@@ -88,3 +89,78 @@ def test_init_otel_attaches_streamhandler_when_none_present(monkeypatch, mocker)
     assert h.formatter is not None
     assert h.formatter._fmt == "%(levelname)s %(name)s: %(message)s"
     assert h.level == logging.INFO
+
+
+# --- Per-instrumentor failure isolation ---
+#
+# `_instrument_libraries` wraps each auto-instrumentor in its own try/except
+# so a missing optional dep can't take the web process down. The Django one
+# was covered in #148; these add the same shape for psycopg and requests.
+# Without them, a regression that swallowed the warning OR took the whole
+# block down on the second/third instrumentor would slip past CI.
+
+
+@pytest.fixture
+def _otel_with_noop_exporters(monkeypatch):
+    """Reset OTel state and swap in no-op exporters so the BatchProcessors
+    don't try to flush to api.honeycomb.io with a fake key (avoids the
+    `Failed to export ... 401, reason: Unauthorized` log noise)."""
+
+    class _NoopExporter:
+        def export(self, _records):
+            return 0
+
+        def shutdown(self):
+            return None
+
+        def force_flush(self, _timeout_millis=30000):
+            return True
+
+    monkeypatch.setattr(
+        "opentelemetry.exporter.otlp.proto.http.trace_exporter.OTLPSpanExporter",
+        lambda **_kw: _NoopExporter(),
+    )
+    monkeypatch.setattr(
+        "opentelemetry.exporter.otlp.proto.http._log_exporter.OTLPLogExporter",
+        lambda **_kw: _NoopExporter(),
+    )
+    monkeypatch.setattr(observability, "_otel_initialized", False)
+    monkeypatch.setenv("HONEYCOMB_API_KEY", "fake-key-instrumentor-tests")
+    yield
+
+
+def test_instrument_libraries_warns_on_psycopg_failure(
+    monkeypatch, mocker, _otel_with_noop_exporters
+):
+    """If psycopg's instrumentor raises (e.g. import-error in a stripped
+    deployment), init_otel must log a warning and continue — not crash
+    the web process before Django serves its first request."""
+    fake_psycopg = mocker.MagicMock()
+    fake_psycopg.return_value.instrument.side_effect = RuntimeError("psycopg boom")
+    mocker.patch("opentelemetry.instrumentation.psycopg.PsycopgInstrumentor", fake_psycopg)
+    warn = mocker.patch.object(observability.logger, "warning")
+
+    observability.init_otel(service_name="aod-test-psycopg-warn")
+
+    assert observability._otel_initialized is True
+    failing = [c for c in warn.call_args_list if "psycopg instrumentation failed" in str(c)]
+    assert failing, "expected a warning for the psycopg instrumentation failure"
+
+
+def test_instrument_libraries_warns_on_requests_failure(
+    monkeypatch, mocker, _otel_with_noop_exporters
+):
+    """If requests' instrumentor raises, init_otel must log a warning
+    and continue. requests is an optional dep — without this test, a
+    refactor that took down the whole try/except chain on the third
+    instrumentor would silently break web startup."""
+    fake_requests = mocker.MagicMock()
+    fake_requests.return_value.instrument.side_effect = RuntimeError("requests boom")
+    mocker.patch("opentelemetry.instrumentation.requests.RequestsInstrumentor", fake_requests)
+    warn = mocker.patch.object(observability.logger, "warning")
+
+    observability.init_otel(service_name="aod-test-requests-warn")
+
+    assert observability._otel_initialized is True
+    failing = [c for c in warn.call_args_list if "requests instrumentation failed" in str(c)]
+    assert failing, "expected a warning for the requests instrumentation failure"
