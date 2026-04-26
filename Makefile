@@ -102,6 +102,16 @@ check-migrations:
 	DATABASE_URL=sqlite:///test.db uv run python manage.py lintmigrations \
 		--include-apps fairy --git-commit-id $(BASE_SHA) --project-root-path .
 
+# Snapshot the JSON schemas of all pydantic request models in views/ and
+# fail if they drift from docs/request_schemas.json. Catches accidental
+# breaking changes (added/removed/renamed fields, type flips). After an
+# intentional change, regenerate with `make snapshot-schemas`.
+check-schemas:
+	DATABASE_URL=sqlite:///test.db uv run python -m scripts.check_request_schemas
+
+snapshot-schemas:
+	DATABASE_URL=sqlite:///test.db uv run python -m scripts.check_request_schemas --write
+
 lint:
 	uv run ruff check src/ tests/
 
