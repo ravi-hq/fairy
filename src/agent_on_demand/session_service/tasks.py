@@ -161,7 +161,13 @@ def _provision_session_inner(
     mode: str,
     timeout: float,
 ) -> None:
-    session = AgentSession.objects.select_related("user", "agent", "environment").get(pk=session_id)
+    try:
+        session = AgentSession.objects.select_related("user", "agent", "environment").get(
+            pk=session_id
+        )
+    except AgentSession.DoesNotExist:
+        logger.info("provision_session_task: session %s gone, skipping", session_id)
+        return
     # If the client terminated before the worker picked this up, skip.
     if session.status == "terminated":
         return
@@ -346,15 +352,19 @@ def _execute_turn_inner(
     mode: str,
     timeout: float,
 ) -> None:
-    session = AgentSession.objects.select_related("user", "agent", "environment").get(pk=session_id)
-    turn = SessionTurn.objects.get(pk=turn_id)
+    try:
+        session = AgentSession.objects.select_related("user", "agent", "environment").get(
+            pk=session_id
+        )
+        turn = SessionTurn.objects.get(pk=turn_id)
+    except (AgentSession.DoesNotExist, SessionTurn.DoesNotExist):
+        logger.info("execute_turn: session=%s turn=%s gone, skipping", session_id, turn_id)
+        return
 
     try:
         spec = _build_spec_for_session(session)
     except Exception as e:
-        logger.exception(
-            "failed to build SessionSpec for session %s turn %s", session_id, turn_id
-        )
+        logger.exception("failed to build SessionSpec for session %s turn %s", session_id, turn_id)
         _fail_pending_turn(session, turn, f"internal error: {e}")
         return
 
@@ -373,9 +383,7 @@ def _execute_turn_inner(
         try:
             sprite = resume_session(session.user, session.sprite_name)
         except SessionHandleNotFound as e:
-            logger.warning(
-                "sprite not found for session %s turn %s: %s", session_id, turn_id, e
-            )
+            logger.warning("sprite not found for session %s turn %s: %s", session_id, turn_id, e)
             span.set_attribute("aod.failure_stage", "sprite_not_found")
             _fail_pending_turn(session, turn, str(e))
             return
@@ -518,7 +526,13 @@ def _execute_turn_body(session, turn, spec, sprite, prompt, mode, timeout, span)
         exit_code = None
 
     ended = timezone.now()
-    session.refresh_from_db(fields=["status"])
+    try:
+        session.refresh_from_db(fields=["status"])
+    except AgentSession.DoesNotExist:
+        # Session was deleted mid-turn (e.g. client raced terminate + delete).
+        # Turn + logs were cascade-deleted alongside it; nothing left to write.
+        logger.info("execute_turn: session %s deleted mid-turn, skipping finalization", session.id)
+        return
     if session.status != "terminated":
         session.status = final_status
         session.exit_code = exit_code
