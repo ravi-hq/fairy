@@ -227,6 +227,63 @@ def test_send_prompt_to_failed_session_rejected(client, auth_headers, user):
 
 
 @pytest.mark.django_db
+def test_send_prompt_without_sprites_key_returns_400(client, auth_headers, user):
+    """A user with a `completed` session but no UserSpritesKey hits the
+    `NoSpritesKeyError` branch synchronously: `resume_session` →
+    `require_client` (session_service/client.py) raises before the view
+    ever returns, so the 400 path runs entirely in the request thread —
+    there is no worker dispatch involved. Without this branch, the SDK
+    sees an opaque 5xx instead of an actionable "configure a Sprites
+    key" message.
+
+    Pin the exact `detail` so a rename of `NoSpritesKeyError`'s message
+    string in client.py breaks this test loudly, rather than silently
+    drifting away from the API contract SDK clients parse against."""
+    session = AgentSession.objects.create(
+        user=user, runtime="claude", prompt="x", status="completed", sprite_name="s"
+    )
+    resp = client.post(
+        f"/sessions/{session.id}/prompt",
+        data=json.dumps({"prompt": "next"}),
+        content_type="application/json",
+        **auth_headers,
+    )
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "No Sprites API key configured"
+
+
+@pytest.mark.django_db
+def test_send_prompt_when_sprite_is_gone_returns_409(
+    client, auth_headers, runtime_key, user, mocker
+):
+    """When the Sprite backing a session has been reaped (idle timeout on
+    the Sprites platform, manual deletion), `resume_session` raises
+    `SessionHandleNotFound`. The session row still exists, so 404 would
+    be misleading — callers couldn't distinguish "session not found" from
+    "Sprite no longer available". The contract is 409 with an actionable
+    message; SDK clients parse `detail` to surface "start a new session"
+    guidance to the user."""
+    from agent_on_demand.session_service.errors import SessionHandleNotFound
+
+    session = AgentSession.objects.create(
+        user=user, runtime="claude", prompt="x", status="completed", sprite_name="s"
+    )
+    mocker.patch(
+        "agent_on_demand.views.sessions.session_service.resume_session",
+        side_effect=SessionHandleNotFound("Sprite not found: gone"),
+    )
+    resp = client.post(
+        f"/sessions/{session.id}/prompt",
+        data=json.dumps({"prompt": "next"}),
+        content_type="application/json",
+        **auth_headers,
+    )
+    assert resp.status_code == 409
+    assert "Session sprite is no longer available" in resp.json()["detail"]
+    assert "start a new session" in resp.json()["detail"]
+
+
+@pytest.mark.django_db
 def test_list_session_turns_not_found(client, auth_headers):
     resp = client.get(f"/sessions/{uuid.uuid4()}/turns", **auth_headers)
     assert resp.status_code == 404
