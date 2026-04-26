@@ -31,6 +31,13 @@ worker:
 test:
 	DATABASE_URL=sqlite:///test.db uv run pytest tests/ -v --ignore=tests/e2e
 
+# Mutation testing for danger-zone modules (auth.py, crypto.py). Asserts that
+# every mutant is killed except a small documented set of known-equivalents.
+# See scripts/check_mutmut.py for the equivalent-mutant allowlist.
+mutation-test:
+	rm -rf mutants/
+	DATABASE_URL=sqlite:///test.db uv run python -m scripts.check_mutmut
+
 # E2E tests against a running agent-on-demand deployment.
 # Required:  AOD_API_TOKEN
 # Optional:  AOD_API_URL (default http://localhost:8777 — matches `make dev`)
@@ -81,6 +88,8 @@ typecheck:
 	uv run mypy
 
 security:
+	# CVE-2026-3219: pip itself, no fix version available as of 2026-04-26.
+	# Revisit when pip publishes a fix and remove this ignore.
 	uv run pip-audit --ignore-vuln CVE-2026-3219
 	uv run bandit -r src/ -ll
 
