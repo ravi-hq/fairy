@@ -517,9 +517,7 @@ def terminate_session(request, session_id):
     """Terminate a session's Sprite without deleting the session record."""
     try:
         with transaction.atomic():
-            session = AgentSession.objects.select_for_update().get(
-                pk=session_id, user=request.user
-            )
+            session = AgentSession.objects.select_for_update().get(pk=session_id, user=request.user)
             if session.status == "terminated":
                 return JsonResponse({"detail": "Session is already terminated"}, status=409)
             sprite_name = session.sprite_name
@@ -556,9 +554,7 @@ def delete_session(request, session_id):
 
     try:
         with transaction.atomic():
-            session = AgentSession.objects.select_for_update().get(
-                pk=session_id, user=request.user
-            )
+            session = AgentSession.objects.select_for_update().get(pk=session_id, user=request.user)
             if session.status == "running":
                 return JsonResponse({"detail": "Cannot delete a running session"}, status=409)
             session_id_str = str(session.id)
