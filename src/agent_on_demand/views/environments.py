@@ -270,10 +270,18 @@ def environment_detail(request, environment_id):
 
                 if changed:
                     env.version += 1
-                    env.save(update_fields=[
-                        "name", "packages", "env_vars", "setup_script",
-                        "networking_type", "networking_config", "version", "updated_at",
-                    ])
+                    env.save(
+                        update_fields=[
+                            "name",
+                            "packages",
+                            "env_vars",
+                            "setup_script",
+                            "networking_type",
+                            "networking_config",
+                            "version",
+                            "updated_at",
+                        ]
+                    )
                     _snapshot_environment_version(env)
         except IntegrityError:
             return JsonResponse(
