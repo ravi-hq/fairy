@@ -11,6 +11,7 @@ from django.views.decorators.http import require_GET, require_POST
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from agent_on_demand.auth import require_api_key
+from agent_on_demand.mcp_server_validation import validate_mcp_servers as _validate_mcp_servers
 from agent_on_demand.metadata_merge import merge_metadata
 from agent_on_demand.models import Agent, AgentVersion, Environment
 from agent_on_demand.models_catalog import MODELS
@@ -29,9 +30,6 @@ AGENT_VERSIONED_FIELDS = (
     "mcp_servers",
     "metadata",
 )
-
-
-VALID_MCP_SERVER_TYPES = {"url", "stdio"}
 
 
 MAX_SKILLS_PER_AGENT = 20
@@ -139,31 +137,6 @@ def _validate_skills(skills: list) -> list:
         if len(skill["description"]) > MAX_SKILL_DESCRIPTION_LEN:
             raise ValueError(f"skills[{i}].description exceeds {MAX_SKILL_DESCRIPTION_LEN} chars")
     return skills
-
-
-def _validate_mcp_servers(servers: list) -> list:
-    names = set()
-    for i, server in enumerate(servers):
-        if not isinstance(server, dict):
-            raise ValueError(f"mcp_servers[{i}] must be an object")
-        if "name" not in server:
-            raise ValueError(f"mcp_servers[{i}] missing required field: name")
-        stype = server.get("type", "url")
-        if stype not in VALID_MCP_SERVER_TYPES:
-            raise ValueError(
-                f"mcp_servers[{i}]: unknown type {stype!r}. "
-                f"Must be one of: {sorted(VALID_MCP_SERVER_TYPES)}"
-            )
-        if stype == "url" and "url" not in server:
-            raise ValueError(f"mcp_servers[{i}] (url): missing required field: url")
-        if stype == "stdio" and "command" not in server:
-            raise ValueError(f"mcp_servers[{i}] (stdio): missing required field: command")
-        if server["name"] in names:
-            raise ValueError(f"mcp_servers[{i}]: duplicate name {server['name']!r}")
-        names.add(server["name"])
-    if len(servers) > 20:
-        raise ValueError("Maximum 20 MCP servers per agent")
-    return servers
 
 
 class CreateAgentRequest(BaseModel):
