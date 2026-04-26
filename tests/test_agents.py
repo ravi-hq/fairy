@@ -163,6 +163,99 @@ def test_create_agent_invalid_runtime(client: Client, auth_headers):
 
 
 @pytest.mark.django_db
+def test_create_agent_rejects_runtime_outside_model_runtimes_allowlist(
+    client: Client, auth_headers, mocker
+):
+    """`ModelDef.runtimes` is an optional allowlist. When set, only those
+    runtimes can serve the model — even if the model's provider is in
+    the runtime's providers set. The current catalog has all
+    `runtimes=None`, so the branch never fires from real config — but
+    the framework hook exists for future per-model runtime restrictions
+    (e.g. an OpenAI model that only works under codex, not gemini).
+
+    Pin the rejection by patching a single MODELS entry to constrain
+    its `runtimes` to a runtime that doesn't match the request."""
+    from agent_on_demand.models_catalog import MODELS, ModelDef
+    from agent_on_demand.views import agents as agents_views
+
+    constrained = ModelDef(
+        id="anthropic/claude-sonnet-4-6",
+        provider="anthropic",
+        runtimes=frozenset({"codex"}),  # excludes claude
+    )
+    patched = dict(MODELS)
+    patched["anthropic/claude-sonnet-4-6"] = constrained
+    mocker.patch.object(agents_views, "MODELS", patched)
+
+    resp = client.post(
+        "/agents",
+        data=json.dumps(
+            {
+                "name": "Bad",
+                "model": "anthropic/claude-sonnet-4-6",
+                "runtime": "claude",
+            }
+        ),
+        content_type="application/json",
+        **auth_headers,
+    )
+    assert resp.status_code == 422
+    # `detail` is a plain str on this branch (the view returns
+    # JsonResponse({"detail": compat_err}) where compat_err is the message
+    # string from _check_runtime_model_compat). The Pydantic-error path
+    # returns a list, but that's a different branch.
+    assert (
+        resp.json()["detail"] == "Model anthropic/claude-sonnet-4-6 not supported on runtime claude"
+    )
+
+
+@pytest.mark.django_db
+def test_update_agent_rejects_runtime_outside_model_runtimes_allowlist(
+    client: Client, auth_headers, user, mocker
+):
+    """Mirror of the create-path test for `PUT /agents/{id}`. The update
+    handler also calls `_check_runtime_model_compat` (with the merged
+    effective runtime+model), so the `runtimes` allowlist must reject
+    an update that flips the agent into an out-of-allowlist runtime —
+    same contract, separate call site. Without this test, a refactor
+    that drops the compat call from the update handler would slip
+    through (the create test would still cover the line, leaving the
+    update path silently regressed)."""
+    from agent_on_demand.models_catalog import MODELS, ModelDef
+    from agent_on_demand.views import agents as agents_views
+
+    constrained = ModelDef(
+        id="anthropic/claude-sonnet-4-6",
+        provider="anthropic",
+        runtimes=frozenset({"codex"}),  # excludes claude
+    )
+    patched = dict(MODELS)
+    patched["anthropic/claude-sonnet-4-6"] = constrained
+    mocker.patch.object(agents_views, "MODELS", patched)
+
+    # Seed an agent with a model the patch will constrain. Use codex
+    # initially so creation is allowed; the update flips runtime to
+    # claude, which is no longer in the allowlist.
+    agent = Agent.objects.create(
+        user=user,
+        name="A",
+        model="anthropic/claude-sonnet-4-6",
+        runtime="codex",
+        version=1,
+    )
+    resp = client.put(
+        f"/agents/{agent.id}",
+        data=json.dumps({"version": 1, "runtime": "claude"}),
+        content_type="application/json",
+        **auth_headers,
+    )
+    assert resp.status_code == 422
+    assert (
+        resp.json()["detail"] == "Model anthropic/claude-sonnet-4-6 not supported on runtime claude"
+    )
+
+
+@pytest.mark.django_db
 def test_create_agent_runtime_model_mismatch(client: Client, auth_headers):
     """Runtime's providers must include the model's provider."""
     resp = client.post(
