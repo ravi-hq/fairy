@@ -253,7 +253,7 @@ def environment_detail(request, environment_id):
                     env = Environment.objects.select_for_update().get(
                         pk=environment_id, user=request.user
                     )
-                except (Environment.DoesNotExist, ValueError):
+                except Environment.DoesNotExist:
                     return JsonResponse({"detail": "Environment not found"}, status=404)
 
                 if env.is_archived:

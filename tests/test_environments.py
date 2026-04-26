@@ -674,6 +674,29 @@ class TestEnvironmentErrorPaths:
         resp = client.delete(f"/environments/{environment.id}", **auth_headers)
         assert resp.status_code == 405
 
+    def test_update_not_found_returns_404(self, client: Client, auth_headers):
+        """PUT /environments/{nonexistent-uuid} must 404, not 500. The
+        handler has no pre-lock fetch — the validation runs first
+        (json/pydantic), then `select_for_update().get()` is the only
+        DB read for the row. Pin the 404 path so a refactor that
+        rearranges the validate-then-load sequence doesn't silently
+        flip the error surface.
+
+        Only ``Environment.DoesNotExist`` is reachable here —
+        malformed UUIDs are intercepted by the URL converter
+        (``<uuid:environment_id>``) before the view runs, so
+        ``select_for_update().get(pk=...)`` always sees a valid UUID
+        object and never raises ValueError. The catch tuple was
+        narrowed to match in this PR."""
+        resp = client.put(
+            f"/environments/{uuid.uuid4()}",
+            data=json.dumps({"version": 1, "name": "renamed"}),
+            content_type="application/json",
+            **auth_headers,
+        )
+        assert resp.status_code == 404
+        assert resp.json()["detail"] == "Environment not found"
+
     def test_update_invalid_json(self, client: Client, auth_headers, environment):
         resp = client.put(
             f"/environments/{environment.id}",
