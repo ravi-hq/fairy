@@ -26,6 +26,11 @@ from agent_on_demand.models import (
 from agent_on_demand.models.auth import CREDENTIAL_ENV_VAR, UserCredential
 from agent_on_demand.models_catalog import MODELS
 from agent_on_demand.runtimes import RUNTIMES
+from agent_on_demand.session_state import (
+    check_can_accept_prompt,
+    check_can_delete,
+    check_can_terminate,
+)
 from agent_on_demand.stream import stream_session_from_db
 
 
@@ -407,20 +412,12 @@ def send_prompt(request, session_id):
     except (AgentSession.DoesNotExist, ValueError):
         return JsonResponse({"detail": "Session not found"}, status=404)
 
-    if session.status == "running":
-        return JsonResponse({"detail": "Session is already running"}, status=409)
-
-    if session.status == "terminated":
-        return JsonResponse({"detail": "Session has been terminated"}, status=409)
-
     # A `failed` session may have left its Sprite mid-execution (see Muddy
     # Zone 8 in thoughts/research/2026-04-18-sprites-script-setup.md). Making
     # `failed` terminal prevents a resume from colliding with a runaway turn.
-    if session.status == "failed":
-        return JsonResponse(
-            {"detail": "Session has failed and cannot be resumed. Start a new session."},
-            status=409,
-        )
+    err = check_can_accept_prompt(session.status)
+    if err is not None:
+        return err
 
     try:
         body = json.loads(request.body)
@@ -445,15 +442,9 @@ def send_prompt(request, session_id):
     try:
         with transaction.atomic():
             locked = AgentSession.objects.select_for_update().get(pk=session.id)
-            if locked.status == "running":
-                return JsonResponse({"detail": "Session is already running"}, status=409)
-            if locked.status == "terminated":
-                return JsonResponse({"detail": "Session has been terminated"}, status=409)
-            if locked.status == "failed":
-                return JsonResponse(
-                    {"detail": ("Session has failed and cannot be resumed. Start a new session.")},
-                    status=409,
-                )
+            err = check_can_accept_prompt(locked.status)
+            if err is not None:
+                return err
 
             next_turn_number = (
                 SessionTurn.objects.filter(session=locked).aggregate(n=Max("turn_number"))["n"] or 0
@@ -518,8 +509,9 @@ def terminate_session(request, session_id):
     try:
         with transaction.atomic():
             session = AgentSession.objects.select_for_update().get(pk=session_id, user=request.user)
-            if session.status == "terminated":
-                return JsonResponse({"detail": "Session is already terminated"}, status=409)
+            err = check_can_terminate(session.status)
+            if err is not None:
+                return err
             sprite_name = session.sprite_name
             session.status = "terminated"
             session.sprite_name = ""
@@ -555,8 +547,9 @@ def delete_session(request, session_id):
     try:
         with transaction.atomic():
             session = AgentSession.objects.select_for_update().get(pk=session_id, user=request.user)
-            if session.status == "running":
-                return JsonResponse({"detail": "Cannot delete a running session"}, status=409)
+            err = check_can_delete(session.status)
+            if err is not None:
+                return err
             session_id_str = str(session.id)
             session.delete()  # pre_delete signal handles Sprite cleanup
     except (AgentSession.DoesNotExist, ValueError):
