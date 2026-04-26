@@ -284,6 +284,95 @@ def test_send_prompt_when_sprite_is_gone_returns_409(
 
 
 @pytest.mark.django_db
+def test_send_prompt_post_lock_status_change_returns_409(
+    client, auth_headers, runtime_key, user, mocker
+):
+    """send_prompt runs check_can_accept_prompt twice — once before
+    acquiring the row lock (fast-fail) and once after (race-safe). If a
+    concurrent worker transitioned the session from 'completed' to
+    'running' between those two checks, the post-lock check must reject
+    with the same 409 message — without this branch, a duplicate turn
+    would be enqueued for a session whose worker is already mid-flight,
+    risking a second runtime CLI invocation against the same Sprite.
+
+    Reaches the branch by patching `check_can_accept_prompt` to return
+    None on the first call (pre-lock pass) and a 409 on the second call
+    (post-lock rejection), simulating the racing transition."""
+    from django.http import JsonResponse
+
+    session = AgentSession.objects.create(
+        user=user, runtime="claude", prompt="x", status="completed", sprite_name="s"
+    )
+    fake_sprite = object()
+    mocker.patch(
+        "agent_on_demand.views.sessions.session_service.resume_session",
+        return_value=fake_sprite,
+    )
+    call = {"n": 0}
+
+    def staggered_check(status):
+        call["n"] += 1
+        if call["n"] == 1:
+            return None
+        return JsonResponse({"detail": "Session is already running"}, status=409)
+
+    mocker.patch(
+        "agent_on_demand.views.sessions.check_can_accept_prompt",
+        side_effect=staggered_check,
+    )
+    resp = client.post(
+        f"/sessions/{session.id}/prompt",
+        data=json.dumps({"prompt": "next"}),
+        content_type="application/json",
+        **auth_headers,
+    )
+    assert resp.status_code == 409
+    assert "Session is already running" in resp.json()["detail"]
+    # Both checks must have run — pre-lock passes, post-lock rejects.
+    assert call["n"] == 2
+
+
+@pytest.mark.django_db
+def test_send_prompt_post_lock_pending_race_returns_409(
+    client, auth_headers, runtime_key, user, mocker
+):
+    """check_can_accept_prompt allows 'pending' (it's the initial state of
+    a fresh session). But under concurrent send_prompt calls, the second
+    arrival's pre-lock check sees the same accepting status as the first
+    — and only the explicit `if locked.status == 'pending'` check after
+    the lock distinguishes them. Without this branch, two concurrent
+    callers would each enqueue a turn against the same session.
+
+    Reaches the branch by patching the queryset chain so the locked
+    session row reports status='pending', simulating a sibling caller
+    who won the lock first and transitioned the row."""
+    session = AgentSession.objects.create(
+        user=user, runtime="claude", prompt="x", status="completed", sprite_name="s"
+    )
+    fake_sprite = object()
+    mocker.patch(
+        "agent_on_demand.views.sessions.session_service.resume_session",
+        return_value=fake_sprite,
+    )
+
+    class FakeLockedQS:
+        def get(self, **kwargs):
+            locked = AgentSession.objects.get(pk=session.id)
+            locked.status = "pending"
+            return locked
+
+    mocker.patch.object(AgentSession.objects, "select_for_update", return_value=FakeLockedQS())
+    resp = client.post(
+        f"/sessions/{session.id}/prompt",
+        data=json.dumps({"prompt": "next"}),
+        content_type="application/json",
+        **auth_headers,
+    )
+    assert resp.status_code == 409
+    assert "Session already has a pending turn" in resp.json()["detail"]
+
+
+@pytest.mark.django_db
 def test_list_session_turns_not_found(client, auth_headers):
     resp = client.get(f"/sessions/{uuid.uuid4()}/turns", **auth_headers)
     assert resp.status_code == 404
