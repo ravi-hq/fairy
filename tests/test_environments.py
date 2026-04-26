@@ -335,7 +335,7 @@ class TestCreateEnvironment:
         assert data["version"] == 1
         assert data["type"] == "environment"
         assert data["archived_at"] is None
-        assert "env_vars" not in data
+        assert data["env_vars"] == {"DB_URL": "postgres://...", "DEBUG": "1"}
 
         assert EnvironmentVersion.objects.filter(environment_id=data["id"], version=1).exists()
 
@@ -472,7 +472,7 @@ class TestGetEnvironment:
         assert resp.status_code == 200
         data = resp.json()
         assert data["name"] == "test-env"
-        assert "env_vars" not in data
+        assert data["env_vars"] == {"DATABASE_URL": "postgres://localhost/db", "DEBUG": "1"}
 
     def test_get_not_found(self, client: Client, auth_headers):
         resp = client.get(f"/environments/{uuid.uuid4()}", **auth_headers)

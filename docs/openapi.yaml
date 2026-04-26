@@ -827,6 +827,10 @@ components:
           type: string
         packages:
           $ref: "#/components/schemas/Packages"
+        env_vars:
+          type: object
+          additionalProperties:
+            type: string
         setup_script:
           type: string
           nullable: true
@@ -858,8 +862,10 @@ components:
         env_vars:
           type: object
           description: >
-            Encrypted at rest; never returned in responses. Values of empty
-            string on a PUT delete the key (see `test_metadata_merge_semantics`).
+            Stored plaintext today (at-rest encryption deferred). Returned on
+            create/get/update responses so clients can diff before updating.
+            On a PUT, an empty-string value deletes the key (see
+            `test_metadata_merge_semantics`).
           additionalProperties:
             type: string
         setup_script:
@@ -900,6 +906,10 @@ components:
           type: string
         packages:
           $ref: "#/components/schemas/Packages"
+        env_vars:
+          type: object
+          additionalProperties:
+            type: string
         setup_script:
           type: string
           nullable: true

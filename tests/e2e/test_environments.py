@@ -37,8 +37,7 @@ class TestEnvironmentCRUD:
         assert env["setup_script"] == "echo 'setup_done' > /tmp/fairy_setup_marker"
         assert env["version"] == 1
         assert env["type"] == "environment"
-        # env_vars must NOT be exposed in response
-        assert "env_vars" not in env
+        assert env["env_vars"] == {"FAIRY_TEST_VAR": "hello_e2e"}
 
     def test_create_minimal_environment(self, api, create_environment):
         env = create_environment(name=_unique("e2e-minimal"))
