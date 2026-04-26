@@ -1,4 +1,5 @@
 import json
+import re
 
 import posthog
 from django.db import IntegrityError, transaction
@@ -29,6 +30,10 @@ def _env_safe_props(env: Environment) -> dict:
 
 VALID_PACKAGE_MANAGERS = {"apt", "cargo", "gem", "go", "npm", "pip"}
 
+# Valid POSIX shell variable names. Keys that don't match this will corrupt
+# /tmp/aod-env when written as `KEY=value` shell assignments.
+_ENV_VAR_KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
 
 class CreateEnvironmentRequest(BaseModel):
     name: str = Field(max_length=200)
@@ -48,6 +53,14 @@ class CreateEnvironmentRequest(BaseModel):
                 )
             if not isinstance(pkgs, list) or not all(isinstance(p, str) for p in pkgs):
                 raise ValueError(f"packages.{manager} must be a list of strings")
+        return v
+
+    @field_validator("env_vars")
+    @classmethod
+    def validate_env_vars(cls, v: dict) -> dict:
+        for key in v:
+            if not _ENV_VAR_KEY_RE.match(key):
+                raise ValueError(f"Invalid env_var key {key!r}: must match [A-Za-z_][A-Za-z0-9_]*")
         return v
 
     @field_validator("networking")
@@ -83,6 +96,17 @@ class UpdateEnvironmentRequest(BaseModel):
                     )
                 if not isinstance(pkgs, list) or not all(isinstance(p, str) for p in pkgs):
                     raise ValueError(f"packages.{manager} must be a list of strings")
+        return v
+
+    @field_validator("env_vars")
+    @classmethod
+    def validate_env_vars(cls, v: dict | None) -> dict | None:
+        if v is not None:
+            for key in v:
+                if not _ENV_VAR_KEY_RE.match(key):
+                    raise ValueError(
+                        f"Invalid env_var key {key!r}: must match [A-Za-z_][A-Za-z0-9_]*"
+                    )
         return v
 
     @field_validator("networking")
@@ -309,18 +333,21 @@ def environment_delete(request, environment_id):
         return JsonResponse({"detail": "Method not allowed"}, status=405)
 
     try:
-        env = Environment.objects.get(pk=environment_id, user=request.user)
+        with transaction.atomic():
+            # Lock the row so a concurrent POST /sessions cannot create a
+            # session referencing this environment between the existence check
+            # and the delete. Without the lock, the cascade would silently
+            # NULL-out the new session's environment FK.
+            env = Environment.objects.select_for_update().get(pk=environment_id, user=request.user)
+            if env.sessions.exists():
+                return JsonResponse(
+                    {"detail": "Cannot delete environment with existing sessions"},
+                    status=409,
+                )
+            env_id_str = str(env.id)
+            env.delete()
     except (Environment.DoesNotExist, ValueError):
         return JsonResponse({"detail": "Environment not found"}, status=404)
-
-    if env.sessions.exists():
-        return JsonResponse(
-            {"detail": "Cannot delete environment with existing sessions"},
-            status=409,
-        )
-
-    env_id_str = str(env.id)
-    env.delete()
 
     with posthog.new_context():
         posthog.identify_context(str(request.user.id))
