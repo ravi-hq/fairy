@@ -731,3 +731,91 @@ def test_cmd_thread_leak_detected(user, mocker):
         if c.args and c.args[0] == "session.cmd_thread_leaked"
     ]
     assert len(leak_calls) == 1
+
+
+# --- Edge cases for execute_turn that previously had no test ---
+
+
+@pytest.mark.django_db
+def test_execute_turn_marks_failed_when_build_spec_raises(user, mocker):
+    """If `_build_spec_for_session` raises (e.g. an agent or environment row
+    was deleted between turn enqueue and worker pickup), the turn must be
+    marked failed rather than 500'ing the worker — `_fail_pending_turn`
+    handles that. Pin the contract end-to-end."""
+    session, turn = _make_session_and_turn(user)
+    mocker.patch(
+        "agent_on_demand.session_service.tasks._build_spec_for_session",
+        side_effect=ValueError("agent gone"),
+    )
+
+    execute_turn(
+        session_id=str(session.id),
+        turn_id=turn.id,
+        prompt="t",
+        mode="run",
+        timeout=10.0,
+    )
+
+    session.refresh_from_db()
+    turn.refresh_from_db()
+    assert session.status == "failed"
+    assert turn.status == "failed"
+    assert turn.ended_at is not None
+    # The error message reaches the session log so SSE consumers see why.
+    log = AgentSessionLog.objects.filter(session=session, stream="stderr").first()
+    assert log is not None
+    assert "agent gone" in log.data
+
+
+@pytest.mark.django_db
+def test_execute_turn_marks_failed_when_resume_session_raises(user, mocker):
+    """If the Sprite that backs the session has been torn down between
+    turn enqueue and pickup (Sprite TTL elapsed, infra restart),
+    `resume_session` raises SessionHandleNotFound. The turn must be marked
+    failed rather than crashing the worker."""
+    from agent_on_demand.session_service.errors import SessionHandleNotFound
+
+    session, turn = _make_session_and_turn(user)
+    mocker.patch(
+        "agent_on_demand.session_service.tasks.resume_session",
+        side_effect=SessionHandleNotFound("sprite expired"),
+    )
+
+    execute_turn(
+        session_id=str(session.id),
+        turn_id=turn.id,
+        prompt="t",
+        mode="run",
+        timeout=10.0,
+    )
+
+    session.refresh_from_db()
+    turn.refresh_from_db()
+    assert session.status == "failed"
+    assert turn.status == "failed"
+    log = AgentSessionLog.objects.filter(session=session, stream="stderr").first()
+    assert log is not None
+    assert "sprite expired" in log.data
+
+
+@pytest.mark.django_db
+def test_fail_pending_turn_preserves_terminated_status(user):
+    """If a session was terminated by the user between enqueue and pickup,
+    `_fail_pending_turn` must NOT flip status from 'terminated' back to
+    'failed' — terminated is the user's intent and should be preserved.
+    Without this branch, hitting the cancel button mid-provisioning would
+    have its effect overwritten by the eventual failure path."""
+    from agent_on_demand.session_service.tasks import _fail_pending_turn
+
+    session = AgentSession.objects.create(
+        user=user, runtime="claude", prompt="t", sprite_name="s", status="terminated"
+    )
+    turn = SessionTurn.objects.create(session=session, turn_number=1, prompt="t", status="pending")
+
+    _fail_pending_turn(session, turn, "build error")
+
+    session.refresh_from_db()
+    turn.refresh_from_db()
+    # Session stays terminated; turn flips to failed (it never ran).
+    assert session.status == "terminated"
+    assert turn.status == "failed"
