@@ -129,6 +129,63 @@ jobs:
       - run: uv sync --all-extras
       - run: make check-migrations BASE_SHA=$(git merge-base origin/main HEAD)
 
+  e2e-scoped:
+    # Runs the e2e tests that map to the current branch's diff. The scope
+    # computation always runs (validates the path-mapping script). The
+    # actual pytest invocation is gated on the AOD_API_TOKEN secret being
+    # configured — without it, this job becomes a no-op preview.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+      - run: uv sync --all-extras
+
+      - id: scope
+        run: |
+          BASE=$(git merge-base origin/main HEAD)
+          DATABASE_URL=sqlite:///test.db uv run python -m scripts.scope_e2e \
+            --base-sha "$BASE" --format=github
+
+      - id: token
+        env:
+          TOKEN: ${{ secrets.AOD_API_TOKEN }}
+        run: |
+          if [ -n "$TOKEN" ]; then
+            echo "have_token=yes" >> "$GITHUB_OUTPUT"
+          else
+            echo "have_token=no" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run scoped e2e
+        if: steps.scope.outputs.tests != '' && steps.token.outputs.have_token == 'yes'
+        env:
+          AOD_API_TOKEN: ${{ secrets.AOD_API_TOKEN }}
+          AOD_API_URL: ${{ secrets.AOD_API_URL }}
+          E2E_RUNTIMES: ${{ steps.scope.outputs.runtimes }}
+        run: uv run pytest ${{ steps.scope.outputs.tests }} -v --dist loadfile -n auto
+
+      - name: Skip — no token configured
+        if: steps.scope.outputs.tests != '' && steps.token.outputs.have_token == 'no'
+        env:
+          TESTS: ${{ steps.scope.outputs.tests }}
+          RUNTIMES: ${{ steps.scope.outputs.runtimes }}
+        run: |
+          echo "::warning title=E2E gate inactive::AOD_API_TOKEN secret not configured."
+          echo "Would have run: $TESTS"
+          echo "With E2E_RUNTIMES=$RUNTIMES"
+          echo "Configure AOD_API_TOKEN and AOD_API_URL repository secrets to activate."
+
+      - name: Skip — nothing in scope
+        if: steps.scope.outputs.tests == ''
+        run: echo "No e2e tests in scope for this change."
+
   validate-openapi:
     runs-on: ubuntu-latest
     steps:
