@@ -48,7 +48,7 @@ from agent_on_demand.models import (
 from agent_on_demand.observability import get_tracer
 from agent_on_demand.runtimes import RUNTIMES, Runtime
 
-from .errors import NoSpritesKeyError, ProvisionError
+from .errors import NoSpritesKeyError, ProvisionError, SessionHandleNotFound
 from .provisioning import (
     STAGE_RUNTIME_START,
     destroy_session,
@@ -172,7 +172,12 @@ def _provision_session_inner(
     if session.status == "terminated":
         return
 
-    spec = _build_spec_for_session(session)
+    try:
+        spec = _build_spec_for_session(session)
+    except Exception as e:
+        logger.exception("failed to build SessionSpec for session %s", session_id)
+        _mark_provision_failed(session, turn_id, f"internal error: {e}")
+        return
 
     tracer = get_tracer()
     with tracer.start_as_current_span(
@@ -288,6 +293,28 @@ def _mark_provision_failed(session: AgentSession, turn_id: int, message: str) ->
         )
 
 
+def _fail_pending_turn(session: AgentSession, turn: SessionTurn, message: str) -> None:
+    """Mark a session and turn as failed when they are still in pending state
+    (before _execute_turn_body has set them to running).
+
+    Used when _build_spec_for_session or resume_session fail before
+    _execute_turn_body is entered."""
+    AgentSessionLog.objects.create(
+        session=session,
+        turn=turn,
+        stream="stderr",
+        data=f"turn failed: {message}\n",
+    )
+    now = timezone.now()
+    session.refresh_from_db(fields=["status"])
+    if session.status != "terminated":
+        session.status = "failed"
+        session.save(update_fields=["status", "updated_at"])
+    turn.status = "failed"
+    turn.ended_at = now
+    turn.save(update_fields=["status", "ended_at"])
+
+
 @procrastinate_app.task(queue="sessions", name="execute_turn", pass_context=False)
 def execute_turn(
     *,
@@ -337,7 +364,12 @@ def _execute_turn_inner(
     except (AgentSession.DoesNotExist, SessionTurn.DoesNotExist):
         logger.info("execute_turn: session=%s turn=%s gone, skipping", session_id, turn_id)
         return
-    spec = _build_spec_for_session(session)
+    try:
+        spec = _build_spec_for_session(session)
+    except Exception as e:
+        logger.exception("failed to build SessionSpec for session %s turn %s", session_id, turn_id)
+        _fail_pending_turn(session, turn, f"internal error: {e}")
+        return
 
     tracer = get_tracer()
     with tracer.start_as_current_span(
@@ -351,7 +383,13 @@ def _execute_turn_inner(
             "aod.timeout": timeout,
         },
     ) as span:
-        sprite = resume_session(session.user, session.sprite_name)
+        try:
+            sprite = resume_session(session.user, session.sprite_name)
+        except SessionHandleNotFound as e:
+            logger.warning("sprite not found for session %s turn %s: %s", session_id, turn_id, e)
+            span.set_attribute("aod.failure_stage", "sprite_not_found")
+            _fail_pending_turn(session, turn, str(e))
+            return
         _execute_turn_body(session, turn, spec, sprite, prompt, mode, timeout, span)
 
 

@@ -65,6 +65,9 @@ jobs:
 
   mutation-test:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -74,7 +77,41 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --all-extras
-      - run: make mutation-test
+      - id: mutmut
+        run: make mutation-test
+
+      # Render report artifact + PR comment whether the gate passed or failed —
+      # the report is most useful when there's a new survivor to inspect.
+      - if: always() && (steps.mutmut.conclusion == 'success' || steps.mutmut.conclusion == 'failure')
+        run: uv run python -m scripts.mutmut_report --format=html
+      - if: always() && (steps.mutmut.conclusion == 'success' || steps.mutmut.conclusion == 'failure')
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutation-report
+          path: mutants/report.html
+          if-no-files-found: ignore
+
+      - if: always() && (steps.mutmut.conclusion == 'success' || steps.mutmut.conclusion == 'failure') && github.event_name == 'pull_request'
+        run: uv run python -m scripts.mutmut_report --format=markdown > /tmp/summary.md
+      - if: always() && (steps.mutmut.conclusion == 'success' || steps.mutmut.conclusion == 'failure') && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          # Append a link to the workflow run (full HTML report is uploaded as an artifact there).
+          printf '\n_[Full HTML report in workflow artifacts](%s)_\n' "$RUN_URL" >> /tmp/summary.md
+
+          # Sticky comment: delete any prior comment carrying our marker, then post fresh.
+          MARKER='<!-- mutation-report -->'
+          existing=$(gh api "repos/$REPO/issues/$PR_NUMBER/comments" \
+            --jq ".[] | select(.body | startswith(\"$MARKER\")) | .id")
+          for id in $existing; do
+            gh api -X DELETE "repos/$REPO/issues/comments/$id"
+          done
+          gh pr comment "$PR_NUMBER" --repo "$REPO" --body-file /tmp/summary.md
 
   migration-lint:
     runs-on: ubuntu-latest
@@ -92,6 +129,63 @@ jobs:
       - run: uv sync --all-extras
       - run: make check-migrations BASE_SHA=$(git merge-base origin/main HEAD)
 
+  e2e-scoped:
+    # Runs the e2e tests that map to the current branch's diff. The scope
+    # computation always runs (validates the path-mapping script). The
+    # actual pytest invocation is gated on the AOD_API_TOKEN secret being
+    # configured — without it, this job becomes a no-op preview.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+      - run: uv sync --all-extras
+
+      - id: scope
+        run: |
+          BASE=$(git merge-base origin/main HEAD)
+          DATABASE_URL=sqlite:///test.db uv run python -m scripts.scope_e2e \
+            --base-sha "$BASE" --format=github
+
+      - id: token
+        env:
+          TOKEN: ${{ secrets.AOD_API_TOKEN }}
+        run: |
+          if [ -n "$TOKEN" ]; then
+            echo "have_token=yes" >> "$GITHUB_OUTPUT"
+          else
+            echo "have_token=no" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run scoped e2e
+        if: steps.scope.outputs.tests != '' && steps.token.outputs.have_token == 'yes'
+        env:
+          AOD_API_TOKEN: ${{ secrets.AOD_API_TOKEN }}
+          AOD_API_URL: ${{ secrets.AOD_API_URL }}
+          E2E_RUNTIMES: ${{ steps.scope.outputs.runtimes }}
+        run: uv run pytest ${{ steps.scope.outputs.tests }} -v --dist loadfile -n auto
+
+      - name: Skip — no token configured
+        if: steps.scope.outputs.tests != '' && steps.token.outputs.have_token == 'no'
+        env:
+          TESTS: ${{ steps.scope.outputs.tests }}
+          RUNTIMES: ${{ steps.scope.outputs.runtimes }}
+        run: |
+          echo "::warning title=E2E gate inactive::AOD_API_TOKEN secret not configured."
+          echo "Would have run: $TESTS"
+          echo "With E2E_RUNTIMES=$RUNTIMES"
+          echo "Configure AOD_API_TOKEN and AOD_API_URL repository secrets to activate."
+
+      - name: Skip — nothing in scope
+        if: steps.scope.outputs.tests == ''
+        run: echo "No e2e tests in scope for this change."
+
   validate-openapi:
     runs-on: ubuntu-latest
     steps:
@@ -104,6 +198,19 @@ jobs:
           enable-cache: true
       - run: uv sync --all-extras
       - run: uv run python -m scripts.validate_openapi
+
+  check-schemas:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+      - run: uv sync --all-extras
+      - run: make check-schemas
 
   typescript-sdk:
     runs-on: ubuntu-latest
