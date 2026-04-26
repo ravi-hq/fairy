@@ -75,6 +75,8 @@ select = [
     "ASYNC",  # flake8-async: blocking calls in async, missing awaits
     "PIE",    # flake8-pie: misc anti-patterns
     "TID",    # flake8-tidy-imports: relative-import drift, banned imports
+    "C4",     # flake8-comprehensions: dict()/list() literal preferences
+    "RET",    # flake8-return: unnecessary elif/else after return
 ]
 
 [tool.pytest.ini_options]
@@ -106,7 +108,7 @@ exclude_lines = [
 ]
 # Ratcheted floor — raise this in PRs that add tests, never lower it without
 # explicit human approval. `make coverage` enforces. See docs/runbook.md.
-fail_under = 89.7
+fail_under = 96
 precision = 2
 show_missing = true
 skip_covered = true
