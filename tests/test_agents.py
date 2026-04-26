@@ -4,8 +4,16 @@ import uuid
 import pytest
 from django.contrib.auth.models import User
 from django.test import Client
+from django.utils import timezone
 
-from agent_on_demand.models import Agent, AgentVersion, APIKey, UserCredential, UserSpritesKey
+from agent_on_demand.models import (
+    Agent,
+    AgentVersion,
+    APIKey,
+    Environment,
+    UserCredential,
+    UserSpritesKey,
+)
 
 
 @pytest.fixture
@@ -439,3 +447,201 @@ def test_create_session_with_archived_agent(client: Client, auth_headers, agent,
     )
     assert resp.status_code == 409
     assert "archived" in resp.json()["detail"]
+
+
+# --- Method-not-allowed and JSON-error paths ---
+#
+# These pin the contract for malformed requests, wrong HTTP methods, and the
+# never-quite-tested "validate-then-load" sequence in PUT /agents/{id}. Each
+# branch was reachable but uncovered, so a refactor that, say, returned 422
+# instead of 400 for invalid JSON could land silently.
+
+
+@pytest.mark.django_db
+def test_agents_collection_rejects_unknown_method(client: Client, auth_headers):
+    """PATCH on /agents must return 405 — anything else would be a contract change."""
+    resp = client.patch("/agents", **auth_headers)
+    assert resp.status_code == 405
+    assert resp.json()["detail"] == "Method not allowed"
+
+
+@pytest.mark.django_db
+def test_agent_detail_rejects_unknown_method(client: Client, auth_headers, agent):
+    """DELETE on /agents/{id} must return 405. Agents are archived (POST
+    /agents/{id}/archive), not deleted, so DELETE has no defined behavior."""
+    resp = client.delete(f"/agents/{agent.id}", **auth_headers)
+    assert resp.status_code == 405
+
+
+@pytest.mark.django_db
+def test_create_agent_invalid_json(client: Client, auth_headers):
+    resp = client.post("/agents", data="{not json", content_type="application/json", **auth_headers)
+    assert resp.status_code == 400
+    assert "Invalid JSON" in resp.json()["detail"]
+
+
+@pytest.mark.django_db
+def test_update_agent_invalid_json(client: Client, auth_headers, agent):
+    resp = client.put(
+        f"/agents/{agent.id}",
+        data="{not json",
+        content_type="application/json",
+        **auth_headers,
+    )
+    assert resp.status_code == 400
+    assert "Invalid JSON" in resp.json()["detail"]
+
+
+@pytest.mark.django_db
+def test_update_agent_unknown_runtime(client: Client, auth_headers, agent):
+    """A PUT that names a runtime not in RUNTIMES must 400 with the list of
+    known runtimes — same contract as POST /agents."""
+    resp = client.put(
+        f"/agents/{agent.id}",
+        data=json.dumps({"version": agent.version, "runtime": "nonexistent-runtime"}),
+        content_type="application/json",
+        **auth_headers,
+    )
+    assert resp.status_code == 400
+    assert "Unknown runtime" in resp.json()["detail"]
+
+
+@pytest.mark.django_db
+def test_update_agent_runtime_model_incompat(client: Client, auth_headers, agent):
+    """Switching to a runtime whose providers don't include the agent's
+    current model must 422 — otherwise sessions would 500 at provision time."""
+    # claude runtime can't serve openai/* models.
+    resp = client.put(
+        f"/agents/{agent.id}",
+        data=json.dumps({"version": agent.version, "model": "openai/gpt-4.1"}),
+        content_type="application/json",
+        **auth_headers,
+    )
+    assert resp.status_code == 422
+    assert "cannot serve" in resp.json()["detail"]
+
+
+# --- Environment edge cases on create + update ---
+
+
+@pytest.mark.django_db
+def test_create_agent_environment_not_found(client: Client, auth_headers):
+    resp = client.post(
+        "/agents",
+        data=json.dumps(
+            {
+                "name": "x",
+                "model": "anthropic/claude-sonnet-4-6",
+                "runtime": "claude",
+                "environment_id": str(uuid.uuid4()),
+            }
+        ),
+        content_type="application/json",
+        **auth_headers,
+    )
+    assert resp.status_code == 404
+    assert "Environment not found" in resp.json()["detail"]
+
+
+@pytest.mark.django_db
+def test_create_agent_environment_archived(client: Client, auth_headers, user):
+    """Archived envs must not be assignable to new agents — otherwise the
+    agent could only ever produce sessions that fail at provisioning."""
+    env = Environment.objects.create(
+        user=user,
+        name="archived-env",
+        archived_at=timezone.now(),
+        version=1,
+    )
+    resp = client.post(
+        "/agents",
+        data=json.dumps(
+            {
+                "name": "x",
+                "model": "anthropic/claude-sonnet-4-6",
+                "runtime": "claude",
+                "environment_id": str(env.id),
+            }
+        ),
+        content_type="application/json",
+        **auth_headers,
+    )
+    assert resp.status_code == 409
+    assert "archived environment" in resp.json()["detail"]
+
+
+@pytest.mark.django_db
+def test_update_agent_environment_not_found(client: Client, auth_headers, agent):
+    resp = client.put(
+        f"/agents/{agent.id}",
+        data=json.dumps({"version": agent.version, "environment_id": str(uuid.uuid4())}),
+        content_type="application/json",
+        **auth_headers,
+    )
+    assert resp.status_code == 404
+    assert "Environment not found" in resp.json()["detail"]
+
+
+@pytest.mark.django_db
+def test_update_agent_environment_archived(client: Client, auth_headers, agent, user):
+    env = Environment.objects.create(
+        user=user,
+        name="archived-env",
+        archived_at=timezone.now(),
+        version=1,
+    )
+    resp = client.put(
+        f"/agents/{agent.id}",
+        data=json.dumps({"version": agent.version, "environment_id": str(env.id)}),
+        content_type="application/json",
+        **auth_headers,
+    )
+    assert resp.status_code == 409
+    assert "archived environment" in resp.json()["detail"]
+
+
+@pytest.mark.django_db
+def test_update_agent_clears_environment_with_explicit_null(
+    client: Client, auth_headers, agent, user
+):
+    """Sending environment_id=null must detach the env (PR #115 contract).
+    Explicit null is distinct from absent: an absent key leaves the env
+    unchanged, but `null` clears it."""
+    env = Environment.objects.create(user=user, name="e", version=1)
+    agent.environment = env
+    agent.save()
+
+    resp = client.put(
+        f"/agents/{agent.id}",
+        data=json.dumps({"version": agent.version, "environment_id": None}),
+        content_type="application/json",
+        **auth_headers,
+    )
+    assert resp.status_code == 200
+    agent.refresh_from_db()
+    assert agent.environment_id is None
+
+
+# --- Archive + versions 404 paths ---
+
+
+@pytest.mark.django_db
+def test_archive_agent_not_found(client: Client, auth_headers):
+    resp = client.post(f"/agents/{uuid.uuid4()}/archive", **auth_headers)
+    assert resp.status_code == 404
+
+
+@pytest.mark.django_db
+def test_archive_agent_invalid_uuid(client: Client, auth_headers):
+    """A non-UUID string in the URL must 404, not 500. The view catches
+    ValueError from the DB layer's UUID parser."""
+    resp = client.post("/agents/not-a-uuid/archive", **auth_headers)
+    # Either Django's URL routing (uuid converter) gives a 404, or the view
+    # catches ValueError → 404. Both paths are valid; what matters is no 500.
+    assert resp.status_code == 404
+
+
+@pytest.mark.django_db
+def test_list_versions_agent_not_found(client: Client, auth_headers):
+    resp = client.get(f"/agents/{uuid.uuid4()}/versions", **auth_headers)
+    assert resp.status_code == 404

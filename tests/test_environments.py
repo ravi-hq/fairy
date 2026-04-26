@@ -652,6 +652,154 @@ class TestEnvironmentLifecycle:
 
 
 @pytest.mark.django_db
+class TestEnvironmentErrorPaths:
+    """Pin previously-uncovered error paths in views/environments.py.
+
+    Covers the 405/404/422/400 branches across collection, detail, archive,
+    delete, and versions endpoints. Each branch was reachable but had no
+    test, so a refactor that returned the wrong status code (or a 500)
+    would land silently.
+    """
+
+    def test_collection_rejects_unknown_method(self, client: Client, auth_headers):
+        """PATCH /environments → 405."""
+        resp = client.patch("/environments", **auth_headers)
+        assert resp.status_code == 405
+        assert resp.json()["detail"] == "Method not allowed"
+
+    def test_detail_rejects_unknown_method(self, client: Client, auth_headers, environment):
+        """DELETE /environments/{id} on the detail endpoint → 405. The dedicated
+        delete endpoint is /environments/{id}/delete; this differs from agents
+        which has no delete at all."""
+        resp = client.delete(f"/environments/{environment.id}", **auth_headers)
+        assert resp.status_code == 405
+
+    def test_update_invalid_json(self, client: Client, auth_headers, environment):
+        resp = client.put(
+            f"/environments/{environment.id}",
+            data="{not json",
+            content_type="application/json",
+            **auth_headers,
+        )
+        assert resp.status_code == 400
+        assert "Invalid JSON" in resp.json()["detail"]
+
+    def test_update_invalid_package_manager_returns_422(
+        self, client: Client, auth_headers, environment
+    ):
+        resp = client.put(
+            f"/environments/{environment.id}",
+            data=json.dumps({"version": environment.version, "packages": {"unknown_mgr": ["x"]}}),
+            content_type="application/json",
+            **auth_headers,
+        )
+        assert resp.status_code == 422
+
+    def test_update_invalid_env_var_key_returns_422(
+        self, client: Client, auth_headers, environment
+    ):
+        """env_var keys must match [A-Za-z_][A-Za-z0-9_]* — keys with hyphens
+        or starting with digits are rejected at the validator level."""
+        resp = client.put(
+            f"/environments/{environment.id}",
+            data=json.dumps({"version": environment.version, "env_vars": {"BAD-KEY": "v"}}),
+            content_type="application/json",
+            **auth_headers,
+        )
+        assert resp.status_code == 422
+
+    def test_update_invalid_networking_type_returns_422(
+        self, client: Client, auth_headers, environment
+    ):
+        resp = client.put(
+            f"/environments/{environment.id}",
+            data=json.dumps({"version": environment.version, "networking": {"type": "wide-open"}}),
+            content_type="application/json",
+            **auth_headers,
+        )
+        assert resp.status_code == 422
+
+    def test_update_limited_networking_with_non_list_hosts_returns_422(
+        self, client: Client, auth_headers, environment
+    ):
+        """allowed_hosts must be a list — a string would silently bypass the
+        firewall config for limited networking."""
+        resp = client.put(
+            f"/environments/{environment.id}",
+            data=json.dumps(
+                {
+                    "version": environment.version,
+                    "networking": {"type": "limited", "allowed_hosts": "not-a-list"},
+                }
+            ),
+            content_type="application/json",
+            **auth_headers,
+        )
+        assert resp.status_code == 422
+
+    def test_create_packages_non_string_list_returns_422(self, client: Client, auth_headers):
+        """packages.<mgr> must be list[str] — a list of dicts or numbers must
+        not coerce silently."""
+        resp = client.post(
+            "/environments",
+            data=json.dumps({"name": "bad", "packages": {"pip": [123]}}),
+            content_type="application/json",
+            **auth_headers,
+        )
+        assert resp.status_code == 422
+
+    def test_update_env_vars_change_increments_version(
+        self, client: Client, auth_headers, environment
+    ):
+        """env_vars updates write through to the model and bump version —
+        previously only the packages-update path was tested."""
+        resp = client.put(
+            f"/environments/{environment.id}",
+            data=json.dumps({"version": environment.version, "env_vars": {"NEW_KEY": "new-value"}}),
+            content_type="application/json",
+            **auth_headers,
+        )
+        assert resp.status_code == 200
+        assert resp.json()["version"] == environment.version + 1
+        environment.refresh_from_db()
+        assert environment.env_vars == {"NEW_KEY": "new-value"}
+
+    def test_update_setup_script_change_increments_version(
+        self, client: Client, auth_headers, environment
+    ):
+        resp = client.put(
+            f"/environments/{environment.id}",
+            data=json.dumps({"version": environment.version, "setup_script": "echo new"}),
+            content_type="application/json",
+            **auth_headers,
+        )
+        assert resp.status_code == 200
+        assert resp.json()["version"] == environment.version + 1
+
+    def test_archive_environment_not_found(self, client: Client, auth_headers):
+        resp = client.post(f"/environments/{uuid.uuid4()}/archive", **auth_headers)
+        assert resp.status_code == 404
+        assert "Environment not found" in resp.json()["detail"]
+
+    def test_delete_environment_not_found(self, client: Client, auth_headers):
+        resp = client.delete(f"/environments/{uuid.uuid4()}/delete", **auth_headers)
+        assert resp.status_code == 404
+
+    def test_delete_environment_wrong_method_returns_405(
+        self, client: Client, auth_headers, environment
+    ):
+        """The delete endpoint must reject anything but DELETE — POST to it
+        was previously coverage-untested and a refactor that allowed POST
+        would silently expose an unguarded delete path."""
+        resp = client.post(f"/environments/{environment.id}/delete", **auth_headers)
+        assert resp.status_code == 405
+
+    def test_versions_environment_not_found(self, client: Client, auth_headers):
+        resp = client.get(f"/environments/{uuid.uuid4()}/versions", **auth_headers)
+        assert resp.status_code == 404
+
+
+@pytest.mark.django_db
 class TestEnvironmentVersions:
     def test_list_versions(self, client: Client, auth_headers, environment):
         environment.packages = {"pip": ["requests"]}
