@@ -236,6 +236,50 @@ class TestProvisionSessionFailureHandling:
         assert ei.value.stage == "git_credentials"
         assert fake_sprites.deleted == ["sprite-x"]
 
+    def test_write_runtime_config_sprite_error_tags_stage(self, user, fake_sprites):
+        """A SpriteError raised while the runtime writes its config (claude's
+        ``.claude.json`` with mcp_servers) must surface as stage=runtime_config.
+        Without this branch covered, a refactor that drops the SpriteError
+        wrapper here would leak an opaque 500 instead of a stage-tagged
+        ProvisionError, and failed-stage telemetry would attribute the outage
+        to the wrong subsystem."""
+        from agent_on_demand.session_service.specs import McpServerSpec
+
+        original_create = fake_sprites.create_sprite
+
+        def wrapped(name):
+            sprite = original_create(name)
+            sprite.filesystem().raise_on_write(".claude.json", SpriteError("disk fail"))
+            return sprite
+
+        fake_sprites.create_sprite = wrapped
+
+        mcp_servers = [McpServerSpec(name="srv", type="url", url="https://example.com/mcp")]
+        with pytest.raises(ProvisionError) as ei:
+            provision_session(user, _spec(user, mcp_servers=mcp_servers))
+        assert ei.value.stage == "runtime_config"
+        assert fake_sprites.deleted == ["sprite-x"]
+
+    def test_write_skills_sprite_error_tags_stage(self, user, fake_sprites):
+        """A SpriteError raised while materializing an inline skill must
+        surface as stage=skills. Reaches the branch via an inline SkillSpec —
+        github skills install via shell-out and would surface SpriteError
+        through the command path instead."""
+        original_create = fake_sprites.create_sprite
+
+        def wrapped(name):
+            sprite = original_create(name)
+            sprite.filesystem().raise_on_write("SKILL.md", SpriteError("disk fail"))
+            return sprite
+
+        fake_sprites.create_sprite = wrapped
+
+        skill = SkillSpec(name="inline-skill", content="---\nname: inline-skill\n---\n")
+        with pytest.raises(ProvisionError) as ei:
+            provision_session(user, _spec(user, skills=[skill]))
+        assert ei.value.stage == "skills"
+        assert fake_sprites.deleted == ["sprite-x"]
+
 
 class TestDestroyAndResumeSession:
     """destroy_session is a best-effort cleanup; resume_session is the
