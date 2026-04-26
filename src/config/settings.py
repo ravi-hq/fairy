@@ -1,3 +1,4 @@
+import importlib.util
 import os
 from pathlib import Path
 
@@ -25,9 +26,15 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "corsheaders",
     "procrastinate.contrib.django",
-    "django_migration_linter",
     "agent_on_demand.apps.AgentOnDemandConfig",
 ]
+
+# django-migration-linter is a dev-only dependency (used by `make
+# check-migrations` in CI). Render's prod build runs `uv sync` without
+# `--all-extras`, so the package isn't present at runtime — list it only
+# when importable to avoid AppConfig.create() crashing on startup.
+if importlib.util.find_spec("django_migration_linter") is not None:
+    INSTALLED_APPS.append("django_migration_linter")
 
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
