@@ -267,12 +267,6 @@ def _run_provision_setup(sprite: Sprite, spec: SessionSpec, session_id: str | No
     is the single expensive round trip — everything shell-flavoured
     (chmod, package install, git clone, user setup) runs inside it."""
     script = _build_provision_script(spec)
-    if script is None:
-        # Nothing to do (no packages, no repos, no user setup, no /tmp files
-        # to chmod... actually chmod on /tmp/aod-env always needs running).
-        # _build_provision_script always returns non-None because chmod on
-        # ENV_FILE_PATH is unconditional, so we shouldn't hit this.
-        return
     with stage_timer(session_id, STAGE_PROVISION_SETUP):
         try:
             fs = sprite.filesystem()
