@@ -117,6 +117,20 @@ class TestSkillsValidation:
         assert resp.status_code == 422
         assert "content" in str(resp.json()["detail"]).lower()
 
+    @pytest.mark.parametrize("field", ["name", "description", "content"])
+    def test_inline_field_must_be_string(self, client: Client, auth_headers, field):
+        """Each required inline-skill field must be a string. A numeric
+        value present (so the missing-key branch doesn't catch it) must
+        still reject — without this, an SDK that sent ``description=42``
+        by mistake would 500 downstream when the validator tried to
+        len()/encode() it."""
+        skill = _skill()
+        skill[field] = 42
+        resp = self._post(client, auth_headers, [skill])
+        assert resp.status_code == 422
+        assert field in str(resp.json()["detail"])
+        assert "must be a string" in str(resp.json()["detail"])
+
     def test_unknown_keys_rejected(self, client: Client, auth_headers):
         skill = _skill()
         skill["scripts"] = {"helper.sh": "echo hi"}
@@ -318,6 +332,31 @@ class TestGithubSkillValidation:
         skill = _github_skill(name="Bad Name")
         resp = self._post(client, auth_headers, [skill])
         assert resp.status_code == 422
+
+    @pytest.mark.parametrize("field", ["type", "source"])
+    def test_required_field_must_be_string(self, client: Client, auth_headers, field):
+        """Required github-skill fields (type, source) must be strings.
+        Pin the type-mismatch path so a numeric or boolean value rejects
+        with a 422 rather than crashing downstream when source is later
+        regex-matched or type is compared."""
+        skill = _github_skill()
+        skill[field] = 42
+        resp = self._post(client, auth_headers, [skill])
+        assert resp.status_code == 422
+        assert field in str(resp.json()["detail"])
+        assert "must be a string" in str(resp.json()["detail"])
+
+    def test_name_when_present_must_be_string(self, client: Client, auth_headers):
+        """`name` is optional for github skills — but when supplied it
+        must be a string. Without this branch, a numeric `name` would
+        slip past the optional-string check and crash later in dedup
+        or skills.sh `--skill <name>` shell-escaping."""
+        skill = _github_skill()
+        skill["name"] = 42
+        resp = self._post(client, auth_headers, [skill])
+        assert resp.status_code == 422
+        assert "name" in str(resp.json()["detail"])
+        assert "must be a string" in str(resp.json()["detail"])
 
     def test_duplicate_names_across_shapes(self, client: Client, auth_headers):
         # Name is the dedup key regardless of inline vs github shape.
