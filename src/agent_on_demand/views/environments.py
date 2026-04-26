@@ -233,7 +233,7 @@ def environment_detail(request, environment_id):
     if request.method == "GET":
         try:
             env = Environment.objects.get(pk=environment_id, user=request.user)
-        except (Environment.DoesNotExist, ValueError):
+        except Environment.DoesNotExist:
             return JsonResponse({"detail": "Environment not found"}, status=404)
         return JsonResponse(_serialize_environment(env))
 
@@ -332,7 +332,7 @@ def environment_archive(request, environment_id):
     """Archive an environment (read-only, no new sessions)."""
     try:
         env = Environment.objects.get(pk=environment_id, user=request.user)
-    except (Environment.DoesNotExist, ValueError):
+    except Environment.DoesNotExist:
         return JsonResponse({"detail": "Environment not found"}, status=404)
 
     if env.is_archived:
@@ -372,7 +372,7 @@ def environment_delete(request, environment_id):
                 )
             env_id_str = str(env.id)
             env.delete()
-    except (Environment.DoesNotExist, ValueError):
+    except Environment.DoesNotExist:
         return JsonResponse({"detail": "Environment not found"}, status=404)
 
     with posthog.new_context():
@@ -388,7 +388,7 @@ def environment_versions(request, environment_id):
     """List all versions of an environment."""
     try:
         env = Environment.objects.get(pk=environment_id, user=request.user)
-    except (Environment.DoesNotExist, ValueError):
+    except Environment.DoesNotExist:
         return JsonResponse({"detail": "Environment not found"}, status=404)
 
     versions = EnvironmentVersion.objects.filter(environment=env).order_by("-version")
