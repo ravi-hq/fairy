@@ -271,6 +271,39 @@ class TestProvisionSessionFailureHandling:
         assert ei.value.stage == "git_credentials"
         assert fake_sprites.deleted == ["sprite-x"]
 
+    def test_provision_setup_failure_includes_stderr_tail_in_detail(
+        self, user, fake_sprites, mocker
+    ):
+        """When the provision script fails, ProvisionError.detail must
+        include the captured stderr tail. Without that branch, operators
+        see only "Provisioning script failed: <SpriteError msg>" — apt or
+        git errors that are critical to triage stay hidden behind the
+        opaque transport error.
+
+        Reaches the branch by arranging for the bash invocation to raise
+        SpriteError after the fake writes a stderr blob to the buffer
+        the provisioning code assigned to `cmd.stderr`."""
+        original_create = fake_sprites.create_sprite
+
+        def wrapped(name):
+            sprite = original_create(name)
+            sprite.raise_on(
+                lambda argv: argv[:2] == ("bash", "-l"),
+                SpriteError("exit 1"),
+                stderr=b"E: Unable to locate package not-a-real-pkg\n",
+            )
+            return sprite
+
+        mocker.patch.object(fake_sprites, "create_sprite", side_effect=wrapped)
+
+        with pytest.raises(ProvisionError) as ei:
+            provision_session(user, _spec(user))
+        assert ei.value.stage == "provision_setup"
+        # Both the SpriteError message and the captured stderr tail must
+        # appear in the detail — operators rely on the stderr to triage.
+        assert "Provisioning script failed: exit 1" in str(ei.value)
+        assert "stderr:\nE: Unable to locate package not-a-real-pkg" in str(ei.value)
+
     def test_write_runtime_config_sprite_error_tags_stage(self, user, fake_sprites):
         """A SpriteError raised while the runtime writes its config (claude's
         ``.claude.json`` with mcp_servers) must surface as stage=runtime_config.

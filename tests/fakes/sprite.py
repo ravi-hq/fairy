@@ -66,11 +66,15 @@ class _CommandHandle:
     def __init__(self, recorder: "RecordingSprite", argv: tuple[str, ...]):
         self._recorder = recorder
         self._argv = argv
+        # Production callers may assign a writable bytes-like buffer to
+        # `cmd.stderr` to capture stderr from the run. _maybe_raise honors it
+        # when a predicate provides stderr_text.
+        self.stderr: Any = None
 
     def run(self) -> None:
         recorded = RecordedCommand(argv=self._argv, ran=True)
         self._recorder.commands.append(recorded)
-        self._recorder._maybe_raise(self._argv)
+        self._recorder._maybe_raise(self._argv, stderr_buf=self.stderr)
 
 
 class RecordingSprite:
@@ -125,22 +129,27 @@ class RecordingSprite:
                         out.append(stripped)
         return out
 
-    def raise_on(self, predicate, exc: Exception) -> None:
+    def raise_on(self, predicate, exc: Exception, *, stderr: bytes = b"") -> None:
         """Arrange for the next command matching `predicate(argv_tuple)` to
         raise `exc` instead of succeeding. Predicate can also be the string
-        'update_network_policy' to target the policy call."""
-        self._raise_on_predicates.append((predicate, exc))
+        'update_network_policy' to target the policy call.
 
-    def _maybe_raise(self, argv: tuple[str, ...]) -> None:
-        for i, (pred, exc) in enumerate(self._raise_on_predicates):
-            if callable(pred):
-                if pred(argv):
-                    del self._raise_on_predicates[i]
-                    raise exc
-            else:
-                if argv and argv[0] == pred:
-                    del self._raise_on_predicates[i]
-                    raise exc
+        When `stderr` is non-empty and the matched call is a
+        `_CommandHandle` whose caller assigned a writable buffer to
+        `cmd.stderr`, those bytes are written to that buffer just before
+        the exception is raised — mirroring the real Sprites SDK, which
+        flushes captured stderr to the buffer before surfacing
+        SpriteError."""
+        self._raise_on_predicates.append((predicate, exc, stderr))
+
+    def _maybe_raise(self, argv: tuple[str, ...], stderr_buf: Any = None) -> None:
+        for i, (pred, exc, stderr) in enumerate(self._raise_on_predicates):
+            matched = pred(argv) if callable(pred) else (bool(argv) and argv[0] == pred)
+            if matched:
+                del self._raise_on_predicates[i]
+                if stderr and stderr_buf is not None:
+                    stderr_buf.write(stderr)
+                raise exc
 
 
 class RecordingSpritesClient:
