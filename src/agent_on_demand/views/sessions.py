@@ -348,7 +348,7 @@ def get_session(request, session_id):
     """Return session metadata."""
     try:
         session = AgentSession.objects.get(pk=session_id, user=request.user)
-    except (AgentSession.DoesNotExist, ValueError):
+    except AgentSession.DoesNotExist:
         return JsonResponse({"detail": "Session not found"}, status=404)
 
     return JsonResponse(_serialize_session(session))
@@ -360,7 +360,7 @@ async def stream_session(request, session_id):
     """Stream session logs via SSE (live tail + full replay)."""
     try:
         session = await AgentSession.objects.aget(pk=session_id, user=request.user)
-    except (AgentSession.DoesNotExist, ValueError):
+    except AgentSession.DoesNotExist:
         return JsonResponse({"detail": "Session not found"}, status=404)
 
     raw = request.META.get("HTTP_LAST_EVENT_ID") or request.GET.get("since", "0")
@@ -403,7 +403,7 @@ def send_prompt(request, session_id):
     """
     try:
         session = AgentSession.objects.get(pk=session_id, user=request.user)
-    except (AgentSession.DoesNotExist, ValueError):
+    except AgentSession.DoesNotExist:
         return JsonResponse({"detail": "Session not found"}, status=404)
 
     # A `failed` session may have left its Sprite mid-execution (see Muddy
@@ -503,7 +503,7 @@ def list_session_turns(request, session_id):
     """Return the full turn history for a session, ordered by turn_number."""
     try:
         session = AgentSession.objects.get(pk=session_id, user=request.user)
-    except (AgentSession.DoesNotExist, ValueError):
+    except AgentSession.DoesNotExist:
         return JsonResponse({"detail": "Session not found"}, status=404)
 
     turns = session.turns.order_by("turn_number")
@@ -525,7 +525,7 @@ def terminate_session(request, session_id):
             session.status = "terminated"
             session.sprite_name = ""
             session.save(update_fields=["status", "sprite_name", "updated_at"])
-    except (AgentSession.DoesNotExist, ValueError):
+    except AgentSession.DoesNotExist:
         return JsonResponse({"detail": "Session not found"}, status=404)
 
     if sprite_name:
@@ -561,7 +561,7 @@ def delete_session(request, session_id):
                 return err
             session_id_str = str(session.id)
             session.delete()  # pre_delete signal handles Sprite cleanup
-    except (AgentSession.DoesNotExist, ValueError):
+    except AgentSession.DoesNotExist:
         return JsonResponse({"detail": "Session not found"}, status=404)
 
     with posthog.new_context():

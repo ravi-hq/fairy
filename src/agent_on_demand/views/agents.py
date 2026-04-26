@@ -383,7 +383,7 @@ def agent_detail(request, agent_id):
     if request.method == "GET":
         try:
             agent = Agent.objects.get(pk=agent_id, user=request.user)
-        except (Agent.DoesNotExist, ValueError):
+        except Agent.DoesNotExist:
             return JsonResponse({"detail": "Agent not found"}, status=404)
         return JsonResponse(_serialize_agent(agent))
 
@@ -521,7 +521,7 @@ def agent_archive(request, agent_id):
     """Archive an agent (read-only, no new sessions)."""
     try:
         agent = Agent.objects.get(pk=agent_id, user=request.user)
-    except (Agent.DoesNotExist, ValueError):
+    except Agent.DoesNotExist:
         return JsonResponse({"detail": "Agent not found"}, status=404)
 
     if agent.is_archived:
@@ -543,7 +543,7 @@ def agent_versions(request, agent_id):
     """List all versions of an agent."""
     try:
         agent = Agent.objects.get(pk=agent_id, user=request.user)
-    except (Agent.DoesNotExist, ValueError):
+    except Agent.DoesNotExist:
         return JsonResponse({"detail": "Agent not found"}, status=404)
 
     versions = AgentVersion.objects.filter(agent=agent).order_by("-version")
