@@ -151,6 +151,7 @@ paths_to_mutate = [
     "src/agent_on_demand/runtimes/claude_config.py",
     "src/agent_on_demand/runtimes/opencode_config.py",
     "src/agent_on_demand/session_service/post_script_dirs.py",
+    "src/agent_on_demand/mcp_server_validation.py",
 ]
 tests_dir = [
     "tests/test_auth.py",
@@ -163,6 +164,7 @@ tests_dir = [
     "tests/test_claude_config.py",
     "tests/test_opencode_config.py",
     "tests/test_post_script_dirs.py",
+    "tests/test_mcp_server_validation.py",
 ]
 # mutmut copies its working tree to ./mutants/ and runs pytest from there;
 # without these, the rest of the src/ tree isn't available to the test runner.
