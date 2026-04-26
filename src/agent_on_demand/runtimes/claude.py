@@ -5,6 +5,8 @@ from typing import TYPE_CHECKING, Literal
 
 from sprites import Sprite
 
+from agent_on_demand.runtimes.claude_config import render_claude_mcp_config
+
 if TYPE_CHECKING:
     from agent_on_demand.session_service.specs import McpServerSpec, SessionSpec
 
@@ -44,19 +46,8 @@ class ClaudeRuntime:
         spec: "SessionSpec",
         mcp_servers: list["McpServerSpec"],
     ) -> None:
-        config: dict[str, dict] = {}
-        for s in mcp_servers:
-            if s.type == "url":
-                entry: dict = {"type": "http", "url": s.url}
-                if s.headers:
-                    entry["headers"] = s.headers
-                config[s.name] = entry
-            elif s.type == "stdio":
-                entry = {"type": "stdio", "command": s.command, "args": s.args}
-                if s.env:
-                    entry["env"] = s.env
-                config[s.name] = entry
-        if not config:
+        config = render_claude_mcp_config(mcp_servers)
+        if config is None:
             return
         fs = sprite.filesystem()
         (fs / "home/sprite/.claude.json").write_text(json.dumps({"mcpServers": config}, indent=2))
