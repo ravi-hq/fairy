@@ -370,6 +370,92 @@ def test_provision_task_skips_if_session_terminated(provision_user, fake_sprites
 
 
 @pytest.mark.django_db
+def test_provision_task_skips_if_session_deleted(provision_user, fake_sprites, mocker):
+    """Race: user calls DELETE /sessions on a pending session after the
+    view enqueued provision_session_task but before the worker picks it up.
+    The task must swallow AgentSession.DoesNotExist and return cleanly."""
+    session, turn = _make_pending_session(provision_user)
+    session_id = str(session.id)
+    turn_id = turn.id
+    mocker.patch("agent_on_demand.session_service.tasks.destroy_session_task.defer")
+    session.delete()  # cascades to turn + logs
+    defer_spy = mocker.patch("agent_on_demand.session_service.tasks.execute_turn.defer")
+
+    # Does not raise.
+    provision_session_task(
+        session_id=session_id,
+        turn_id=turn_id,
+        prompt="hi",
+        mode="run",
+        timeout=10.0,
+    )
+
+    assert fake_sprites.created == []
+    assert defer_spy.call_count == 0
+
+
+@pytest.mark.django_db
+def test_execute_turn_skips_if_session_deleted(user, mocker):
+    """Race: DELETE /sessions fires between POST /prompt enqueueing execute_turn
+    and the worker picking it up. The task must no-op rather than raise."""
+    session, turn = _make_session_and_turn(user)
+    session_id = str(session.id)
+    turn_id = turn.id
+    mocker.patch("agent_on_demand.session_service.tasks.destroy_session_task.defer")
+    session.delete()
+    resume_spy = mocker.patch("agent_on_demand.session_service.tasks.resume_session")
+
+    # Does not raise.
+    execute_turn(
+        session_id=session_id,
+        turn_id=turn_id,
+        prompt="hi",
+        mode="run",
+        timeout=10.0,
+    )
+
+    # Sprite is never resumed — we bail before the runtime is touched.
+    assert resume_spy.call_count == 0
+
+
+@pytest.mark.django_db
+def test_execute_turn_skips_finalization_if_session_deleted_mid_turn(user, mocker):
+    """Race: user terminates then deletes a session while the turn body is
+    running. The sprite command returns (ExecError or clean), and the
+    post-run `session.refresh_from_db` sees the row gone. Skip the
+    finalization writes (they'd have been cascade-deleted anyway) and don't
+    let DoesNotExist bubble out to the task's error reporter."""
+    session, turn = _make_session_and_turn(user)
+    _patch_sprite(mocker, "success")
+    mocker.patch("agent_on_demand.session_service.tasks.destroy_session_task.defer")
+
+    # Delete the session on the very first refresh_from_db call (which is
+    # the finalization refresh — the sprite command has already returned).
+    original_refresh = AgentSession.refresh_from_db
+
+    def deleting_refresh(self, *args, **kwargs):
+        if self.pk == session.pk:
+            AgentSession.objects.filter(pk=self.pk).delete()
+            return original_refresh(self, *args, **kwargs)
+        return original_refresh(self, *args, **kwargs)
+
+    mocker.patch.object(AgentSession, "refresh_from_db", deleting_refresh)
+
+    # Does not raise.
+    execute_turn(
+        session_id=str(session.id),
+        turn_id=turn.id,
+        prompt="hi",
+        mode="run",
+        timeout=10.0,
+    )
+
+    # Session row + turn row are gone (cascade-deleted).
+    assert not AgentSession.objects.filter(pk=session.pk).exists()
+    assert not SessionTurn.objects.filter(pk=turn.pk).exists()
+
+
+@pytest.mark.django_db
 def test_provision_task_runs_with_no_runtime_credential(provision_user, fake_sprites, mocker):
     """Credentials are now dumped wholesale into /tmp/aod-env; provisioning
     no longer short-circuits on missing creds (the session-create HTTP gate
