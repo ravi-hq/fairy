@@ -14,6 +14,7 @@ from agent_on_demand.mcp_server_validation import validate_mcp_servers as _valid
 from agent_on_demand.metadata_merge import merge_metadata
 from agent_on_demand.models import Agent, AgentVersion, Environment
 from agent_on_demand.models_catalog import MODELS
+from agent_on_demand.runtime_model_compat import check_runtime_model_compat
 from agent_on_demand.runtimes import RUNTIMES
 from agent_on_demand.skill_validation import validate_skills as _validate_skills
 from agent_on_demand.versioning import check_version_match
@@ -95,20 +96,6 @@ class UpdateAgentRequest(BaseModel):
         return v
 
 
-def _check_runtime_model_compat(runtime_name: str, model_id: str) -> str | None:
-    """Return an error message if model isn't servable by runtime, else None."""
-    runtime = RUNTIMES[runtime_name]
-    model = MODELS[model_id]
-    if model.provider not in runtime.providers:
-        return (
-            f"Runtime {runtime_name} cannot serve model {model_id}: "
-            f"provider {model.provider} not in {sorted(runtime.providers)}"
-        )
-    if model.runtimes is not None and runtime_name not in model.runtimes:
-        return f"Model {model_id} not supported on runtime {runtime_name}"
-    return None
-
-
 def _serialize_agent(agent: Agent) -> dict:
     return {
         "id": str(agent.id),
@@ -184,7 +171,7 @@ def agents_list_create(request):
                 {"detail": f"Unknown runtime: {req.runtime}. Must be one of: {list(RUNTIMES)}"},
                 status=400,
             )
-        compat_err = _check_runtime_model_compat(req.runtime, req.model)
+        compat_err = check_runtime_model_compat(RUNTIMES[req.runtime], MODELS[req.model])
         if compat_err is not None:
             return JsonResponse({"detail": compat_err}, status=422)
 
@@ -304,7 +291,9 @@ def agent_detail(request, agent_id):
             effective_runtime = req.runtime or agent.runtime
             effective_model = req.model or agent.model
             if effective_runtime in RUNTIMES and effective_model in MODELS:
-                compat_err = _check_runtime_model_compat(effective_runtime, effective_model)
+                compat_err = check_runtime_model_compat(
+                    RUNTIMES[effective_runtime], MODELS[effective_model]
+                )
                 if compat_err is not None:
                     return JsonResponse({"detail": compat_err}, status=422)
 
