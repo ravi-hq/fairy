@@ -26,6 +26,11 @@ from agent_on_demand.models import (
 from agent_on_demand.models.auth import CREDENTIAL_ENV_VAR, UserCredential
 from agent_on_demand.models_catalog import MODELS
 from agent_on_demand.runtimes import RUNTIMES
+from agent_on_demand.session_state import (
+    check_can_accept_prompt,
+    check_can_delete,
+    check_can_terminate,
+)
 from agent_on_demand.stream import stream_session_from_db
 
 
@@ -43,7 +48,6 @@ def _serialize_resources(session: AgentSession) -> list[dict]:
 
 def _serialize_session(session: AgentSession) -> dict:
     latest = session.turns.order_by("-turn_number").first()
-    turn_count = latest.turn_number if latest else 0
     return {
         "id": str(session.id),
         "agent_id": str(session.agent_id) if session.agent_id else None,
@@ -54,7 +58,7 @@ def _serialize_session(session: AgentSession) -> dict:
         "created_at": session.created_at.isoformat(),
         "updated_at": session.updated_at.isoformat(),
         "resources": _serialize_resources(session),
-        "turn_count": turn_count,
+        "turn_count": session.turns.count(),
         "current_turn": latest.turn_number if latest else None,
     }
 
@@ -298,13 +302,13 @@ def _create_session(request):
                 sr.set_token(resource.authorization_token)
             sr.save()
 
-    session_service.provision_session_task.defer(
-        session_id=str(session.id),
-        turn_id=turn.id,
-        prompt=effective_prompt,
-        mode="run",
-        timeout=float(req.timeout),
-    )
+        session_service.provision_session_task.defer(
+            session_id=str(session.id),
+            turn_id=turn.id,
+            prompt=effective_prompt,
+            mode="run",
+            timeout=float(req.timeout),
+        )
 
     with posthog.new_context():
         posthog.identify_context(str(request.user.id))
@@ -398,20 +402,12 @@ def send_prompt(request, session_id):
     except (AgentSession.DoesNotExist, ValueError):
         return JsonResponse({"detail": "Session not found"}, status=404)
 
-    if session.status == "running":
-        return JsonResponse({"detail": "Session is already running"}, status=409)
-
-    if session.status == "terminated":
-        return JsonResponse({"detail": "Session has been terminated"}, status=409)
-
     # A `failed` session may have left its Sprite mid-execution (see Muddy
     # Zone 8 in thoughts/research/2026-04-18-sprites-script-setup.md). Making
     # `failed` terminal prevents a resume from colliding with a runaway turn.
-    if session.status == "failed":
-        return JsonResponse(
-            {"detail": "Session has failed and cannot be resumed. Start a new session."},
-            status=409,
-        )
+    err = check_can_accept_prompt(session.status)
+    if err is not None:
+        return err
 
     try:
         body = json.loads(request.body)
@@ -427,24 +423,26 @@ def send_prompt(request, session_id):
         sprite = session_service.resume_session(request.user, session.sprite_name)
     except session_service.NoSpritesKeyError as e:
         return JsonResponse({"detail": str(e)}, status=400)
-    except session_service.SessionHandleNotFound as e:
-        return JsonResponse({"detail": str(e)}, status=404)
+    except session_service.SessionHandleNotFound:
+        # The Sprite is gone (e.g. idle timeout on the Sprites platform). The
+        # session record still exists, so 404 would be misleading — callers
+        # cannot distinguish "session not found" from "Sprite no longer
+        # available". Return 409 with an actionable message instead.
+        return JsonResponse(
+            {"detail": "Session sprite is no longer available; start a new session."},
+            status=409,
+        )
 
-    # Atomically lock the session row, re-check state, and allocate a turn
-    # number. Prevents two concurrent POSTs from both creating turn N+1 or
-    # transitioning the session to running.
+    # Atomically lock the session row, re-check state, allocate a turn number,
+    # and enqueue the worker task. All four steps are inside the same
+    # transaction so a task is never deferred without its turn row committed,
+    # and a turn row is never committed without a task enqueued to drive it.
     try:
         with transaction.atomic():
             locked = AgentSession.objects.select_for_update().get(pk=session.id)
-            if locked.status == "running":
-                return JsonResponse({"detail": "Session is already running"}, status=409)
-            if locked.status == "terminated":
-                return JsonResponse({"detail": "Session has been terminated"}, status=409)
-            if locked.status == "failed":
-                return JsonResponse(
-                    {"detail": ("Session has failed and cannot be resumed. Start a new session.")},
-                    status=409,
-                )
+            err = check_can_accept_prompt(locked.status)
+            if err is not None:
+                return err
 
             next_turn_number = (
                 SessionTurn.objects.filter(session=locked).aggregate(n=Max("turn_number"))["n"] or 0
@@ -460,10 +458,11 @@ def send_prompt(request, session_id):
             locked.exit_code = None
             locked.save(update_fields=["prompt", "status", "exit_code", "updated_at"])
             session = locked
+            session_service.run_turn(
+                session, turn, sprite, req.prompt, "continue", float(req.timeout)
+            )
     except AgentSession.DoesNotExist:
         return JsonResponse({"detail": "Session not found"}, status=404)
-
-    session_service.run_turn(session, turn, sprite, req.prompt, "continue", float(req.timeout))
 
     with posthog.new_context():
         posthog.identify_context(str(request.user.id))
@@ -507,17 +506,17 @@ def list_session_turns(request, session_id):
 def terminate_session(request, session_id):
     """Terminate a session's Sprite without deleting the session record."""
     try:
-        session = AgentSession.objects.get(pk=session_id, user=request.user)
+        with transaction.atomic():
+            session = AgentSession.objects.select_for_update().get(pk=session_id, user=request.user)
+            err = check_can_terminate(session.status)
+            if err is not None:
+                return err
+            sprite_name = session.sprite_name
+            session.status = "terminated"
+            session.sprite_name = ""
+            session.save(update_fields=["status", "sprite_name", "updated_at"])
     except (AgentSession.DoesNotExist, ValueError):
         return JsonResponse({"detail": "Session not found"}, status=404)
-
-    if session.status == "terminated":
-        return JsonResponse({"detail": "Session is already terminated"}, status=409)
-
-    sprite_name = session.sprite_name
-    session.status = "terminated"
-    session.sprite_name = ""
-    session.save(update_fields=["status", "sprite_name", "updated_at"])
 
     if sprite_name:
         session_service.destroy_session_task.defer(user_id=request.user.id, sprite_name=sprite_name)
@@ -545,15 +544,15 @@ def delete_session(request, session_id):
         return JsonResponse({"detail": "Method not allowed"}, status=405)
 
     try:
-        session = AgentSession.objects.get(pk=session_id, user=request.user)
+        with transaction.atomic():
+            session = AgentSession.objects.select_for_update().get(pk=session_id, user=request.user)
+            err = check_can_delete(session.status)
+            if err is not None:
+                return err
+            session_id_str = str(session.id)
+            session.delete()  # pre_delete signal handles Sprite cleanup
     except (AgentSession.DoesNotExist, ValueError):
         return JsonResponse({"detail": "Session not found"}, status=404)
-
-    if session.status == "running":
-        return JsonResponse({"detail": "Cannot delete a running session"}, status=409)
-
-    session_id_str = str(session.id)
-    session.delete()  # pre_delete signal handles Sprite cleanup
 
     with posthog.new_context():
         posthog.identify_context(str(request.user.id))

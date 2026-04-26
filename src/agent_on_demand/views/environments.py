@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from agent_on_demand.auth import require_api_key
 from agent_on_demand.models import Environment, EnvironmentVersion
+from agent_on_demand.versioning import check_version_match
 
 
 def _env_safe_props(env: Environment) -> dict:
@@ -249,11 +250,9 @@ def environment_detail(request, environment_id):
         except ValidationError as e:
             return JsonResponse({"detail": e.errors(include_context=False)}, status=422)
 
-        if req.version != env.version:
-            return JsonResponse(
-                {"detail": f"Version mismatch: expected {env.version}, got {req.version}"},
-                status=409,
-            )
+        version_err = check_version_match(req.version, env.version)
+        if version_err is not None:
+            return version_err
 
         changed = False
         if req.name is not None and req.name != env.name:

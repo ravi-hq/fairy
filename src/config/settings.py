@@ -25,6 +25,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "corsheaders",
     "procrastinate.contrib.django",
+    "django_migration_linter",
     "agent_on_demand.apps.AgentOnDemandConfig",
 ]
 
@@ -113,3 +114,10 @@ DEFAULT_TIMEOUT = int(os.environ.get("DEFAULT_TIMEOUT", "600"))
 # is borne by the user (own token), so this cap protects our worker queue from
 # a single user saturating it, not our spend.
 DEFAULT_MAX_CONCURRENT_SESSIONS = int(os.environ.get("DEFAULT_MAX_CONCURRENT_SESSIONS", "100"))
+
+# Defaults for `manage.py lintmigrations`. The Makefile's `check-migrations`
+# target overrides these with --git-commit-id to scope linting to migrations
+# added on the current branch (existing migrations are grandfathered).
+MIGRATION_LINTER_OPTIONS = {
+    "include_apps": ["fairy"],
+}
