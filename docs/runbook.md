@@ -24,12 +24,46 @@ External dependencies:
 | Signal                         | Where |
 | ------------------------------ | ----- |
 | Alerts                         | Slack `#alerts` |
-| External `/health` reachability | Checkly — scheduled `GET /health` from outside our network |
+| External `/health` reachability | Checkly — scheduled `GET /health` from outside our network. `/health` exercises DB + field-encryption round-trip; a 503 here means Render auto-rollback should already be firing. See `views/health.py`. |
 | Request rate, error rate, p95  | Honeycomb `aod-web` |
 | Worker task durations, failures | Honeycomb `aod-worker` — look for `session.provision_task` and `session.execute_turn` spans |
 | Session outcomes by runtime    | PostHog — event names above |
 | Deploys, service health, logs, shell | Render dashboard |
 | Queue depth                    | `SELECT status, queue_name, count(*) FROM procrastinate_jobs GROUP BY 1,2;` |
+
+## Alerts to configure
+
+Five triggers cover the regressions we most want to catch in the first 5 minutes after a deploy. Set these up in the listed tool with destination Slack `#alerts`. More than five and people start ignoring; fewer and we miss things.
+
+**1. Web 5xx rate spike** — Honeycomb `aod-web`
+
+```
+COUNT WHERE response.status_code >= 500 GROUP BY 1m
+```
+
+Trigger: more than 5/min for 3 consecutive minutes. Catches the generic "deploy broke a backend handler" class of regression.
+
+**2. `session.completed` volume drop** — PostHog
+
+Insight: count of `session.completed` events, last 30 min vs. previous 30 min. Trigger: > 50% drop. This is the canary for "agents stopped working" — the most user-visible failure mode that doesn't surface as a 5xx.
+
+**3. `session.provision_failed` spike** — PostHog
+
+Insight: count of `session.provision_failed` events, last 5 min. Trigger: > 5 in 5 min (or > 10× baseline). Specifically catches Sprites outages, env-var decryption failures, and auth-to-Sprites bugs — none of which appear as web 5xxs because they happen in the worker.
+
+**4. Worker `execute_turn` error rate** — Honeycomb `aod-worker`
+
+```
+COUNT WHERE error = true AND name = "session.execute_turn" GROUP BY 1m
+```
+
+Trigger: > 5 errors in 5 min. The worker side is invisible to the `aod-web` 5xx alert; this is its counterpart.
+
+**5. `session.failed` rate** — PostHog
+
+Insight: ratio of `session.failed` to (`session.completed` + `session.failed`), last 30 min. Trigger: failure ratio > 30% (typical baseline is < 5%). Stronger than #2 because it catches "sessions still start but most of them break" — a regression that volume metrics miss.
+
+---
 
 ## General triage
 

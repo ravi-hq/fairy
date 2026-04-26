@@ -155,6 +155,18 @@ show <name>` command. Don't add the survivor to the equivalent allowlist
 unless you can prove (with the diff) that no input distinguishes the
 mutant from the original.
 
+## Production observability
+
+`/health` exercises a real DB query plus a field-encryption round-trip — a
+broken deploy that can't reach the DB or has a misconfigured
+`FIELD_ENCRYPTION_KEY` returns 503, and Render auto-rollback fires. See
+`src/agent_on_demand/views/health.py` and `tests/test_health.py`.
+
+For post-deploy alerting (5xx spikes, session-completion drops, worker
+error rates), see the **Alerts to configure** section in
+`docs/runbook.md`. Five Honeycomb + PostHog triggers cover the most
+common regression shapes; setup is GUI-only on those services.
+
 ## Style
 
 - Python 3.11+, ruff with `line-length = 100`.
