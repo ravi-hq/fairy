@@ -271,6 +271,27 @@ class TestProvisionSessionFailureHandling:
         assert ei.value.stage == "git_credentials"
         assert fake_sprites.deleted == ["sprite-x"]
 
+    def test_unwrapped_sprite_error_falls_back_to_unknown_stage(self, user, fake_sprites, mocker):
+        """Each per-stage helper wraps its own SpriteError as
+        ProvisionError(stage=...). If a future helper forgets that wrap and
+        leaks SpriteError, the catch-all in provision_session must surface
+        it as ProvisionError(stage="unknown") *and* still trigger
+        best_effort_delete — otherwise the orphaned Sprite leaks.
+
+        Reaches the branch by patching one of the helpers (`_install_runtime`)
+        to raise SpriteError directly, bypassing its own wrapper."""
+        from agent_on_demand.session_service import provisioning
+
+        mocker.patch.object(provisioning, "_install_runtime", side_effect=SpriteError("unwrapped"))
+
+        with pytest.raises(ProvisionError) as ei:
+            provision_session(user, _spec(user))
+        assert ei.value.stage == "unknown"
+        assert "Failed to prepare Sprite: unwrapped" in str(ei.value)
+        # The orphaned Sprite must be cleaned up — without that, every
+        # unwrapped helper leak permanently leaks a Sprite per call.
+        assert fake_sprites.deleted == ["sprite-x"]
+
     def test_provision_setup_failure_includes_stderr_tail_in_detail(
         self, user, fake_sprites, mocker
     ):
