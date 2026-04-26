@@ -205,6 +205,27 @@ def test_create_agent_mcp_servers_entry_must_be_object(client: Client, auth_head
 
 
 @pytest.mark.django_db
+def test_update_agent_not_found_returns_404(client: Client, auth_headers):
+    """A PUT to /agents/{nonexistent-uuid} must 404, not 500. The handler
+    has no pre-lock fetch — the validate-then-load sequence runs first
+    (json/pydantic/runtime/env), then `select_for_update().get()` is
+    expected to be the only DB read for the agent. Pin the 404 path so
+    a refactor that adds a pre-lock fetch (and changes the error
+    surface) doesn't silently break the contract.
+
+    Sends a complete payload (version + a real change) so we know the
+    response came from the DoesNotExist catch, not earlier validation."""
+    resp = client.put(
+        f"/agents/{uuid.uuid4()}",
+        data=json.dumps({"version": 1, "name": "renamed"}),
+        content_type="application/json",
+        **auth_headers,
+    )
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == "Agent not found"
+
+
+@pytest.mark.django_db
 def test_update_agent_with_unknown_model_returns_422(client: Client, auth_headers, user):
     """UpdateAgentRequest validates the new model the same way
     CreateAgentRequest does — an update that flips an agent to a
