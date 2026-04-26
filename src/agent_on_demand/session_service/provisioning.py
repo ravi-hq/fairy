@@ -32,14 +32,13 @@ from agent_on_demand.observability import get_tracer
 
 from .client import best_effort_delete, require_client
 from .errors import ProvisionError
-from .package_commands import PACKAGE_MANAGER_ORDER, package_commands
-from .post_script_dirs import directories_for_post_script_writes
+from .provision_script import (
+    ENV_FILE_PATH,
+    GIT_CREDS_PATH,
+    PROVISION_SCRIPT_PATH,
+    build_provision_script,
+)
 from .specs import RepoSpec, SessionSpec
-
-# Paths inside the single-tenant Sprite VM, not the host — B108 doesn't apply.
-ENV_FILE_PATH = "/tmp/aod-env"  # nosec B108
-GIT_CREDS_PATH = "/tmp/.git-credentials"  # nosec B108
-PROVISION_SCRIPT_PATH = "/tmp/aod-provision.sh"  # nosec B108
 
 logger = logging.getLogger(__name__)
 
@@ -266,7 +265,7 @@ def _run_provision_setup(sprite: Sprite, spec: SessionSpec, session_id: str | No
     """Write /tmp/aod-provision.sh and invoke it as one `sprite.command`. This
     is the single expensive round trip — everything shell-flavoured
     (chmod, package install, git clone, user setup) runs inside it."""
-    script = _build_provision_script(spec)
+    script = build_provision_script(spec)
     with stage_timer(session_id, STAGE_PROVISION_SETUP):
         try:
             fs = sprite.filesystem()
@@ -288,72 +287,6 @@ def _run_provision_setup(sprite: Sprite, spec: SessionSpec, session_id: str | No
             if stderr_tail.strip():
                 detail = f"{detail}\nstderr:\n{stderr_tail}"
             raise ProvisionError(detail, stage=STAGE_PROVISION_SETUP) from e
-
-
-def _build_provision_script(spec: SessionSpec) -> str:
-    """Render the combined shell script invoked as the single `sprite.command`.
-
-    Order matters:
-      1. `set -e` so any step failing aborts the rest.
-      2. mkdir any parent dirs for MCP/skill files written after the script.
-      3. chmod the pre-written /tmp files.
-      4. Install packages (apt first; managers that rely on login PATH work
-         because the script is invoked with `bash -l`).
-      5. Git clones.
-      6. User setup script, last (runs in an env that has packages + repos).
-    """
-    env = spec.environment
-    lines: list[str] = ["#!/bin/bash", "set -e", ""]
-
-    # mkdir for files that get fs.written AFTER the script runs (MCP config
-    # for codex/gemini, every skill dir). /home/sprite already exists, so
-    # Claude's .claude.json and default skills root don't need to be created
-    # here — only the per-skill directories.
-    dirs_to_make = directories_for_post_script_writes(spec)
-    if dirs_to_make:
-        quoted = " ".join(shlex.quote(d) for d in dirs_to_make)
-        lines.append(f"mkdir -p {quoted}")
-        lines.append("")
-
-    # chmod files pre-written to /tmp. ENV_FILE_PATH always exists at this
-    # point; git creds only if any repo had a token.
-    lines.append(f"chmod 600 {shlex.quote(ENV_FILE_PATH)}")
-    if any(r.token for r in spec.repos):
-        lines.append(f"chmod 600 {shlex.quote(GIT_CREDS_PATH)}")
-    lines.append("")
-
-    # Packages
-    if env and env.packages:
-        for manager in PACKAGE_MANAGER_ORDER:
-            pkgs = env.packages.get(manager, [])
-            if not pkgs:
-                continue
-            for cmd in package_commands(manager, pkgs):
-                lines.append(cmd)
-        lines.append("")
-
-    # Git clones
-    if spec.repos:
-        if any(r.token for r in spec.repos):
-            lines.append(
-                f"git config --global credential.helper "
-                f"{shlex.quote(f'store --file={GIT_CREDS_PATH}')}"
-            )
-        for repo in spec.repos:
-            lines.append(
-                f"git clone --depth=1 --quiet "
-                f"{shlex.quote(repo.url)} {shlex.quote(repo.mount_path)}"
-            )
-        lines.append("")
-
-    # User-provided setup script, last (packages and repos are in place).
-    if env is not None:
-        user_script = (env.setup_script or "").strip()
-        if user_script:
-            lines.append(user_script)
-            lines.append("")
-
-    return "\n".join(lines)
 
 
 def _write_runtime_config(

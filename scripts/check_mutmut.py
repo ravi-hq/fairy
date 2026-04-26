@@ -30,6 +30,16 @@ KNOWN_EQUIVALENT: set[str] = {
     # a try/except KeyError), which is worse code for no real benefit.
     "agent_on_demand.auth.x__check_api_key_sync__mutmut_8",
     "agent_on_demand.auth.x__check_api_key_async__mutmut_8",
+    # `env.packages.get(manager, [])` -> `.get(manager, None)` and
+    # `.get(manager, )` (no default — also resolves to `None`). The very
+    # next line is `if not pkgs: continue`, which treats `[]`, `None`,
+    # and any other falsy value identically — so the missing-key path
+    # always continues in both original and mutant. The only way to
+    # distinguish would be to remove the `if not pkgs` guard, which
+    # would make `package_commands` raise on a missing manager key.
+    # Keeping the guard.
+    "agent_on_demand.session_service.provision_script.x_build_provision_script__mutmut_29",
+    "agent_on_demand.session_service.provision_script.x_build_provision_script__mutmut_31",
 }
 
 
