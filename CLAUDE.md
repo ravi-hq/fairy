@@ -89,6 +89,25 @@ directly (without `make`), `tests/e2e/conftest.py` defaults to
 - E2E fixtures (`create_agent`, `create_environment`, `create_session` in
   `tests/e2e/conftest.py`) auto-clean up created rows after each test.
 
+### Scoped e2e on PRs
+
+The `e2e-scoped` CI job runs only the e2e tests that map to source files
+changed on the current branch (via `scripts/scope_e2e.py`). The mapping
+is in that script's `RULES` table and is pinned by `tests/test_scope_e2e.py`
+— don't change either without updating the other.
+
+To preview locally what e2e would run for your branch:
+
+```bash
+make scope-e2e          # prints the test files + runtimes
+make test-e2e-scoped    # actually runs them (needs AOD_API_TOKEN)
+```
+
+**The CI job is currently a no-op preview** — it computes scope and prints
+what *would* run, but actual pytest is gated on `AOD_API_TOKEN` and
+`AOD_API_URL` repository secrets. To activate the gate, add both secrets
+under Repository Settings → Secrets and variables → Actions.
+
 ## Danger zones
 
 Files and patterns where mistakes have outsized blast radius. Treat any

@@ -83,6 +83,24 @@ test-e2e-networking:
 test-e2e-mcp:
 	uv run pytest tests/e2e/test_mcp.py -v -m "mcp_matrix"
 
+# Print the e2e tests that map to the current branch's diff vs main.
+# Read-only; doesn't run anything. Use to preview what `test-e2e-scoped` would do.
+scope-e2e:
+	uv run python -m scripts.scope_e2e
+
+# Run only the e2e tests that map to the current branch's diff vs main.
+# Computes scope via scripts/scope_e2e.py, sets E2E_RUNTIMES, invokes pytest.
+# Skips silently if no e2e tests are in scope. Requires AOD_API_TOKEN.
+test-e2e-scoped:
+	@SCOPE=$$(uv run python -m scripts.scope_e2e --format=shell); \
+	eval "$$SCOPE"; \
+	if [ -z "$$TESTS" ]; then \
+		echo "No e2e tests in scope for this change."; \
+		exit 0; \
+	fi; \
+	echo "Running scoped e2e: $$TESTS (runtimes=$$RUNTIMES)"; \
+	E2E_RUNTIMES=$$RUNTIMES uv run pytest $$TESTS -v -n $(E2E_WORKERS) --dist loadfile
+
 # Run everything — unit + e2e. E2E auto-skips if AOD_API_TOKEN is unset.
 test-all:
 	uv run pytest tests/ -v
