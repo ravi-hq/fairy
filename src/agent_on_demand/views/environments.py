@@ -1,4 +1,5 @@
 import json
+import re
 
 import posthog
 from django.db import IntegrityError, transaction
@@ -11,6 +12,7 @@ from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from agent_on_demand.auth import require_api_key
 from agent_on_demand.models import Environment, EnvironmentVersion
+from agent_on_demand.versioning import check_version_match
 
 
 def _env_safe_props(env: Environment) -> dict:
@@ -28,6 +30,10 @@ def _env_safe_props(env: Environment) -> dict:
 
 
 VALID_PACKAGE_MANAGERS = {"apt", "cargo", "gem", "go", "npm", "pip"}
+
+# Valid POSIX shell variable names. Keys that don't match this will corrupt
+# /tmp/aod-env when written as `KEY=value` shell assignments.
+_ENV_VAR_KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 class CreateEnvironmentRequest(BaseModel):
@@ -48,6 +54,14 @@ class CreateEnvironmentRequest(BaseModel):
                 )
             if not isinstance(pkgs, list) or not all(isinstance(p, str) for p in pkgs):
                 raise ValueError(f"packages.{manager} must be a list of strings")
+        return v
+
+    @field_validator("env_vars")
+    @classmethod
+    def validate_env_vars(cls, v: dict) -> dict:
+        for key in v:
+            if not _ENV_VAR_KEY_RE.match(key):
+                raise ValueError(f"Invalid env_var key {key!r}: must match [A-Za-z_][A-Za-z0-9_]*")
         return v
 
     @field_validator("networking")
@@ -83,6 +97,17 @@ class UpdateEnvironmentRequest(BaseModel):
                     )
                 if not isinstance(pkgs, list) or not all(isinstance(p, str) for p in pkgs):
                     raise ValueError(f"packages.{manager} must be a list of strings")
+        return v
+
+    @field_validator("env_vars")
+    @classmethod
+    def validate_env_vars(cls, v: dict | None) -> dict | None:
+        if v is not None:
+            for key in v:
+                if not _ENV_VAR_KEY_RE.match(key):
+                    raise ValueError(
+                        f"Invalid env_var key {key!r}: must match [A-Za-z_][A-Za-z0-9_]*"
+                    )
         return v
 
     @field_validator("networking")
@@ -221,11 +246,9 @@ def environment_detail(request, environment_id):
         except ValidationError as e:
             return JsonResponse({"detail": e.errors(include_context=False)}, status=422)
 
-        if req.version != env.version:
-            return JsonResponse(
-                {"detail": f"Version mismatch: expected {env.version}, got {req.version}"},
-                status=409,
-            )
+        version_err = check_version_match(req.version, env.version)
+        if version_err is not None:
+            return version_err
 
         changed = False
         if req.name is not None and req.name != env.name:
@@ -310,6 +333,10 @@ def environment_delete(request, environment_id):
 
     try:
         with transaction.atomic():
+            # Lock the row so a concurrent POST /sessions cannot create a
+            # session referencing this environment between the existence check
+            # and the delete. Without the lock, the cascade would silently
+            # NULL-out the new session's environment FK.
             env = Environment.objects.select_for_update().get(pk=environment_id, user=request.user)
             if env.sessions.exists():
                 return JsonResponse(
