@@ -161,6 +161,14 @@ tests should raise the floor toward the new total; PRs that remove tests
 must justify lowering it. Treat the floor like a high-water mark — never
 move it down to "make CI green."
 
+**Ruff `select` is a ratchet.** `[tool.ruff.lint].select` in
+`pyproject.toml` lists rule families that were zero-violation at the
+time they were added. Each one prevents a class of bug from regressing
+silently. To add a new family, run `ruff check --select=<rule>` until
+clean, then merge it in. Don't drop a family from `select` to "make CI
+green" — fix the violation or `# noqa` the specific line with a
+justification.
+
 ## Production observability
 
 `/health` exercises a real DB query plus a field-encryption round-trip — a
