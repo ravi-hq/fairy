@@ -284,6 +284,48 @@ def test_send_prompt_when_sprite_is_gone_returns_409(
 
 
 @pytest.mark.django_db
+def test_send_prompt_session_deleted_between_pre_lock_and_lock_returns_404(
+    client, auth_headers, runtime_key, user, mocker
+):
+    """send_prompt has a pre-lock `get` at the top and a post-lock
+    `select_for_update().get()` inside the transaction. If the session
+    row is deleted between those two reads, the inner get raises
+    DoesNotExist and the catch returns a clean 404 instead of letting
+    a 500 escape from inside the transaction.
+
+    Reaches the branch by patching `select_for_update` so the lock-
+    time fetch raises DoesNotExist while the pre-lock fetch returns a
+    real row. Uses `MagicMock` (not a hand-rolled stub) so the patched
+    queryset transparently accepts any chained call the production
+    code might add later (e.g. `select_for_update().filter(...).get()`)
+    rather than failing with a confusing AttributeError unrelated to
+    the branch under test."""
+    from unittest.mock import MagicMock
+
+    session = AgentSession.objects.create(
+        user=user, runtime="claude", prompt="x", status="completed", sprite_name="s"
+    )
+    fake_sprite = object()
+    mocker.patch(
+        "agent_on_demand.views.sessions.session_service.resume_session",
+        return_value=fake_sprite,
+    )
+
+    locked_qs = MagicMock()
+    locked_qs.get.side_effect = AgentSession.DoesNotExist
+    mocker.patch.object(AgentSession.objects, "select_for_update", return_value=locked_qs)
+
+    resp = client.post(
+        f"/sessions/{session.id}/prompt",
+        data=json.dumps({"prompt": "next"}),
+        content_type="application/json",
+        **auth_headers,
+    )
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == "Session not found"
+
+
+@pytest.mark.django_db
 def test_send_prompt_post_lock_status_change_returns_409(
     client, auth_headers, runtime_key, user, mocker
 ):
