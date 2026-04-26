@@ -5,6 +5,8 @@ from typing import TYPE_CHECKING, Literal
 
 from sprites import Sprite
 
+from agent_on_demand.runtimes.opencode_config import render_opencode_mcp_config
+
 if TYPE_CHECKING:
     from agent_on_demand.session_service.specs import McpServerSpec, SessionSpec
 
@@ -47,24 +49,8 @@ class OpencodeRuntime:
         spec: "SessionSpec",
         mcp_servers: list["McpServerSpec"],
     ) -> None:
-        config: dict[str, dict] = {}
-        for s in mcp_servers:
-            if s.type == "url":
-                entry: dict = {"type": "remote", "url": s.url, "enabled": True}
-                if s.headers:
-                    entry["headers"] = s.headers
-            elif s.type == "stdio":
-                entry = {
-                    "type": "local",
-                    "command": [s.command, *s.args],
-                    "enabled": True,
-                }
-                if s.env:
-                    entry["environment"] = s.env
-            else:
-                continue
-            config[s.name] = entry
-        if not config:
+        config = render_opencode_mcp_config(mcp_servers)
+        if config is None:
             return
         fs = sprite.filesystem()
         (fs / "home/sprite/.config/opencode/opencode.json").write_text(
