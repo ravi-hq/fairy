@@ -189,6 +189,53 @@ class TestProvisionSessionFailureHandling:
             provision_session(user, _spec(user, environment=env))
         assert ei.value.stage == "network_policy"
 
+    def test_write_env_file_sprite_error_tags_stage(self, user, fake_sprites):
+        """A SpriteError raised during the env-file write must surface as
+        ProvisionError(stage=env_file). Without this branch covered, a
+        refactor that didn't wrap SpriteError here would leak it as an
+        opaque 500 from the worker."""
+        original_create = fake_sprites.create_sprite
+
+        def wrapped(name):
+            sprite = original_create(name)
+            sprite.filesystem().raise_on_write("aod-env", SpriteError("disk fail"))
+            return sprite
+
+        fake_sprites.create_sprite = wrapped
+
+        with pytest.raises(ProvisionError) as ei:
+            provision_session(user, _spec(user))
+        assert ei.value.stage == "env_file"
+        assert fake_sprites.deleted == ["sprite-x"]
+
+    def test_write_git_credentials_sprite_error_tags_stage(self, user, fake_sprites):
+        """A SpriteError raised during the .git-credentials write must
+        surface as stage=git_credentials. Reaches this branch by giving
+        the spec a repo with a token — without a token, no creds file
+        is written and the branch is skipped."""
+        from agent_on_demand.session_service.specs import RepoSpec
+
+        original_create = fake_sprites.create_sprite
+
+        def wrapped(name):
+            sprite = original_create(name)
+            sprite.filesystem().raise_on_write(".git-credentials", SpriteError("disk fail"))
+            return sprite
+
+        fake_sprites.create_sprite = wrapped
+
+        repos = [
+            RepoSpec(
+                url="https://github.com/owner/repo",
+                mount_path="/repos/repo",
+                token="ghp_fake",
+            )
+        ]
+        with pytest.raises(ProvisionError) as ei:
+            provision_session(user, _spec(user, repos=repos))
+        assert ei.value.stage == "git_credentials"
+        assert fake_sprites.deleted == ["sprite-x"]
+
 
 class TestDestroyAndResumeSession:
     """destroy_session is a best-effort cleanup; resume_session is the

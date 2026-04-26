@@ -446,3 +446,46 @@ async def test_stream_view_clamps_negative_since_to_zero(async_client: AsyncClie
     ]
     output_ids = [p["id"] for p in data_payloads if p.get("type") == "output"]
     assert len(output_ids) == 3
+
+
+@pytest.mark.django_db(transaction=True)
+async def test_stream_emits_heartbeat_after_15s_idle(user, mocker):
+    """The generator yields an empty string (SSE comment frame) every 15
+    seconds of clock time when there are no new chunks. Without this,
+    intermediate proxies (Cloudflare, Render) would close the SSE
+    connection after their idle timeout and clients would silently
+    reconnect, missing events emitted in the gap.
+
+    Mocks `time.monotonic()` to make the heartbeat trigger fire on the
+    second loop iteration without actually sleeping 15 seconds in tests."""
+    session = await AgentSession.objects.acreate(
+        user=user, runtime="claude", prompt="x", status="running"
+    )
+
+    # Sequence of values returned by time.monotonic on each call:
+    # 1: init last_heartbeat
+    # 2: init last_chunk_time
+    # 3: first loop's `now =` — 15s after init triggers the heartbeat
+    # We then flip the session to terminated so the generator exits.
+    monotonic_values = iter([0.0, 0.0, 15.0, 15.5])
+
+    def fake_monotonic():
+        try:
+            return next(monotonic_values)
+        except StopIteration:
+            return 100.0
+
+    mocker.patch("agent_on_demand.stream.time.monotonic", side_effect=fake_monotonic)
+
+    # Use asyncio.sleep that yields immediately so we can step through the loop.
+    async def fake_sleep(_d):
+        # Mark session terminated after the first heartbeat so the next loop
+        # iteration exits cleanly.
+        await AgentSession.objects.filter(pk=session.pk).aupdate(status="terminated")
+
+    mocker.patch("agent_on_demand.stream.asyncio.sleep", side_effect=fake_sleep)
+
+    events = [event async for event in stream_session_from_db(str(session.id))]
+    # First non-terminal yield is the heartbeat (empty string), then the
+    # terminated-status event closes out.
+    assert "" in events, f"expected heartbeat empty-string yield, got {events!r}"
