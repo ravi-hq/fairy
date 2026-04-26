@@ -36,7 +36,12 @@ VALID_NETWORKING_TYPES = frozenset({"unrestricted", "limited"})
 # Valid POSIX shell variable names. Keys that don't match this would
 # corrupt /tmp/aod-env when written as ``KEY=value`` shell assignments —
 # e.g. ``BAD-KEY`` would parse as ``BAD`` minus the value of ``KEY``.
-ENV_VAR_KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+#
+# Always paired with ``.fullmatch()`` rather than ``.match()``: in default
+# (non-MULTILINE) mode, ``$`` matches before a trailing ``\n`` too, so an
+# anchored ``^...$`` regex with ``.match()`` would accept ``"GOOD\nBAD"``
+# and split the resulting line in /tmp/aod-env.
+ENV_VAR_KEY_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
 
 def validate_packages(v: dict) -> dict:
@@ -63,7 +68,7 @@ def validate_env_vars(v: dict) -> dict:
     first invalid key.
     """
     for key in v:
-        if not ENV_VAR_KEY_RE.match(key):
+        if not ENV_VAR_KEY_RE.fullmatch(key):
             raise ValueError(f"Invalid env_var key {key!r}: must match [A-Za-z_][A-Za-z0-9_]*")
     return v
 

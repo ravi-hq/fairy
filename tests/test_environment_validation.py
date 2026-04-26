@@ -114,6 +114,16 @@ def test_validate_env_vars_empty_key_rejects():
         validate_env_vars({"": "v"})
 
 
+def test_validate_env_vars_embedded_newline_rejects():
+    """A literal newline inside a key would split the
+    ``KEY=value`` heredoc line into two — turning ``BAD\\nINJECT=evil``
+    on the second line into a separate shell assignment. ``.match()``
+    against ``r"^...$"`` would have accepted this (``$`` matches before
+    a trailing ``\\n`` in default mode); ``.fullmatch()`` rejects."""
+    with pytest.raises(ValueError, match="Invalid env_var key"):
+        validate_env_vars({"GOOD\nINJECT": "v"})
+
+
 def test_validate_env_vars_returns_input_object():
     v = {"MY_VAR": "value"}
     assert validate_env_vars(v) is v
@@ -207,17 +217,21 @@ def test_valid_networking_types_contents():
 
 
 def test_env_var_key_re_accepts_valid_names():
-    assert ENV_VAR_KEY_RE.match("MY_VAR") is not None
-    assert ENV_VAR_KEY_RE.match("_x") is not None
-    assert ENV_VAR_KEY_RE.match("a") is not None
+    assert ENV_VAR_KEY_RE.fullmatch("MY_VAR") is not None
+    assert ENV_VAR_KEY_RE.fullmatch("_x") is not None
+    assert ENV_VAR_KEY_RE.fullmatch("a") is not None
 
 
 def test_env_var_key_re_rejects_invalid_names():
-    """Anchored regex — must match the *whole* name, not a substring.
-    Pinned because dropping the ``$`` anchor would let
-    ``MY_VAR=evil`` slip through."""
-    assert ENV_VAR_KEY_RE.match("1bad") is None
-    assert ENV_VAR_KEY_RE.match("bad-name") is None
-    assert ENV_VAR_KEY_RE.match("") is None
-    # Substring match would accept this; anchored match rejects.
-    assert ENV_VAR_KEY_RE.match("good=evil") is None
+    """Validator pairs the regex with ``.fullmatch()`` — must match the
+    *whole* string, not a substring or up-to-trailing-``\\n``. Pinned
+    because switching to ``.match()`` (or re-adding ``^...$`` anchors)
+    would let ``MY_VAR=evil`` or ``GOOD\\nBAD`` slip through."""
+    assert ENV_VAR_KEY_RE.fullmatch("1bad") is None
+    assert ENV_VAR_KEY_RE.fullmatch("bad-name") is None
+    assert ENV_VAR_KEY_RE.fullmatch("") is None
+    # Substring match would accept this; fullmatch rejects.
+    assert ENV_VAR_KEY_RE.fullmatch("good=evil") is None
+    # Default-mode ``$`` matches before a trailing ``\n`` — fullmatch
+    # rejects, ``.match()`` against ``r"^...$"`` would have accepted.
+    assert ENV_VAR_KEY_RE.fullmatch("GOOD\nBAD") is None
