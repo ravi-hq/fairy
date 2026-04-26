@@ -142,6 +142,19 @@ jobs:
       - run: uv sync --all-extras
       - run: uv run python -m scripts.validate_openapi
 
+  check-schemas:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+      - run: uv sync --all-extras
+      - run: make check-schemas
+
   typescript-sdk:
     runs-on: ubuntu-latest
     defaults:
