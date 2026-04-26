@@ -424,7 +424,7 @@ def agent_detail(request, agent_id):
         with transaction.atomic():
             try:
                 agent = Agent.objects.select_for_update().get(pk=agent_id, user=request.user)
-            except (Agent.DoesNotExist, ValueError):
+            except Agent.DoesNotExist:
                 return JsonResponse({"detail": "Agent not found"}, status=404)
 
             if agent.is_archived:
