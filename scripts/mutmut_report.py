@@ -20,10 +20,12 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import fnmatch
 import html
 import json
 import subprocess
 import sys
+import tomllib
 from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -34,6 +36,13 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 MUTANTS_DIR = REPO_ROOT / "mutants"
 CICD_STATS_PATH = MUTANTS_DIR / "mutmut-cicd-stats.json"
 REPORT_PATH = MUTANTS_DIR / "report.html"
+
+# Source universe for the "what's been mutation-tested vs what hasn't" view
+# is derived live from `[tool.coverage.run]` in pyproject.toml so the two
+# reports always describe the same files. See `_load_coverage_scope()`.
+# `__pycache__` is always omitted regardless of coverage config — it never
+# contains source.
+EXTRA_OMIT_DIRS = {"__pycache__"}
 
 # mutmut exit codes (per mutmut.__main__): 0=survived, 1=killed,
 # 2=timeout, 3=suspicious, 4=skipped, 5=no_tests.
@@ -121,6 +130,110 @@ def _meta_to_source_path(meta_path: Path) -> str:
     return str(rel)[: -len(".meta")]
 
 
+@dataclass(frozen=True)
+class ScopeFile:
+    path: str  # repo-relative, e.g. "src/agent_on_demand/views/agents.py"
+    loc: int  # non-blank, non-comment lines (rough — for sort ranking only)
+
+
+@dataclass
+class Scope:
+    """Universe of source files visible to the report.
+
+    `mutated` is the configured `[tool.mutmut].paths_to_mutate` list (in repo-
+    relative form). `universe` is every .py file under SOURCE_ROOT that
+    survives the same omit rules as `[tool.coverage.run]` — so the two
+    reports describe the same files. `untested` is the difference, sorted by
+    LOC descending so the biggest blind spots surface first.
+    """
+
+    mutated: list[ScopeFile]
+    untested: list[ScopeFile]
+
+    @property
+    def universe_count(self) -> int:
+        return len(self.mutated) + len(self.untested)
+
+    @property
+    def coverage_rate(self) -> float:
+        return len(self.mutated) / self.universe_count if self.universe_count else 0.0
+
+
+def _count_loc(path: Path) -> int:
+    """Non-blank, non-pure-comment lines. Approximation only — used to rank
+    untested files by surface area, not to bill anyone."""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return 0
+    n = 0
+    for raw in text.splitlines():
+        line = raw.strip()
+        if line and not line.startswith("#"):
+            n += 1
+    return n
+
+
+def _load_coverage_scope(pyproject: dict) -> tuple[list[Path], list[str]]:
+    """Read `[tool.coverage.run]` and return (source_dirs, omit_patterns).
+    Both pyproject keys accept either a string or a list — normalize."""
+    cov = pyproject.get("tool", {}).get("coverage", {}).get("run", {})
+    raw_source = cov.get("source", []) or []
+    raw_omit = cov.get("omit", []) or []
+    sources = [raw_source] if isinstance(raw_source, str) else list(raw_source)
+    omits = [raw_omit] if isinstance(raw_omit, str) else list(raw_omit)
+    source_dirs = [REPO_ROOT / s for s in sources]
+    return source_dirs, omits
+
+
+def _is_omitted(rel_path: str, omit_patterns: list[str]) -> bool:
+    """Match coverage's omit semantics: each pattern is fnmatch-style. We
+    test against the repo-relative path. Coverage actually evaluates
+    against an absolute path internally, but its docs and example
+    patterns (`*/migrations/*`, `src/.../admin.py`) work cleanly against
+    a relative path too — fnmatch's `*` doesn't cross slashes."""
+    return any(fnmatch.fnmatch(rel_path, pat) for pat in omit_patterns)
+
+
+def _collect_scope() -> Scope:
+    """Read paths_to_mutate from `[tool.mutmut]` and diff against the
+    universe defined by `[tool.coverage.run]`. Both reports describe
+    the same files by construction — no manual sync between this script
+    and pyproject.toml."""
+    pyproject = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text())
+
+    raw_paths = pyproject.get("tool", {}).get("mutmut", {}).get("paths_to_mutate", []) or []
+    # mutmut accepts paths_to_mutate as either a string or a list — normalize
+    # to a list so we don't end up iterating individual chars of a string.
+    configured = [raw_paths] if isinstance(raw_paths, str) else list(raw_paths)
+    mutated_set = set(configured)
+
+    source_dirs, omit_patterns = _load_coverage_scope(pyproject)
+
+    universe: list[ScopeFile] = []
+    seen: set[str] = set()
+    for source_dir in source_dirs:
+        if not source_dir.exists():
+            continue
+        for py_path in sorted(source_dir.rglob("*.py")):
+            if any(part in EXTRA_OMIT_DIRS for part in py_path.parts):
+                continue
+            rel = str(py_path.relative_to(REPO_ROOT))
+            if _is_omitted(rel, omit_patterns):
+                continue
+            if rel in seen:
+                continue
+            seen.add(rel)
+            universe.append(ScopeFile(path=rel, loc=_count_loc(py_path)))
+
+    mutated = [f for f in universe if f.path in mutated_set]
+    untested = sorted(
+        (f for f in universe if f.path not in mutated_set),
+        key=lambda f: (-f.loc, f.path),
+    )
+    return Scope(mutated=mutated, untested=untested)
+
+
 def _collect() -> tuple[dict[str, FileBucket], dict[str, int]]:
     files: dict[str, FileBucket] = {}
     totals: dict[str, int] = defaultdict(int)
@@ -178,7 +291,7 @@ def _heat_color(rate: float) -> str:
     return "#b91c1c"
 
 
-def _render_html(files: dict[str, FileBucket], totals: dict[str, int]) -> str:
+def _render_html(files: dict[str, FileBucket], totals: dict[str, int], scope: Scope) -> str:
     cicd = json.loads(CICD_STATS_PATH.read_text()) if CICD_STATS_PATH.exists() else {}
     generated_at = dt.datetime.now().strftime("%Y-%m-%d %H:%M")
 
@@ -214,6 +327,13 @@ def _render_html(files: dict[str, FileBucket], totals: dict[str, int]) -> str:
     if suspicious:
         parts.append(_stat_card("Suspicious", str(suspicious), "#d97706"))
     parts.append(_stat_card("Total", str(total), "#444"))
+    parts.append(
+        _stat_card(
+            "Files in scope",
+            f"{len(scope.mutated)} / {scope.universe_count}",
+            _heat_color(scope.coverage_rate),
+        )
+    )
     parts.append("</section>")
 
     if cicd and cicd != {"killed": killed, "survived": survived, "total": total}:
@@ -275,6 +395,27 @@ def _render_html(files: dict[str, FileBucket], totals: dict[str, int]) -> str:
                 f"<td>{_bar(func.kill_rate)}</td></tr>"
             )
         parts.append("</tbody></table></details>")
+
+    # Files NOT mutation-tested. Sorted by LOC desc so the biggest blind
+    # spots surface first.
+    parts.append("<h2>Files not yet mutation-tested</h2>")
+    parts.append(
+        f'<p class="meta">{len(scope.untested)} of {scope.universe_count} files in scope. '
+        f"Add to <code>[tool.mutmut].paths_to_mutate</code> in <code>pyproject.toml</code> "
+        f"after the file's tests can demonstrably kill its mutants.</p>"
+    )
+    if scope.untested:
+        parts.append('<table class="files">')
+        parts.append("<thead><tr><th>File</th><th class='num'>LOC (approx)</th></tr></thead>")
+        parts.append("<tbody>")
+        for sf in scope.untested:
+            parts.append(
+                f"<tr><td><code>{html.escape(sf.path)}</code></td>"
+                f"<td class='num'>{sf.loc}</td></tr>"
+            )
+        parts.append("</tbody></table>")
+    else:
+        parts.append('<p class="muted">None — every source file is mutation-tested.</p>')
 
     # Surviving mutants
     parts.append(f"<h2>Surviving mutants ({len(survivors)})</h2>")
@@ -376,7 +517,7 @@ _HEAD = """<!doctype html>
 """
 
 
-def _render_markdown(files: dict[str, FileBucket], totals: dict[str, int]) -> str:
+def _render_markdown(files: dict[str, FileBucket], totals: dict[str, int], scope: Scope) -> str:
     total = totals.get("total", 0)
     killed = totals.get("killed", 0)
     survived = totals.get("survived", 0)
@@ -427,6 +568,16 @@ def _render_markdown(files: dict[str, FileBucket], totals: dict[str, int]) -> st
         )
     lines.append("")
 
+    # Scope: how much of the codebase is in the mutation-testing safety net.
+    scope_pct = f"{scope.coverage_rate:.1%}"
+    untested_count = len(scope.untested)
+    lines.append(
+        f"**Scope:** {len(scope.mutated)} of {scope.universe_count} files "
+        f"({scope_pct}) under `src/agent_on_demand/` are mutation-tested. "
+        f"{untested_count} not yet covered."
+    )
+    lines.append("")
+
     lines.append("### By file")
     lines.append("")
     lines.append("| File | Killed | Survived | Total | Rate |")
@@ -436,6 +587,30 @@ def _render_markdown(files: dict[str, FileBucket], totals: dict[str, int]) -> st
             f"| `{path}` | {fb.killed} | {fb.survived} | {fb.total} | {fb.kill_rate:.1%} |"
         )
     lines.append("")
+
+    if scope.untested:
+        # Top blind spots first (biggest LOC). Cap at 10 to keep the PR
+        # comment readable; the full list lives in the HTML artifact.
+        # GitHub's markdown renderer requires <summary> content on the
+        # same physical line as the opening tag — splitting across
+        # lines.append() calls produces a broken collapsible.
+        top = scope.untested[:10]
+        lines.append(
+            f"<details><summary>Files not yet mutation-tested "
+            f"({len(scope.untested)} total) — top blind spots by LOC</summary>"
+        )
+        lines.append("")
+        lines.append("| File | LOC (approx) |")
+        lines.append("|---|---:|")
+        for sf in top:
+            lines.append(f"| `{sf.path}` | {sf.loc} |")
+        if len(scope.untested) > len(top):
+            lines.append(
+                f"| _… {len(scope.untested) - len(top)} more — see HTML artifact_ | |"
+            )
+        lines.append("")
+        lines.append("</details>")
+        lines.append("")
 
     lines.append(f"### Surviving mutants ({len(survivors)})")
     lines.append("")
@@ -476,12 +651,13 @@ def main() -> int:
             "No *.py.meta files under mutants/ — run `make mutation-test` first.", file=sys.stderr
         )
         return 1
+    scope = _collect_scope()
 
     if args.format == "html":
-        REPORT_PATH.write_text(_render_html(files, totals))
+        REPORT_PATH.write_text(_render_html(files, totals, scope))
         print(f"Wrote {REPORT_PATH}")
     else:
-        sys.stdout.write(_render_markdown(files, totals))
+        sys.stdout.write(_render_markdown(files, totals, scope))
     return 0
 
 
