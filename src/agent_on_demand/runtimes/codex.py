@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, Literal
 
 from sprites import Sprite
 
-from agent_on_demand.session_service.errors import ProvisionError
+from agent_on_demand.runtimes.codex_config import render_codex_mcp_config
 
 if TYPE_CHECKING:
     from agent_on_demand.session_service.specs import McpServerSpec, SessionSpec
@@ -44,40 +44,13 @@ class CodexRuntime:
         spec: "SessionSpec",
         mcp_servers: list["McpServerSpec"],
     ) -> None:
+        # The TOML rendering — including Codex's strict bearer-token and
+        # type validation — lives in agent_on_demand.runtimes.codex_config
+        # so it can be mutation-tested without a Sprite. Skip the file
+        # write entirely when there's nothing to render; matches the
+        # historical behavior of writing the config file only on demand.
         if not mcp_servers:
             return
-        lines: list[str] = []
-        for s in mcp_servers:
-            lines.append(f"[mcp_servers.{s.name}]")
-            if s.type == "url":
-                lines.append(f'url = "{s.url}"')
-                for key, val in s.headers.items():
-                    if key.lower() == "authorization" and val.startswith("Bearer "):
-                        token = val.removeprefix("Bearer ").strip()
-                        if token.startswith("${") and token.endswith("}"):
-                            lines.append(f'bearer_token_env_var = "{token[2:-1]}"')
-                        else:
-                            raise ProvisionError(
-                                f"MCP server {s.name!r}: Codex only supports env-var Bearer "
-                                f"tokens (e.g. 'Bearer ${{MY_TOKEN}}'); got a literal value",
-                                stage="write_config",
-                            )
-                    else:
-                        raise ProvisionError(
-                            f"MCP server {s.name!r}: Codex config does not support header "
-                            f"{key!r}; only 'Authorization: Bearer ${{ENV_VAR}}' is supported",
-                            stage="write_config",
-                        )
-                lines.append("required = true")
-            elif s.type == "stdio":
-                lines.append(f'command = "{s.command}"')
-                if s.args:
-                    args_str = ", ".join(f'"{a}"' for a in s.args)
-                    lines.append(f"args = [{args_str}]")
-                if s.env:
-                    lines.append(f"[mcp_servers.{s.name}.env]")
-                    for key, val in s.env.items():
-                        lines.append(f'{key} = "{val}"')
-            lines.append("")
+        body = render_codex_mcp_config(mcp_servers)
         fs = sprite.filesystem()
-        (fs / "home/sprite/.codex/config.toml").write_text("\n".join(lines))
+        (fs / "home/sprite/.codex/config.toml").write_text(body)
