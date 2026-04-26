@@ -1,0 +1,480 @@
+{
+  "agent_on_demand.views.agents.CreateAgentRequest": {
+    "properties": {
+      "description": {
+        "default": "",
+        "title": "Description",
+        "type": "string"
+      },
+      "environment_id": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Environment Id"
+      },
+      "mcp_servers": {
+        "items": {},
+        "title": "Mcp Servers",
+        "type": "array"
+      },
+      "metadata": {
+        "additionalProperties": true,
+        "title": "Metadata",
+        "type": "object"
+      },
+      "model": {
+        "maxLength": 100,
+        "title": "Model",
+        "type": "string"
+      },
+      "name": {
+        "maxLength": 200,
+        "title": "Name",
+        "type": "string"
+      },
+      "runtime": {
+        "maxLength": 32,
+        "title": "Runtime",
+        "type": "string"
+      },
+      "skills": {
+        "items": {},
+        "title": "Skills",
+        "type": "array"
+      },
+      "system": {
+        "default": "",
+        "title": "System",
+        "type": "string"
+      }
+    },
+    "required": [
+      "name",
+      "model",
+      "runtime"
+    ],
+    "title": "CreateAgentRequest",
+    "type": "object"
+  },
+  "agent_on_demand.views.agents.UpdateAgentRequest": {
+    "properties": {
+      "description": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Description"
+      },
+      "environment_id": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Environment Id"
+      },
+      "mcp_servers": {
+        "anyOf": [
+          {
+            "items": {},
+            "type": "array"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Mcp Servers"
+      },
+      "metadata": {
+        "anyOf": [
+          {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Metadata"
+      },
+      "model": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Model"
+      },
+      "name": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Name"
+      },
+      "runtime": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Runtime"
+      },
+      "skills": {
+        "anyOf": [
+          {
+            "items": {},
+            "type": "array"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Skills"
+      },
+      "system": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "System"
+      },
+      "version": {
+        "description": "Current version \u2014 optimistic concurrency check",
+        "title": "Version",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "version"
+    ],
+    "title": "UpdateAgentRequest",
+    "type": "object"
+  },
+  "agent_on_demand.views.environments.CreateEnvironmentRequest": {
+    "properties": {
+      "env_vars": {
+        "additionalProperties": {
+          "type": "string"
+        },
+        "title": "Env Vars",
+        "type": "object"
+      },
+      "name": {
+        "maxLength": 200,
+        "title": "Name",
+        "type": "string"
+      },
+      "networking": {
+        "additionalProperties": true,
+        "title": "Networking",
+        "type": "object"
+      },
+      "packages": {
+        "additionalProperties": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "title": "Packages",
+        "type": "object"
+      },
+      "setup_script": {
+        "default": "",
+        "title": "Setup Script",
+        "type": "string"
+      }
+    },
+    "required": [
+      "name"
+    ],
+    "title": "CreateEnvironmentRequest",
+    "type": "object"
+  },
+  "agent_on_demand.views.environments.UpdateEnvironmentRequest": {
+    "properties": {
+      "env_vars": {
+        "anyOf": [
+          {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Env Vars"
+      },
+      "name": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Name"
+      },
+      "networking": {
+        "anyOf": [
+          {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Networking"
+      },
+      "packages": {
+        "anyOf": [
+          {
+            "additionalProperties": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Packages"
+      },
+      "setup_script": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Setup Script"
+      },
+      "version": {
+        "description": "Current version \u2014 optimistic concurrency check",
+        "title": "Version",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "version"
+    ],
+    "title": "UpdateEnvironmentRequest",
+    "type": "object"
+  },
+  "agent_on_demand.views.sessions.GitHubRepoResource": {
+    "properties": {
+      "authorization_token": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "GitHub PAT for private repos",
+        "title": "Authorization Token"
+      },
+      "mount_path": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Absolute path inside the Sprite where repo is cloned. Defaults to /workspace/<repo-name>.",
+        "title": "Mount Path"
+      },
+      "type": {
+        "const": "github_repository",
+        "title": "Type",
+        "type": "string"
+      },
+      "url": {
+        "description": "HTTPS GitHub repo URL, e.g. https://github.com/org/repo",
+        "title": "Url",
+        "type": "string"
+      }
+    },
+    "required": [
+      "type",
+      "url"
+    ],
+    "title": "GitHubRepoResource",
+    "type": "object"
+  },
+  "agent_on_demand.views.sessions.PromptRequest": {
+    "properties": {
+      "prompt": {
+        "description": "The prompt to send to the agent",
+        "title": "Prompt",
+        "type": "string"
+      },
+      "timeout": {
+        "default": 600,
+        "description": "Max seconds",
+        "maximum": 3600,
+        "minimum": 10,
+        "title": "Timeout",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "prompt"
+    ],
+    "title": "PromptRequest",
+    "type": "object"
+  },
+  "agent_on_demand.views.sessions.RunRequest": {
+    "$defs": {
+      "GitHubRepoResource": {
+        "properties": {
+          "authorization_token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "GitHub PAT for private repos",
+            "title": "Authorization Token"
+          },
+          "mount_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Absolute path inside the Sprite where repo is cloned. Defaults to /workspace/<repo-name>.",
+            "title": "Mount Path"
+          },
+          "type": {
+            "const": "github_repository",
+            "title": "Type",
+            "type": "string"
+          },
+          "url": {
+            "description": "HTTPS GitHub repo URL, e.g. https://github.com/org/repo",
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "url"
+        ],
+        "title": "GitHubRepoResource",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "agent_id": {
+        "description": "Agent ID to use for this session",
+        "title": "Agent Id",
+        "type": "string"
+      },
+      "environment_id": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Environment ID (overrides agent default)",
+        "title": "Environment Id"
+      },
+      "prompt": {
+        "description": "The prompt to send to the agent",
+        "title": "Prompt",
+        "type": "string"
+      },
+      "resources": {
+        "description": "GitHub repositories to clone into the session",
+        "items": {
+          "$ref": "#/$defs/GitHubRepoResource"
+        },
+        "title": "Resources",
+        "type": "array"
+      },
+      "timeout": {
+        "default": 600,
+        "description": "Max seconds",
+        "maximum": 3600,
+        "minimum": 10,
+        "title": "Timeout",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "agent_id",
+      "prompt"
+    ],
+    "title": "RunRequest",
+    "type": "object"
+  }
+}
