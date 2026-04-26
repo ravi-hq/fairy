@@ -1,7 +1,10 @@
 name: CI
 on:
+  # Run on every pull request regardless of base branch so stacked PRs
+  # (PR #N based on PR #N-1 instead of main) get the same gate coverage as
+  # PRs that target main directly. The `concurrency` group below de-dupes
+  # superseded runs on the same ref.
   pull_request:
-    branches: [main]
   push:
     branches: [main]
 
