@@ -101,8 +101,13 @@ def test_terminate_rejection_response_only_has_detail_key():
 # === check_can_delete ===
 
 
-def test_delete_allows_pending():
-    assert check_can_delete("pending") is None
+def test_delete_rejects_pending():
+    """A pending session has provision_session_task in flight; deleting the
+    row mid-provision orphans the Sprite or crashes the task."""
+    resp = check_can_delete("pending")
+    assert resp is not None
+    assert resp.status_code == 409
+    assert body(resp) == {"detail": "Cannot delete an active session"}
 
 
 def test_delete_allows_completed():
@@ -124,7 +129,7 @@ def test_delete_rejects_running():
     resp = check_can_delete("running")
     assert resp is not None
     assert resp.status_code == 409
-    assert body(resp) == {"detail": "Cannot delete a running session"}
+    assert body(resp) == {"detail": "Cannot delete an active session"}
 
 
 def test_delete_rejection_response_only_has_detail_key():

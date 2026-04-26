@@ -45,9 +45,12 @@ def check_can_terminate(status: str) -> JsonResponse | None:
 
 
 def check_can_delete(status: str) -> JsonResponse | None:
-    """Reject delete while running (would leave an orphaned Sprite). All
-    other states — including terminated — are deletable.
+    """Reject delete while the session is active. ``pending`` has a
+    provision_session_task in flight; deleting the row mid-provision either
+    crashes the task or leaves the Sprite orphaned (pre_delete fired before
+    the Sprite existed). ``running`` would also leave an orphaned Sprite.
+    All other states — including terminated — are deletable.
     """
-    if status == "running":
-        return JsonResponse({"detail": "Cannot delete a running session"}, status=409)
+    if status in ("running", "pending"):
+        return JsonResponse({"detail": "Cannot delete an active session"}, status=409)
     return None
