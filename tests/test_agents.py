@@ -182,6 +182,52 @@ def test_create_agent_runtime_model_mismatch(client: Client, auth_headers):
 
 
 @pytest.mark.django_db
+def test_create_agent_mcp_servers_entry_must_be_object(client: Client, auth_headers):
+    """mcp_servers entries must each be JSON objects. A bare string slips
+    past the JSON-parse validation but must reject at the field validator
+    with a 422 — without that branch, downstream code that reads
+    ``server["name"]`` would crash with a 500."""
+    resp = client.post(
+        "/agents",
+        data=json.dumps(
+            {
+                "name": "Bad",
+                "model": "anthropic/claude-sonnet-4-6",
+                "runtime": "claude",
+                "mcp_servers": ["just-a-string"],
+            }
+        ),
+        content_type="application/json",
+        **auth_headers,
+    )
+    assert resp.status_code == 422
+    assert "must be an object" in str(resp.json()["detail"])
+
+
+@pytest.mark.django_db
+def test_update_agent_with_unknown_model_returns_422(client: Client, auth_headers, user):
+    """UpdateAgentRequest validates the new model the same way
+    CreateAgentRequest does — an update that flips an agent to a
+    not-in-catalog model must reject up-front, not at next session
+    create time."""
+    agent = Agent.objects.create(
+        user=user,
+        name="A",
+        model="anthropic/claude-sonnet-4-6",
+        runtime="claude",
+        version=1,
+    )
+    resp = client.put(
+        f"/agents/{agent.id}",
+        data=json.dumps({"version": 1, "model": "unknown/model-id"}),
+        content_type="application/json",
+        **auth_headers,
+    )
+    assert resp.status_code == 422
+    assert "Unknown model" in str(resp.json()["detail"])
+
+
+@pytest.mark.django_db
 def test_create_agent_missing_fields(client: Client, auth_headers):
     resp = client.post(
         "/agents",

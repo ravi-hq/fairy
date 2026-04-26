@@ -62,6 +62,41 @@ class TestProvisionSessionOrder:
         script = sprite.write_map()["/tmp/aod-provision.sh"]
         assert "chmod 600 /tmp/aod-env" in script
 
+    @pytest.mark.parametrize(
+        "runtime_name,expected_dir",
+        [
+            ("codex", "/home/sprite/.codex"),
+            ("gemini", "/home/sprite/.gemini"),
+            ("opencode", "/home/sprite/.config/opencode"),
+        ],
+    )
+    def test_mcp_servers_mkdir_in_provision_script_per_runtime(
+        self, user, fake_sprites, runtime_name, expected_dir
+    ):
+        """Runtimes whose MCP config file lives under a non-default directory
+        need that directory created before the post-script ``fs.write``.
+        Without the mkdir, the runtime config write fails with stage=
+        runtime_config and the session never reaches running. Claude is
+        excluded — its config goes to ``/home/sprite/.claude.json`` and the
+        parent already exists."""
+        from agent_on_demand.session_service.specs import McpServerSpec
+
+        mcp_servers = [McpServerSpec(name="srv", type="url", url="https://example.com/mcp")]
+        provision_session(
+            user,
+            _spec(user, runtime=RUNTIMES[runtime_name], mcp_servers=mcp_servers),
+        )
+        script = fake_sprites.last_sprite().write_map()["/tmp/aod-provision.sh"]
+        assert f"mkdir -p {expected_dir}" in script
+
+    def test_no_mcp_servers_no_runtime_mkdir(self, user, fake_sprites):
+        """Without MCP servers, the runtime-specific config dirs are not
+        created — the mkdir line is only emitted for post-script writes that
+        actually need the parent dir to exist."""
+        provision_session(user, _spec(user, runtime=RUNTIMES["codex"]))
+        script = fake_sprites.last_sprite().write_map()["/tmp/aod-provision.sh"]
+        assert "/home/sprite/.codex" not in script
+
     def test_single_bash_command_invokes_provision_script(self, user, fake_sprites):
         provision_session(user, _spec(user))
         sprite = fake_sprites.last_sprite()
@@ -236,6 +271,60 @@ class TestProvisionSessionFailureHandling:
         assert ei.value.stage == "git_credentials"
         assert fake_sprites.deleted == ["sprite-x"]
 
+    def test_unwrapped_sprite_error_falls_back_to_unknown_stage(self, user, fake_sprites, mocker):
+        """Each per-stage helper wraps its own SpriteError as
+        ProvisionError(stage=...). If a future helper forgets that wrap and
+        leaks SpriteError, the catch-all in provision_session must surface
+        it as ProvisionError(stage="unknown") *and* still trigger
+        best_effort_delete — otherwise the orphaned Sprite leaks.
+
+        Reaches the branch by patching one of the helpers (`_install_runtime`)
+        to raise SpriteError directly, bypassing its own wrapper."""
+        from agent_on_demand.session_service import provisioning
+
+        mocker.patch.object(provisioning, "_install_runtime", side_effect=SpriteError("unwrapped"))
+
+        with pytest.raises(ProvisionError) as ei:
+            provision_session(user, _spec(user))
+        assert ei.value.stage == "unknown"
+        assert "Failed to prepare Sprite: unwrapped" in str(ei.value)
+        # The orphaned Sprite must be cleaned up — without that, every
+        # unwrapped helper leak permanently leaks a Sprite per call.
+        assert fake_sprites.deleted == ["sprite-x"]
+
+    def test_provision_setup_failure_includes_stderr_tail_in_detail(
+        self, user, fake_sprites, mocker
+    ):
+        """When the provision script fails, ProvisionError.detail must
+        include the captured stderr tail. Without that branch, operators
+        see only "Provisioning script failed: <SpriteError msg>" — apt or
+        git errors that are critical to triage stay hidden behind the
+        opaque transport error.
+
+        Reaches the branch by arranging for the bash invocation to raise
+        SpriteError after the fake writes a stderr blob to the buffer
+        the provisioning code assigned to `cmd.stderr`."""
+        original_create = fake_sprites.create_sprite
+
+        def wrapped(name):
+            sprite = original_create(name)
+            sprite.raise_on(
+                lambda argv: argv[:2] == ("bash", "-l"),
+                SpriteError("exit 1"),
+                stderr=b"E: Unable to locate package not-a-real-pkg\n",
+            )
+            return sprite
+
+        mocker.patch.object(fake_sprites, "create_sprite", side_effect=wrapped)
+
+        with pytest.raises(ProvisionError) as ei:
+            provision_session(user, _spec(user))
+        assert ei.value.stage == "provision_setup"
+        # Both the SpriteError message and the captured stderr tail must
+        # appear in the detail — operators rely on the stderr to triage.
+        assert "Provisioning script failed: exit 1" in str(ei.value)
+        assert "stderr:\nE: Unable to locate package not-a-real-pkg" in str(ei.value)
+
     def test_write_runtime_config_sprite_error_tags_stage(self, user, fake_sprites):
         """A SpriteError raised while the runtime writes its config (claude's
         ``.claude.json`` with mcp_servers) must surface as stage=runtime_config.
@@ -383,6 +472,22 @@ class TestProvisionStageEvents:
         """Backwards-compat path: tests that don't pass session_id emit nothing."""
         provision_session(user, _spec(user))
         assert AgentSessionLog.objects.count() == 0
+
+
+class TestPackageCommands:
+    """`_package_commands` translates a (manager, packages) pair into shell
+    install commands inlined in the provision script. The dispatch is
+    keyed on six known managers; an unrecognized one must raise loudly so
+    a future drift between `PACKAGE_MANAGER_ORDER` and the dispatch (or
+    a new manager added to `VALID_PACKAGE_MANAGERS` without a builder)
+    fails at provision time instead of silently dropping the user's
+    packages."""
+
+    def test_unknown_manager_raises(self):
+        from agent_on_demand.session_service.provisioning import _package_commands
+
+        with pytest.raises(ValueError, match="Unsupported package manager: 'yarn'"):
+            _package_commands("yarn", ["express"])
 
 
 class TestProvisionSessionEnvFileShape:

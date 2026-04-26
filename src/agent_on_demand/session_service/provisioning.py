@@ -267,12 +267,6 @@ def _run_provision_setup(sprite: Sprite, spec: SessionSpec, session_id: str | No
     is the single expensive round trip — everything shell-flavoured
     (chmod, package install, git clone, user setup) runs inside it."""
     script = _build_provision_script(spec)
-    if script is None:
-        # Nothing to do (no packages, no repos, no user setup, no /tmp files
-        # to chmod... actually chmod on /tmp/aod-env always needs running).
-        # _build_provision_script always returns non-None because chmod on
-        # ENV_FILE_PATH is unconditional, so we shouldn't hit this.
-        return
     with stage_timer(session_id, STAGE_PROVISION_SETUP):
         try:
             fs = sprite.filesystem()
@@ -388,7 +382,15 @@ def _directories_for_post_script_writes(spec: SessionSpec) -> list[str]:
 def _package_commands(manager: str, pkgs: list[str]) -> list[str]:
     """Shell command strings for a single package manager, inlined into the
     provision script. They rely on login-shell PATH (script is invoked with
-    `bash -l`)."""
+    `bash -l`).
+
+    The API validator (`VALID_PACKAGE_MANAGERS` in `views/environments.py`)
+    blocks unknown managers at request time, and the caller iterates
+    `PACKAGE_MANAGER_ORDER`, so in practice this only sees the six managers
+    branched on below. Raising on a mismatch turns a future drift bug
+    (manager added to ORDER but not to this dispatch, or vice versa) into a
+    loud provision-time failure instead of silently dropping the user's
+    packages."""
     quoted = " ".join(shlex.quote(p) for p in pkgs)
     if manager == "apt":
         return [f"apt-get update -qq && apt-get install -y {quoted}"]
@@ -402,7 +404,7 @@ def _package_commands(manager: str, pkgs: list[str]) -> list[str]:
         return [f"gem install {quoted}"]
     if manager == "go":
         return [f"go install {shlex.quote(p)}" for p in pkgs]
-    return []
+    raise ValueError(f"Unsupported package manager: {manager!r}")
 
 
 def _write_runtime_config(
