@@ -5,7 +5,7 @@ canonicalization, and the per-RunRequest dedup/limit checks can be
 mutation-tested in isolation. The view layer keeps the wiring; this
 module is pure (string in, validated string out, raises ``ValueError``).
 
-Three pieces:
+Four pieces:
 
   - ``validate_github_url``: must match
     ``https://github.com/<owner>/<repo>(.git)?``. Returns the URL with
@@ -16,8 +16,8 @@ Three pieces:
     predictable.
   - ``resolved_mount_path``: derives the default mount path from the
     repo URL when the user didn't pick one.
-  - ``validate_resources``: per-RunRequest list-level checks (max 10,
-    no duplicate mount paths after resolution).
+  - ``validate_resources_count_and_dedup``: per-RunRequest list-level
+    checks (max 10, no duplicate mount paths after resolution).
 
 The URL validation is the kind of thing that can silently weaken in
 a refactor — drop the anchors and a malicious URL like
@@ -32,7 +32,11 @@ import re
 
 # ``https://github.com/<owner>/<repo>(.git)?`` — anchored at both ends.
 # Underscore, dot, and hyphen allowed in owner / repo segments.
-GITHUB_URL_RE = re.compile(r"^https://github\.com/[\w.-]+/[\w.-]+(\.git)?$")
+# ``re.ASCII`` is load-bearing: without it ``\w`` is Unicode-aware in
+# Python 3, so a URL like ``https://github.com/ów/rëpo`` would pass
+# (GitHub itself rejects such names, but the validator should match
+# the documented ASCII-only intent rather than rely on the upstream).
+GITHUB_URL_RE = re.compile(r"^https://github\.com/[\w.-]+/[\w.-]+(\.git)?$", re.ASCII)
 
 # Maximum number of GitHub repositories per session. Each one is a git
 # clone in the provision script — large lists slow startup linearly.
@@ -78,7 +82,7 @@ def resolved_mount_path(url: str, mount_path: str | None) -> str:
     return f"/workspace/{repo_name}"
 
 
-def validate_resources_count_and_dedup(mount_paths: list[str], count: int) -> None:
+def validate_resources_count_and_dedup(mount_paths: list[str]) -> None:
     """List-level invariants for the resources field on a RunRequest:
 
       - At most ``MAX_RESOURCES_PER_SESSION`` resources.
@@ -90,7 +94,7 @@ def validate_resources_count_and_dedup(mount_paths: list[str], count: int) -> No
     resolved mount paths; this module doesn't see the per-resource
     objects.
     """
-    if count > MAX_RESOURCES_PER_SESSION:
+    if len(mount_paths) > MAX_RESOURCES_PER_SESSION:
         raise ValueError(f"Maximum {MAX_RESOURCES_PER_SESSION} resources per session")
     if len(mount_paths) != len(set(mount_paths)):
         raise ValueError("Duplicate mount_path in resources")

@@ -122,7 +122,7 @@ class RunRequest(BaseModel):
     @field_validator("resources")
     @classmethod
     def _validate_resources(cls, v: list[GitHubRepoResource]) -> list[GitHubRepoResource]:
-        validate_resources_count_and_dedup([r.resolved_mount_path() for r in v], len(v))
+        validate_resources_count_and_dedup([r.resolved_mount_path() for r in v])
         return v
 
 

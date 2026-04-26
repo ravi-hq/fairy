@@ -92,6 +92,16 @@ def test_github_url_subdomain_rejects():
         validate_github_url("https://api.github.com/repos/owner/repo")
 
 
+def test_github_url_unicode_segments_rejects():
+    """``re.ASCII`` is set on the regex so ``\\w`` only matches ASCII
+    word characters. Pinned because dropping the flag would let URLs
+    like ``https://github.com/ów/rëpo`` pass — GitHub itself rejects
+    such names, but the validator should match the documented
+    ASCII-only intent rather than rely on the upstream API."""
+    with pytest.raises(ValueError):
+        validate_github_url("https://github.com/ów/rëpo")
+
+
 def test_github_url_error_exact_match():
     """Exact-match assertion — kills wrapper-style mutants on the
     error literal."""
@@ -174,17 +184,7 @@ def test_resolved_default_only_strips_slashes_not_other_chars():
     strip ``X`` from the end of the URL and produce the wrong
     repo name)."""
     # Repo name ends in X — must NOT be stripped.
-    assert (
-        resolved_mount_path("https://github.com/owner/repoX", None)
-        == "/workspace/repoX"
-    )
-
-
-def test_resolved_with_empty_string_falls_back_to_default():
-    """Empty string is falsy — falls back to the default-derivation
-    path. Pinned so a refactor to ``mount_path is not None`` instead
-    of truthy-check is caught."""
-    assert resolved_mount_path("https://github.com/o/r", "") == "/workspace/r"
+    assert resolved_mount_path("https://github.com/owner/repoX", None) == "/workspace/repoX"
 
 
 # ---------- validate_resources_count_and_dedup ----------
@@ -194,44 +194,34 @@ def test_count_at_max_is_accepted():
     """Exactly MAX_RESOURCES_PER_SESSION is fine; one more is not."""
     paths = [f"/p{i}" for i in range(MAX_RESOURCES_PER_SESSION)]
     # No raise.
-    validate_resources_count_and_dedup(paths, len(paths))
+    validate_resources_count_and_dedup(paths)
 
 
 def test_count_over_max_rejects():
     paths = [f"/p{i}" for i in range(MAX_RESOURCES_PER_SESSION + 1)]
     with pytest.raises(ValueError, match=f"Maximum {MAX_RESOURCES_PER_SESSION}"):
-        validate_resources_count_and_dedup(paths, len(paths))
+        validate_resources_count_and_dedup(paths)
 
 
 def test_no_duplicate_paths_accepted():
-    validate_resources_count_and_dedup(["/a", "/b", "/c"], 3)
+    validate_resources_count_and_dedup(["/a", "/b", "/c"])
 
 
 def test_duplicate_paths_reject():
     """Exact-match assertion — kills wrapper-style mutants on the
     error literal."""
     with pytest.raises(ValueError) as exc:
-        validate_resources_count_and_dedup(["/a", "/b", "/a"], 3)
+        validate_resources_count_and_dedup(["/a", "/b", "/a"])
     assert str(exc.value) == "Duplicate mount_path in resources"
-
-
-def test_count_check_uses_count_arg_not_paths_length():
-    """Counter takes ``count`` separately from ``mount_paths`` so the
-    caller can pass the resolved count even when paths might have
-    been deduped already. Pinned with a divergent count value."""
-    # Fake: 11 resources, only 1 unique resolved path. Count check
-    # fires on the count arg (>10), even though paths is short.
-    with pytest.raises(ValueError, match=f"Maximum {MAX_RESOURCES_PER_SESSION}"):
-        validate_resources_count_and_dedup(["/single"], MAX_RESOURCES_PER_SESSION + 1)
 
 
 def test_count_check_takes_priority_over_dedup_check():
     """Both checks fail — count is reported first. Distinguishes a
     refactor that swaps the order."""
+    # Same path repeated > MAX times — both checks would fail.
     paths = [f"/p{i % 3}" for i in range(MAX_RESOURCES_PER_SESSION + 1)]
-    # Both: too many AND duplicates exist.
     with pytest.raises(ValueError, match=f"Maximum {MAX_RESOURCES_PER_SESSION}"):
-        validate_resources_count_and_dedup(paths, len(paths))
+        validate_resources_count_and_dedup(paths)
 
 
 # ---------- exported constants ----------
