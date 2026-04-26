@@ -329,6 +329,46 @@ def test_run_other_users_sessions_do_not_count(
 
 
 @pytest.mark.django_db
+def test_locked_quota_check_catches_race(
+    client: Client, auth_headers, runtime_key, agent, user, settings, mocker
+):
+    """Locked re-check inside the transaction catches sessions created after the
+    early pre-check passes.
+
+    Simulates the race: the pre-check at the top of _create_session sees
+    active_count=0 (below the limit), but by the time the locked re-check inside
+    the transaction runs, another concurrent request has already created a session
+    and the count is now at the limit. The locked check must reject the request.
+    """
+    settings.DEFAULT_MAX_CONCURRENT_SESSIONS = 1
+
+    call_count = {"n": 0}
+
+    def _simulate_race(u):
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            # Pre-check call: return 0 so the early guard passes.
+            return 0
+        # Locked re-check call: another request "sneaked in" between the two checks.
+        return 1
+
+    mocker.patch.object(UserQuota, "active_session_count_for", staticmethod(_simulate_race))
+
+    resp = client.post(
+        "/sessions",
+        data=json.dumps({"agent_id": str(agent.id), "prompt": "hello"}),
+        content_type="application/json",
+        **auth_headers,
+    )
+    assert resp.status_code == 429
+    body = resp.json()
+    assert body["limit"] == 1
+    assert body["active"] == 1
+    # No session should have been created.
+    assert AgentSession.objects.filter(user=user).count() == 0
+
+
+@pytest.mark.django_db
 def test_get_session(client: Client, auth_headers, user):
     session = AgentSession.objects.create(
         user=user, runtime="claude", prompt="test", status="running"

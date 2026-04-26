@@ -174,10 +174,21 @@ def test_execute_turn_preserves_terminated_status(user, mocker):
     session, turn = _make_session_and_turn(user)
     _patch_sprite(mocker, "success")
 
-    # Mock refresh_from_db to simulate DB showing "terminated" after the run.
+    # _execute_turn_body calls refresh_from_db twice: once before save(running)
+    # to catch a terminate that landed while the task was queued, and once
+    # after the sprite returns to catch a terminate that landed during the
+    # turn. This test models the "during the turn" race — the pre-run refresh
+    # sees the unchanged status and the post-run refresh sees "terminated".
+    refresh_count = [0]
+    original_refresh = AgentSession.refresh_from_db
+
     def fake_refresh(self, *args, **kwargs):
         if self.pk == session.pk:
-            self.status = "terminated"
+            refresh_count[0] += 1
+            if refresh_count[0] >= 2:
+                self.status = "terminated"
+                return
+        return original_refresh(self, *args, **kwargs)
 
     mocker.patch.object(AgentSession, "refresh_from_db", fake_refresh)
 
@@ -201,8 +212,44 @@ def test_execute_turn_preserves_terminated_status(user, mocker):
     )
 
     # Only the initial → "running" save. The final save was skipped because
-    # the refresh guard saw "terminated".
+    # the post-run refresh saw "terminated".
     assert statuses_saved == ["running"]
+
+
+@pytest.mark.django_db
+def test_execute_turn_skips_when_terminated_before_running_save(user, mocker):
+    """Race: /terminate commits "terminated" between _execute_turn_inner's
+    fetch and _execute_turn_body's save("running"). The pre-execution refresh
+    catches it so the unconditional save doesn't overwrite the termination,
+    and the sprite is never invoked for a turn that's been cancelled."""
+    session, turn = _make_session_and_turn(user)
+    _, mock_cmd = _patch_sprite(mocker, "success")
+
+    # Pre-flip the DB so the pre-execution refresh reads "terminated".
+    AgentSession.objects.filter(pk=session.pk).update(status="terminated")
+
+    original_save = AgentSession.save
+    statuses_saved = []
+
+    def tracking_save(self, *args, **kwargs):
+        if self.pk == session.pk:
+            statuses_saved.append(self.status)
+        return original_save(self, *args, **kwargs)
+
+    mocker.patch.object(AgentSession, "save", tracking_save)
+
+    execute_turn(
+        session_id=str(session.id),
+        turn_id=turn.id,
+        prompt="hi",
+        mode="run",
+        timeout=10.0,
+    )
+
+    # No session save fired and the sprite command was never invoked.
+    assert statuses_saved == []
+    assert mock_cmd.run.call_count == 0
+    assert AgentSession.objects.get(pk=session.pk).status == "terminated"
 
 
 @pytest.mark.django_db
@@ -367,6 +414,94 @@ def test_provision_task_skips_if_session_terminated(provision_user, fake_sprites
     # Nothing provisioned, nothing enqueued.
     assert fake_sprites.created == []
     assert defer_spy.call_count == 0
+
+
+@pytest.mark.django_db
+def test_provision_task_skips_if_session_deleted(provision_user, fake_sprites, mocker):
+    """Race: user calls DELETE /sessions on a pending session after the
+    view enqueued provision_session_task but before the worker picks it up.
+    The task must swallow AgentSession.DoesNotExist and return cleanly."""
+    session, turn = _make_pending_session(provision_user)
+    session_id = str(session.id)
+    turn_id = turn.id
+    mocker.patch("agent_on_demand.session_service.tasks.destroy_session_task.defer")
+    session.delete()  # cascades to turn + logs
+    defer_spy = mocker.patch("agent_on_demand.session_service.tasks.execute_turn.defer")
+
+    # Does not raise.
+    provision_session_task(
+        session_id=session_id,
+        turn_id=turn_id,
+        prompt="hi",
+        mode="run",
+        timeout=10.0,
+    )
+
+    assert fake_sprites.created == []
+    assert defer_spy.call_count == 0
+
+
+@pytest.mark.django_db
+def test_execute_turn_skips_if_session_deleted(user, mocker):
+    """Race: DELETE /sessions fires between POST /prompt enqueueing execute_turn
+    and the worker picking it up. The task must no-op rather than raise."""
+    session, turn = _make_session_and_turn(user)
+    session_id = str(session.id)
+    turn_id = turn.id
+    mocker.patch("agent_on_demand.session_service.tasks.destroy_session_task.defer")
+    session.delete()
+    resume_spy = mocker.patch("agent_on_demand.session_service.tasks.resume_session")
+
+    # Does not raise.
+    execute_turn(
+        session_id=session_id,
+        turn_id=turn_id,
+        prompt="hi",
+        mode="run",
+        timeout=10.0,
+    )
+
+    # Sprite is never resumed — we bail before the runtime is touched.
+    assert resume_spy.call_count == 0
+
+
+@pytest.mark.django_db
+def test_execute_turn_skips_finalization_if_session_deleted_mid_turn(user, mocker):
+    """Race: user terminates then deletes a session while the turn body is
+    running. The sprite command returns (ExecError or clean), and the
+    post-run `session.refresh_from_db` sees the row gone. Skip the
+    finalization writes (they'd have been cascade-deleted anyway) and don't
+    let DoesNotExist bubble out to the task's error reporter."""
+    session, turn = _make_session_and_turn(user)
+    _patch_sprite(mocker, "success")
+    mocker.patch("agent_on_demand.session_service.tasks.destroy_session_task.defer")
+
+    # The pre-execution refresh runs first; only delete on the post-run
+    # refresh so we exercise the DoesNotExist guard in finalization.
+    refresh_count = [0]
+    original_refresh = AgentSession.refresh_from_db
+
+    def deleting_refresh(self, *args, **kwargs):
+        if self.pk == session.pk:
+            refresh_count[0] += 1
+            if refresh_count[0] >= 2:
+                AgentSession.objects.filter(pk=self.pk).delete()
+        return original_refresh(self, *args, **kwargs)
+
+    mocker.patch.object(AgentSession, "refresh_from_db", deleting_refresh)
+
+    # Does not raise.
+    execute_turn(
+        session_id=str(session.id),
+        turn_id=turn.id,
+        prompt="hi",
+        mode="run",
+        timeout=10.0,
+    )
+
+    # Session row + turn row are gone (cascade-deleted).
+    assert not AgentSession.objects.filter(pk=session.pk).exists()
+    assert not SessionTurn.objects.filter(pk=turn.pk).exists()
 
 
 @pytest.mark.django_db

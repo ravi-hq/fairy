@@ -14,6 +14,7 @@ from agent_on_demand.auth import require_api_key
 from agent_on_demand.models import Agent, AgentVersion, Environment
 from agent_on_demand.models_catalog import MODELS
 from agent_on_demand.runtimes import RUNTIMES
+from agent_on_demand.versioning import check_version_match
 
 
 AGENT_VERSIONED_FIELDS = (
@@ -326,6 +327,10 @@ def agents_list_create(request):
                 env_obj = Environment.objects.get(pk=req.environment_id, user=request.user)
             except (Environment.DoesNotExist, ValueError):
                 return JsonResponse({"detail": "Environment not found"}, status=404)
+            if env_obj.is_archived:
+                return JsonResponse(
+                    {"detail": "Cannot assign an archived environment to an agent"}, status=409
+                )
 
         with transaction.atomic():
             agent = Agent.objects.create(
@@ -410,6 +415,10 @@ def agent_detail(request, agent_id):
                 env_obj = Environment.objects.get(pk=req.environment_id, user=request.user)
             except (Environment.DoesNotExist, ValueError):
                 return JsonResponse({"detail": "Environment not found"}, status=404)
+            if env_obj.is_archived:
+                return JsonResponse(
+                    {"detail": "Cannot assign an archived environment to an agent"}, status=409
+                )
 
         changed = False
         with transaction.atomic():
@@ -421,11 +430,9 @@ def agent_detail(request, agent_id):
             if agent.is_archived:
                 return JsonResponse({"detail": "Cannot update an archived agent"}, status=409)
 
-            if req.version != agent.version:
-                return JsonResponse(
-                    {"detail": f"Version mismatch: expected {agent.version}, got {req.version}"},
-                    status=409,
-                )
+            version_err = check_version_match(req.version, agent.version)
+            if version_err is not None:
+                return version_err
 
             effective_runtime = req.runtime or agent.runtime
             effective_model = req.model or agent.model
