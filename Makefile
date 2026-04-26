@@ -88,7 +88,9 @@ typecheck:
 	uv run mypy
 
 security:
-	uv run pip-audit
+	# CVE-2026-3219: pip itself, no fix version available as of 2026-04-26.
+	# Revisit when pip publishes a fix and remove this ignore.
+	uv run pip-audit --ignore-vuln CVE-2026-3219
 	uv run bandit -r src/ -ll
 
 fmt:
