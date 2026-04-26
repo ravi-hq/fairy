@@ -327,6 +327,10 @@ def agents_list_create(request):
                 env_obj = Environment.objects.get(pk=req.environment_id, user=request.user)
             except (Environment.DoesNotExist, ValueError):
                 return JsonResponse({"detail": "Environment not found"}, status=404)
+            if env_obj.is_archived:
+                return JsonResponse(
+                    {"detail": "Cannot assign an archived environment to an agent"}, status=409
+                )
 
         with transaction.atomic():
             agent = Agent.objects.create(
@@ -428,6 +432,10 @@ def agent_detail(request, agent_id):
                     env_obj = Environment.objects.get(pk=req.environment_id, user=request.user)
                 except (Environment.DoesNotExist, ValueError):
                     return JsonResponse({"detail": "Environment not found"}, status=404)
+                if env_obj.is_archived:
+                    return JsonResponse(
+                        {"detail": "Cannot assign an archived environment to an agent"}, status=409
+                    )
                 if env_obj.id != agent.environment_id:
                     agent.environment = env_obj
                     changed = True
