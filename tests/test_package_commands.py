@@ -123,6 +123,29 @@ def test_apt_shell_quotes_names_with_special_chars():
     assert "'pkg`whoami`'" in cmds[0]
 
 
+def test_npm_shell_quotes_names_with_metacharacters():
+    """Per-manager metachar coverage — a refactor that drops quoting on
+    only one manager (e.g. swapping `_join_quoted` for raw join) must
+    fail at least one test per branch, not just apt/pip/cargo."""
+    cmds = package_commands("npm", ["pkg;rm -rf /", "ok"])
+    assert cmds == ["npm install --global 'pkg;rm -rf /' ok"]
+
+
+def test_gem_shell_quotes_names_with_metacharacters():
+    cmds = package_commands("gem", ["pkg`whoami`", "ok"])
+    assert cmds == ["gem install 'pkg`whoami`' ok"]
+
+
+def test_go_shell_quotes_names_with_metacharacters():
+    """go install runs one-per-package, so each command gets its own
+    shlex.quote call — pin both the per-package shape and the quoting."""
+    cmds = package_commands("go", ["github.com/owner/pkg;evil", "github.com/owner/ok"])
+    assert cmds == [
+        "go install 'github.com/owner/pkg;evil'",
+        "go install github.com/owner/ok",
+    ]
+
+
 # ---------- unknown-manager handling ----------
 
 

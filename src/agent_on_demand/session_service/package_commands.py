@@ -43,17 +43,20 @@ def package_commands(manager: str, pkgs: list[str]) -> list[str]:
     but the loud failure means a future drift in either won't silently
     drop the user's packages.
     """
-    quoted = " ".join(shlex.quote(p) for p in pkgs)
     if manager == "apt":
-        return [f"apt-get update -qq && apt-get install -y {quoted}"]
+        return [f"apt-get update -qq && apt-get install -y {_join_quoted(pkgs)}"]
     if manager == "pip":
-        return [f"pip install {quoted}"]
+        return [f"pip install {_join_quoted(pkgs)}"]
     if manager == "npm":
-        return [f"npm install --global {quoted}"]
+        return [f"npm install --global {_join_quoted(pkgs)}"]
     if manager == "cargo":
         return [f"cargo install {shlex.quote(p)}" for p in pkgs]
     if manager == "gem":
-        return [f"gem install {quoted}"]
+        return [f"gem install {_join_quoted(pkgs)}"]
     if manager == "go":
         return [f"go install {shlex.quote(p)}" for p in pkgs]
     raise ValueError(f"Unsupported package manager: {manager!r}")
+
+
+def _join_quoted(pkgs: list[str]) -> str:
+    return " ".join(shlex.quote(p) for p in pkgs)
