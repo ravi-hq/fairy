@@ -185,6 +185,35 @@ Render → `agent-on-demand-api` → Deploys → find the last green deploy → 
 
 Do **not** rollback past a migration without checking `migrations/` — the worker and web must agree on schema.
 
+### Auto-revert (failed deploys)
+
+`.github/workflows/auto-revert.yml` polls Render every 5 min for failed deploys of `agent-on-demand-api`. When it finds one, it opens a `git revert` PR on the offending commit so `main` doesn't keep building on poison. **Render's auto-rollback handles the running image** — this workflow only handles the source-of-truth (`main`).
+
+**What you'll see when it fires.** A new PR titled `Auto-revert: <short-sha> (<status>)` from `github-actions[bot]`, base `main`. The body has the deploy ID, commit SHA, and instructions. CI runs against it like any other PR.
+
+**Decide and act.**
+- **Merge** if the revert is correct (you don't have a hotfix in flight).
+- **Close** if the failure was a Render flake or you've already pushed a forward-fix.
+- **Don't ignore.** Until merged or closed, every subsequent failure on the same commit is silently deduped against this PR.
+
+**Migration warning.** If the failed commit touched `src/agent_on_demand/migrations/`, the PR opens as a **draft** with the `needs-human-review` label. Code revert alone does **not** undo a migration. Either add a rollback migration to the PR before merging, or close the PR and resolve forward.
+
+**Limitations.**
+- Detection latency is up to 5 min (cron interval). Fine for `main`-cleanup; user-impact is already handled by Render auto-rollback in ~30s.
+- Only the API service is monitored. Worker failures don't trigger auto-revert. (Worker deploys rarely fail in isolation since they share the same commit.)
+- PRs created by `GITHUB_TOKEN` don't trigger downstream workflows. If CI doesn't appear on the auto-revert PR, push an empty commit (`git commit --allow-empty -m "trigger CI" && git push`) or re-run checks manually.
+- Reverts of reverts are skipped (subject starts with `Revert `) so a botched revert can't loop.
+- Dedup is via `gh pr list --search`, which routes through GitHub's search API and can lag by seconds to minutes. In rare cases, two consecutive cron ticks against the same still-failing commit may both miss the existing PR and open a duplicate. If you see two open auto-revert PRs for the same SHA, close the newer one — the script won't crash on the duplicate, just wastes a PR slot.
+
+**Disabling.** Comment out the `schedule` trigger in `.github/workflows/auto-revert.yml`, or remove the `RENDER_SERVICE_ID_API` repo variable (the workflow `if:` short-circuits without it).
+
+**Manual run.** Actions tab → "Auto-revert failed deploys" → "Run workflow" → toggle "Dry run" to preview without opening PRs.
+
+**Setup (one-time).**
+1. Repo Settings → Secrets → add `RENDER_API_KEY` (Render dashboard → Account Settings → API Keys).
+2. Repo Settings → Variables → add `RENDER_SERVICE_ID_API` set to the `srv-...` ID of `agent-on-demand-api` (visible in the Render dashboard URL for the service).
+3. (Optional) Repo Labels → create `needs-human-review` so draft PRs get tagged. The script tolerates absence.
+
 ---
 
 ## Scheduled / rare operations

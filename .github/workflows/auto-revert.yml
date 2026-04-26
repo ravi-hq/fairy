@@ -1,0 +1,77 @@
+name: Auto-revert failed deploys
+
+# Polls Render for failed deploys of the API service every 5 minutes and
+# opens a revert PR when one is found that hasn't already been handled.
+# Render auto-rolls-forward the running image; this workflow is what kicks
+# the bad commit out of `main` so subsequent PRs don't build on it.
+#
+# Setup (one-time):
+#   - Repo secret RENDER_API_KEY (from https://dashboard.render.com/u/settings → API Keys)
+#   - Repo variable RENDER_SERVICE_ID_API set to the api service's `srv-...` ID
+#   - Optional repo label `needs-human-review` (the script tries to add it
+#     to draft PRs and tolerates absence)
+#
+# See docs/runbook.md "Auto-revert (failed deploys)" for operator guidance.
+
+on:
+  schedule:
+    # Every 5 minutes. Render auto-rollback handles user impact in ~30s,
+    # so a 5-min revert latency only affects the time `main` carries the
+    # bad commit — fine for v1.
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: "Print intended actions without opening PRs"
+        type: boolean
+        default: false
+
+# Only one auto-revert run at a time so we don't race on PR creation.
+concurrency:
+  group: auto-revert
+  cancel-in-progress: false
+
+permissions:
+  contents: write       # push revert branches
+  pull-requests: write  # gh pr create / edit
+
+jobs:
+  poll-and-revert:
+    runs-on: ubuntu-latest
+    # Skip if the repo hasn't configured the required secrets yet —
+    # avoids noisy failures on forks and during initial setup.
+    if: ${{ vars.RENDER_SERVICE_ID_API != '' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history so `git revert <sha>` can find arbitrary old commits.
+          fetch-depth: 0
+          # Use a token that can push branches. The default GITHUB_TOKEN works;
+          # the only caveat is that PRs opened by it won't auto-trigger other
+          # workflows (a known GitHub safety feature). See runbook.
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - run: uv sync --all-extras
+
+      - name: Configure git identity for revert commits
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Poll Render and open revert PRs
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          uv run python -m scripts.auto_revert \
+            --service-id "${{ vars.RENDER_SERVICE_ID_API }}" \
+            --repo "${{ github.repository }}" \
+            ${{ inputs.dry-run && '--dry-run' || '' }}
