@@ -100,7 +100,9 @@ def agent(user):
 def test_health(client: Client):
     resp = client.get("/health")
     assert resp.status_code == 200
-    assert resp.json() == {"status": "ok"}
+    # Response shape now includes per-check details — see tests/test_health.py
+    # for the full contract. This test only pins the smoke-test surface.
+    assert resp.json()["status"] == "ok"
 
 
 @pytest.mark.django_db
