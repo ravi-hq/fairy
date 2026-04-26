@@ -53,6 +53,7 @@ dev = [
     "bandit>=1.7",
     "pylint>=3.2",
     "pyyaml>=6.0",
+    "mutmut>=3.0",
 ]
 
 [tool.ruff]
@@ -101,3 +102,35 @@ follow_imports = "silent"
 
 [tool.bandit]
 exclude_dirs = ["tests", ".venv", "src/agent_on_demand/migrations"]
+
+[tool.mutmut]
+# Mutation testing for the highest-blast-radius modules. Currently scoped to
+# auth + crypto; planned expansion: optimistic-concurrency version checks and
+# the session state machine. Run with `make mutmut`.
+#
+# IMPORTANT: tests under tests_dir must be sync-only. mutmut runs tests via
+# `hammett` (a pytest-compatible runner that does NOT load pytest-asyncio or
+# pytest-django plugins). Use `asgiref.sync.async_to_sync(view)` to test async
+# code paths from sync test bodies.
+#
+# Known-equivalent mutants (cannot be killed; behaviorally identical to original):
+#   - crypto._get_fernet mutant_7:  drops getattr default; FIELD_ENCRYPTION_KEY is
+#                                   always defined in settings, so default unused
+#   - auth._check_api_key_{sync,async} mutant_8: header default "" -> "XXXX";
+#                                                both fail startswith("Bearer ")
+#   - auth._check_api_key_sync mutant_30: select_related("user") -> select_related(None);
+#                                         lazy load still resolves, perf-only diff
+paths_to_mutate = [
+    "src/agent_on_demand/crypto.py",
+    "src/agent_on_demand/auth.py",
+]
+tests_dir = [
+    "tests/test_auth.py",
+    "tests/test_crypto.py",
+]
+# mutmut copies its working tree to ./mutants/ and runs pytest from there;
+# without these, the rest of the src/ tree isn't available to the test runner.
+also_copy = [
+    "src/",
+    "manage.py",
+]
