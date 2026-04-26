@@ -215,7 +215,7 @@ def environments_list_create(request):
 
         return JsonResponse(_serialize_environment(env), status=201)
 
-    elif request.method == "GET":
+    if request.method == "GET":
         qs = Environment.objects.filter(user=request.user, archived_at__isnull=True).order_by(
             "-created_at"
         )

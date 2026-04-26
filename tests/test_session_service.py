@@ -40,17 +40,17 @@ def user(db):
 
 
 def _spec(user, **overrides) -> SessionSpec:
-    defaults = dict(
-        name="sprite-x",
-        runtime=RUNTIMES["claude"],
-        model="anthropic/claude-sonnet-4-6",
-        user=user,
-        runtime_session_id="11111111-2222-3333-4444-555555555555",
-        environment=None,
-        repos=[],
-        mcp_servers=[],
-        skills=[],
-    )
+    defaults = {
+        "name": "sprite-x",
+        "runtime": RUNTIMES["claude"],
+        "model": "anthropic/claude-sonnet-4-6",
+        "user": user,
+        "runtime_session_id": "11111111-2222-3333-4444-555555555555",
+        "environment": None,
+        "repos": [],
+        "mcp_servers": [],
+        "skills": [],
+    }
     defaults.update(overrides)
     return SessionSpec(**defaults)
 

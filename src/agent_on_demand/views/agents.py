@@ -367,7 +367,7 @@ def agents_list_create(request):
 
         return JsonResponse(_serialize_agent(agent), status=201)
 
-    elif request.method == "GET":
+    if request.method == "GET":
         qs = Agent.objects.filter(user=request.user, archived_at__isnull=True).order_by(
             "-created_at"
         )

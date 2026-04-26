@@ -187,7 +187,7 @@ def test_execute_turn_preserves_terminated_status(user, mocker):
             refresh_count[0] += 1
             if refresh_count[0] >= 2:
                 self.status = "terminated"
-                return
+                return None
         return original_refresh(self, *args, **kwargs)
 
     mocker.patch.object(AgentSession, "refresh_from_db", fake_refresh)
