@@ -62,6 +62,41 @@ class TestProvisionSessionOrder:
         script = sprite.write_map()["/tmp/aod-provision.sh"]
         assert "chmod 600 /tmp/aod-env" in script
 
+    @pytest.mark.parametrize(
+        "runtime_name,expected_dir",
+        [
+            ("codex", "/home/sprite/.codex"),
+            ("gemini", "/home/sprite/.gemini"),
+            ("opencode", "/home/sprite/.config/opencode"),
+        ],
+    )
+    def test_mcp_servers_mkdir_in_provision_script_per_runtime(
+        self, user, fake_sprites, runtime_name, expected_dir
+    ):
+        """Runtimes whose MCP config file lives under a non-default directory
+        need that directory created before the post-script ``fs.write``.
+        Without the mkdir, the runtime config write fails with stage=
+        runtime_config and the session never reaches running. Claude is
+        excluded — its config goes to ``/home/sprite/.claude.json`` and the
+        parent already exists."""
+        from agent_on_demand.session_service.specs import McpServerSpec
+
+        mcp_servers = [McpServerSpec(name="srv", type="url", url="https://example.com/mcp")]
+        provision_session(
+            user,
+            _spec(user, runtime=RUNTIMES[runtime_name], mcp_servers=mcp_servers),
+        )
+        script = fake_sprites.last_sprite().write_map()["/tmp/aod-provision.sh"]
+        assert f"mkdir -p {expected_dir}" in script
+
+    def test_no_mcp_servers_no_runtime_mkdir(self, user, fake_sprites):
+        """Without MCP servers, the runtime-specific config dirs are not
+        created — the mkdir line is only emitted for post-script writes that
+        actually need the parent dir to exist."""
+        provision_session(user, _spec(user, runtime=RUNTIMES["codex"]))
+        script = fake_sprites.last_sprite().write_map()["/tmp/aod-provision.sh"]
+        assert "/home/sprite/.codex" not in script
+
     def test_single_bash_command_invokes_provision_script(self, user, fake_sprites):
         provision_session(user, _spec(user))
         sprite = fake_sprites.last_sprite()
