@@ -1,5 +1,4 @@
 import json
-import re
 import uuid
 from typing import Literal
 
@@ -15,6 +14,12 @@ from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from agent_on_demand import session_service
 from agent_on_demand.auth import require_api_key
+from agent_on_demand.github_resource_validation import (
+    resolved_mount_path,
+    validate_github_url,
+    validate_mount_path,
+    validate_resources_count_and_dedup,
+)
 from agent_on_demand.models import (
     Agent,
     AgentSession,
@@ -90,26 +95,16 @@ class GitHubRepoResource(BaseModel):
 
     @field_validator("url")
     @classmethod
-    def validate_github_url(cls, v: str) -> str:
-        if not re.match(r"^https://github\.com/[\w.-]+/[\w.-]+(\.git)?$", v):
-            raise ValueError("Must be a valid https://github.com/<owner>/<repo> URL")
-        return v.removesuffix(".git")
+    def _validate_url(cls, v: str) -> str:
+        return validate_github_url(v)
 
     @field_validator("mount_path")
     @classmethod
-    def validate_mount_path(cls, v: str | None) -> str | None:
-        if v is not None:
-            if not v.startswith("/"):
-                raise ValueError("mount_path must be an absolute path")
-            if v in ("/", "/home/sprite"):
-                raise ValueError("mount_path must not be the Sprite root")
-        return v
+    def _validate_mount_path(cls, v: str | None) -> str | None:
+        return validate_mount_path(v)
 
     def resolved_mount_path(self) -> str:
-        if self.mount_path:
-            return self.mount_path
-        repo_name = self.url.rstrip("/").split("/")[-1]
-        return f"/workspace/{repo_name}"
+        return resolved_mount_path(self.url, self.mount_path)
 
 
 class RunRequest(BaseModel):
@@ -126,12 +121,8 @@ class RunRequest(BaseModel):
 
     @field_validator("resources")
     @classmethod
-    def validate_resources(cls, v: list[GitHubRepoResource]) -> list[GitHubRepoResource]:
-        if len(v) > 10:
-            raise ValueError("Maximum 10 resources per session")
-        mount_paths = [r.resolved_mount_path() for r in v]
-        if len(mount_paths) != len(set(mount_paths)):
-            raise ValueError("Duplicate mount_path in resources")
+    def _validate_resources(cls, v: list[GitHubRepoResource]) -> list[GitHubRepoResource]:
+        validate_resources_count_and_dedup([r.resolved_mount_path() for r in v], len(v))
         return v
 
 
