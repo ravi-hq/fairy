@@ -31,6 +31,22 @@ worker:
 test:
 	DATABASE_URL=sqlite:///test.db uv run pytest tests/ -v --ignore=tests/e2e
 
+# Mutation testing for danger-zone modules (auth.py, crypto.py). Asserts that
+# every mutant is killed except a small documented set of known-equivalents.
+# See scripts/check_mutmut.py for the equivalent-mutant allowlist.
+mutation-test:
+	rm -rf mutants/
+	DATABASE_URL=sqlite:///test.db uv run python -m scripts.check_mutmut
+
+# Render mutants/ into mutants/report.html — per-file/per-function kill-rate
+# heatmap plus the unified diff for every surviving mutant. Run after
+# `make mutation-test` (or any `mutmut run`).
+mutation-report:
+	@if [ ! -f mutants/mutmut-cicd-stats.json ]; then \
+		echo "No mutmut data — run 'make mutation-test' first."; exit 1; \
+	fi
+	uv run python -m scripts.mutmut_report
+
 # E2E tests against a running agent-on-demand deployment.
 # Required:  AOD_API_TOKEN
 # Optional:  AOD_API_URL (default http://localhost:8777 — matches `make dev`)
@@ -71,6 +87,31 @@ test-e2e-mcp:
 test-all:
 	uv run pytest tests/ -v
 
+# Lint migrations introduced on the current branch (since it diverged from main)
+# for safety issues like NOT NULL adds on populated tables, column drops/renames,
+# and dangerous index changes. Existing migrations on main are grandfathered.
+#
+# CI sets BASE_SHA explicitly via `git merge-base origin/main HEAD`. Locally,
+# `git merge-base main HEAD` works as long as your local main is up-to-date.
+BASE_SHA ?= $(shell git merge-base main HEAD 2>/dev/null)
+check-migrations:
+	@if [ -z "$(BASE_SHA)" ]; then \
+		echo "Could not compute BASE_SHA — pass BASE_SHA=<sha> or ensure 'main' branch exists locally"; \
+		exit 1; \
+	fi
+	DATABASE_URL=sqlite:///test.db uv run python manage.py lintmigrations \
+		--include-apps fairy --git-commit-id $(BASE_SHA) --project-root-path .
+
+# Snapshot the JSON schemas of all pydantic request models in views/ and
+# fail if they drift from docs/request_schemas.json. Catches accidental
+# breaking changes (added/removed/renamed fields, type flips). After an
+# intentional change, regenerate with `make snapshot-schemas`.
+check-schemas:
+	DATABASE_URL=sqlite:///test.db uv run python -m scripts.check_request_schemas
+
+snapshot-schemas:
+	DATABASE_URL=sqlite:///test.db uv run python -m scripts.check_request_schemas --write
+
 lint:
 	uv run ruff check src/ tests/
 
@@ -81,7 +122,9 @@ typecheck:
 	uv run mypy
 
 security:
-	uv run pip-audit
+	# CVE-2026-3219: pip itself, no fix version available as of 2026-04-26.
+	# Revisit when pip publishes a fix and remove this ignore.
+	uv run pip-audit --ignore-vuln CVE-2026-3219
 	uv run bandit -r src/ -ll
 
 fmt:

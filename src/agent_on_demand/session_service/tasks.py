@@ -360,7 +360,6 @@ def _execute_turn_inner(
     except (AgentSession.DoesNotExist, SessionTurn.DoesNotExist):
         logger.info("execute_turn: session=%s turn=%s gone, skipping", session_id, turn_id)
         return
-
     try:
         spec = _build_spec_for_session(session)
     except Exception as e:
@@ -449,6 +448,25 @@ def _execute_turn_body(session, turn, spec, sprite, prompt, mode, timeout, span)
             output_q.put(_SENTINEL)
 
     now = timezone.now()
+
+    # Guard against a concurrent terminate_session that committed
+    # status="terminated" after _execute_turn_inner fetched the session row.
+    # Without this check, the unconditional save below would overwrite the
+    # termination, leaving the session showing "running" for the whole turn.
+    session.refresh_from_db(fields=["status"])
+    if session.status == "terminated":
+        AgentSessionLog.objects.create(
+            session=session,
+            turn=turn,
+            stream="stderr",
+            data="turn aborted: session terminated before execution started\n",
+        )
+        turn.status = "failed"
+        turn.started_at = now
+        turn.ended_at = now
+        turn.save(update_fields=["status", "started_at", "ended_at"])
+        return
+
     session.status = "running"
     session.save(update_fields=["status", "updated_at"])
     turn.status = "running"

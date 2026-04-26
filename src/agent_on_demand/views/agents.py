@@ -2,6 +2,7 @@ import json
 import re
 
 import posthog
+from django.db import transaction
 from django.http import JsonResponse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
@@ -13,6 +14,7 @@ from agent_on_demand.auth import require_api_key
 from agent_on_demand.models import Agent, AgentVersion, Environment
 from agent_on_demand.models_catalog import MODELS
 from agent_on_demand.runtimes import RUNTIMES
+from agent_on_demand.versioning import check_version_match
 
 
 AGENT_VERSIONED_FIELDS = (
@@ -325,21 +327,26 @@ def agents_list_create(request):
                 env_obj = Environment.objects.get(pk=req.environment_id, user=request.user)
             except (Environment.DoesNotExist, ValueError):
                 return JsonResponse({"detail": "Environment not found"}, status=404)
+            if env_obj.is_archived:
+                return JsonResponse(
+                    {"detail": "Cannot assign an archived environment to an agent"}, status=409
+                )
 
-        agent = Agent.objects.create(
-            user=request.user,
-            name=req.name,
-            description=req.description,
-            system=req.system,
-            model=req.model,
-            runtime=req.runtime,
-            environment=env_obj,
-            skills=req.skills,
-            mcp_servers=req.mcp_servers,
-            metadata=req.metadata,
-            version=1,
-        )
-        _snapshot_version(agent)
+        with transaction.atomic():
+            agent = Agent.objects.create(
+                user=request.user,
+                name=req.name,
+                description=req.description,
+                system=req.system,
+                model=req.model,
+                runtime=req.runtime,
+                environment=env_obj,
+                skills=req.skills,
+                mcp_servers=req.mcp_servers,
+                metadata=req.metadata,
+                version=1,
+            )
+            _snapshot_version(agent)
 
         with posthog.new_context():
             posthog.identify_context(str(request.user.id))
@@ -395,11 +402,9 @@ def agent_detail(request, agent_id):
         except ValidationError as e:
             return JsonResponse({"detail": e.errors(include_context=False)}, status=422)
 
-        if req.version != agent.version:
-            return JsonResponse(
-                {"detail": f"Version mismatch: expected {agent.version}, got {req.version}"},
-                status=409,
-            )
+        version_err = check_version_match(req.version, agent.version)
+        if version_err is not None:
+            return version_err
 
         if req.runtime is not None and req.runtime not in RUNTIMES:
             return JsonResponse(
@@ -417,14 +422,26 @@ def agent_detail(request, agent_id):
         # Detect changes
         changed = False
 
-        # Resolve environment_id if provided
-        if req.environment_id is not None:
-            try:
-                env_obj = Environment.objects.get(pk=req.environment_id, user=request.user)
-            except (Environment.DoesNotExist, ValueError):
-                return JsonResponse({"detail": "Environment not found"}, status=404)
-            if env_obj.id != agent.environment_id:
-                agent.environment = env_obj
+        # Resolve environment_id only when it was explicitly included in the
+        # request body. environment_id defaults to None in the schema, so we
+        # must consult model_fields_set to distinguish "absent from payload"
+        # from "explicitly set to null" (which clears the environment).
+        if "environment_id" in req.model_fields_set:
+            if req.environment_id is not None:
+                try:
+                    env_obj = Environment.objects.get(pk=req.environment_id, user=request.user)
+                except (Environment.DoesNotExist, ValueError):
+                    return JsonResponse({"detail": "Environment not found"}, status=404)
+                if env_obj.is_archived:
+                    return JsonResponse(
+                        {"detail": "Cannot assign an archived environment to an agent"}, status=409
+                    )
+                if env_obj.id != agent.environment_id:
+                    agent.environment = env_obj
+                    changed = True
+            elif agent.environment_id is not None:
+                # Explicit null — detach the environment.
+                agent.environment = None
                 changed = True
 
         for field in ("name", "model", "runtime", "system", "description", "skills", "mcp_servers"):
@@ -447,8 +464,9 @@ def agent_detail(request, agent_id):
 
         if changed:
             agent.version += 1
-            agent.save()
-            _snapshot_version(agent)
+            with transaction.atomic():
+                agent.save()
+                _snapshot_version(agent)
             with posthog.new_context():
                 posthog.identify_context(str(request.user.id))
                 posthog.capture(

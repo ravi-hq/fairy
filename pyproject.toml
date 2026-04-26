@@ -53,6 +53,8 @@ dev = [
     "bandit>=1.7",
     "pylint>=3.2",
     "pyyaml>=6.0",
+    "mutmut>=3.0",
+    "django-migration-linter>=5.0",
 ]
 
 [tool.ruff]
@@ -62,7 +64,7 @@ line-length = 100
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "config.settings"
 pythonpath = ["src"]
-norecursedirs = ["tests/e2e", ".venv"]
+norecursedirs = ["tests/e2e", ".venv", "clients"]
 asyncio_mode = "auto"
 markers = [
     "slow: tests that create real agent sessions (may take minutes)",
@@ -101,3 +103,34 @@ follow_imports = "silent"
 
 [tool.bandit]
 exclude_dirs = ["tests", ".venv", "src/agent_on_demand/migrations"]
+
+[tool.mutmut]
+# Mutation testing for the highest-blast-radius modules: auth, crypto,
+# optimistic-concurrency check, and the session state machine.
+# Run with `make mutation-test`.
+#
+# IMPORTANT: tests under tests_dir must be sync-only. mutmut runs tests via
+# `hammett` (a pytest-compatible runner that does NOT load pytest-asyncio or
+# pytest-django plugins). Use `asgiref.sync.async_to_sync(view)` to test async
+# code paths from sync test bodies.
+#
+# Known-equivalent mutants (cannot be killed; behaviorally identical to original).
+# See scripts/check_mutmut.py for the authoritative allowlist.
+paths_to_mutate = [
+    "src/agent_on_demand/crypto.py",
+    "src/agent_on_demand/auth.py",
+    "src/agent_on_demand/versioning.py",
+    "src/agent_on_demand/session_state.py",
+]
+tests_dir = [
+    "tests/test_auth.py",
+    "tests/test_crypto.py",
+    "tests/test_versioning.py",
+    "tests/test_session_state.py",
+]
+# mutmut copies its working tree to ./mutants/ and runs pytest from there;
+# without these, the rest of the src/ tree isn't available to the test runner.
+also_copy = [
+    "src/",
+    "manage.py",
+]
