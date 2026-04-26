@@ -378,7 +378,11 @@ async def stream_session(request, session_id):
             else:
                 payload = json.loads(event)
                 log_id = payload.get("id")
-                if log_id:
+                # turn_start is a synthetic event derived from the same DB row
+                # as the output event that follows it. Advancing the SSE cursor
+                # on turn_start would cause the output event (same id) to be
+                # skipped on reconnect. Only real log row events advance it.
+                if log_id and payload.get("type") != "turn_start":
                     yield f"id: {log_id}\n"
                 yield f"data: {event}\n\n"
 

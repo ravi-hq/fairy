@@ -34,7 +34,7 @@ def test_field_encryption_key_overrides_secret_key():
         assert decrypt(cipher_a) == "payload"
 
     with override_settings(FIELD_ENCRYPTION_KEY="key-B-material"):
-        with pytest.raises(InvalidToken):
+        with pytest.raises(ValueError, match="Decryption failed"):
             decrypt(cipher_a)
 
 
@@ -49,5 +49,22 @@ def test_secret_key_used_when_field_encryption_key_unset():
         assert decrypt(cipher_secret) == "payload"
 
     with override_settings(FIELD_ENCRYPTION_KEY="some-other-key"):
-        with pytest.raises(InvalidToken):
+        with pytest.raises(ValueError, match="Decryption failed"):
             decrypt(cipher_secret)
+
+
+def test_decrypt_invalid_token_raises_value_error():
+    """Corrupted ciphertext should raise ValueError, not Fernet's InvalidToken.
+
+    Callers (e.g. _build_spec_for_session) catch ValueError to mark the
+    session failed; letting cryptography's InvalidToken escape would bypass
+    that and leave the session stuck. The exact message is asserted so a
+    drift in the diagnostic wording is caught (and to keep mutmut honest).
+    """
+    with pytest.raises(ValueError) as exc_info:
+        decrypt(b"this-is-not-a-valid-fernet-token")
+    assert (
+        str(exc_info.value)
+        == "Decryption failed: data may be corrupted or the encryption key has changed"
+    )
+    assert isinstance(exc_info.value.__cause__, InvalidToken)
