@@ -310,9 +310,7 @@ def environment_delete(request, environment_id):
 
     try:
         with transaction.atomic():
-            env = Environment.objects.select_for_update().get(
-                pk=environment_id, user=request.user
-            )
+            env = Environment.objects.select_for_update().get(pk=environment_id, user=request.user)
             if env.sessions.exists():
                 return JsonResponse(
                     {"detail": "Cannot delete environment with existing sessions"},
