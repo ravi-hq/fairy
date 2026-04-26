@@ -76,6 +76,22 @@ jobs:
       - run: uv sync --all-extras
       - run: make mutation-test
 
+  migration-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history so `git merge-base origin/main HEAD` resolves.
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+      - run: uv sync --all-extras
+      - run: make check-migrations BASE_SHA=$(git merge-base origin/main HEAD)
+
   validate-openapi:
     runs-on: ubuntu-latest
     steps:

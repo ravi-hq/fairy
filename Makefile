@@ -78,6 +78,21 @@ test-e2e-mcp:
 test-all:
 	uv run pytest tests/ -v
 
+# Lint migrations introduced on the current branch (since it diverged from main)
+# for safety issues like NOT NULL adds on populated tables, column drops/renames,
+# and dangerous index changes. Existing migrations on main are grandfathered.
+#
+# CI sets BASE_SHA explicitly via `git merge-base origin/main HEAD`. Locally,
+# `git merge-base main HEAD` works as long as your local main is up-to-date.
+BASE_SHA ?= $(shell git merge-base main HEAD 2>/dev/null)
+check-migrations:
+	@if [ -z "$(BASE_SHA)" ]; then \
+		echo "Could not compute BASE_SHA — pass BASE_SHA=<sha> or ensure 'main' branch exists locally"; \
+		exit 1; \
+	fi
+	DATABASE_URL=sqlite:///test.db uv run python manage.py lintmigrations \
+		--include-apps fairy --git-commit-id $(BASE_SHA) --project-root-path .
+
 lint:
 	uv run ruff check src/ tests/
 
