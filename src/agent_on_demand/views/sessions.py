@@ -447,6 +447,12 @@ def send_prompt(request, session_id):
             err = check_can_accept_prompt(locked.status)
             if err is not None:
                 return err
+            # In addition to the pre-lock checks (which allow pending — that's
+            # the initial state of a fresh session), reject pending here: if
+            # status flipped to pending between the two checks, another
+            # send_prompt raced in and already enqueued a turn.
+            if locked.status == "pending":
+                return JsonResponse({"detail": "Session already has a pending turn"}, status=409)
 
             next_turn_number = (
                 SessionTurn.objects.filter(session=locked).aggregate(n=Max("turn_number"))["n"] or 0

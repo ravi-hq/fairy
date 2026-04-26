@@ -27,7 +27,7 @@ def body(resp):
 
 def call_async(view, request):
     """Invoke an async view from a sync test. Needed because mutmut runs tests
-    via hammett, which doesn't load pytest-asyncio."""
+    via hammett, which doesn't load pytest-asyncio or pytest-django plugins."""
     return async_to_sync(view)(request)
 
 

@@ -390,7 +390,6 @@ def _execute_turn_inner(
 
 
 def _execute_turn_body(session, turn, spec, sprite, prompt, mode, timeout, span) -> None:
-
     output_q: queue.Queue = queue.Queue(maxsize=4096)
     db_buffer: list[AgentSessionLog] = []
     result_holder: list = []

@@ -228,18 +228,14 @@ def environments_list_create(request):
 @require_api_key
 def environment_detail(request, environment_id):
     """GET: retrieve environment. PUT: update environment."""
-    try:
-        env = Environment.objects.get(pk=environment_id, user=request.user)
-    except (Environment.DoesNotExist, ValueError):
-        return JsonResponse({"detail": "Environment not found"}, status=404)
-
     if request.method == "GET":
+        try:
+            env = Environment.objects.get(pk=environment_id, user=request.user)
+        except (Environment.DoesNotExist, ValueError):
+            return JsonResponse({"detail": "Environment not found"}, status=404)
         return JsonResponse(_serialize_environment(env))
 
     if request.method == "PUT":
-        if env.is_archived:
-            return JsonResponse({"detail": "Cannot update an archived environment"}, status=409)
-
         try:
             body = json.loads(request.body)
         except (json.JSONDecodeError, ValueError):
@@ -250,46 +246,71 @@ def environment_detail(request, environment_id):
         except ValidationError as e:
             return JsonResponse({"detail": e.errors(include_context=False)}, status=422)
 
-        version_err = check_version_match(req.version, env.version)
-        if version_err is not None:
-            return version_err
-
         changed = False
-        if req.name is not None and req.name != env.name:
-            env.name = req.name
-            changed = True
+        try:
+            with transaction.atomic():
+                try:
+                    env = Environment.objects.select_for_update().get(
+                        pk=environment_id, user=request.user
+                    )
+                except (Environment.DoesNotExist, ValueError):
+                    return JsonResponse({"detail": "Environment not found"}, status=404)
 
-        if req.packages is not None and req.packages != env.packages:
-            env.packages = req.packages
-            changed = True
+                if env.is_archived:
+                    return JsonResponse(
+                        {"detail": "Cannot update an archived environment"}, status=409
+                    )
 
-        if req.env_vars is not None and req.env_vars != env.env_vars:
-            env.env_vars = req.env_vars
-            changed = True
+                version_err = check_version_match(req.version, env.version)
+                if version_err is not None:
+                    return version_err
 
-        if req.setup_script is not None and req.setup_script != env.setup_script:
-            env.setup_script = req.setup_script
-            changed = True
+                if req.name is not None and req.name != env.name:
+                    env.name = req.name
+                    changed = True
 
-        if req.networking is not None:
-            new_type = req.networking.get("type", "unrestricted")
-            new_config = {k: v for k, v in req.networking.items() if k != "type"}
-            if new_type != env.networking_type or new_config != env.networking_config:
-                env.networking_type = new_type
-                env.networking_config = new_config
-                changed = True
+                if req.packages is not None and req.packages != env.packages:
+                    env.packages = req.packages
+                    changed = True
+
+                if req.env_vars is not None and req.env_vars != env.env_vars:
+                    env.env_vars = req.env_vars
+                    changed = True
+
+                if req.setup_script is not None and req.setup_script != env.setup_script:
+                    env.setup_script = req.setup_script
+                    changed = True
+
+                if req.networking is not None:
+                    new_type = req.networking.get("type", "unrestricted")
+                    new_config = {k: v for k, v in req.networking.items() if k != "type"}
+                    if new_type != env.networking_type or new_config != env.networking_config:
+                        env.networking_type = new_type
+                        env.networking_config = new_config
+                        changed = True
+
+                if changed:
+                    env.version += 1
+                    env.save(
+                        update_fields=[
+                            "name",
+                            "packages",
+                            "env_vars",
+                            "setup_script",
+                            "networking_type",
+                            "networking_config",
+                            "version",
+                            "updated_at",
+                        ]
+                    )
+                    _snapshot_environment_version(env)
+        except IntegrityError:
+            return JsonResponse(
+                {"detail": f"An active environment named {req.name!r} already exists"},
+                status=409,
+            )
 
         if changed:
-            env.version += 1
-            try:
-                with transaction.atomic():
-                    env.save()
-                    _snapshot_environment_version(env)
-            except IntegrityError:
-                return JsonResponse(
-                    {"detail": f"An active environment named {env.name!r} already exists"},
-                    status=409,
-                )
             with posthog.new_context():
                 posthog.identify_context(str(request.user.id))
                 posthog.capture(
