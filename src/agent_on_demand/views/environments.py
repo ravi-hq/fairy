@@ -1,5 +1,4 @@
 import json
-import re
 
 import posthog
 from django.db import IntegrityError, transaction
@@ -11,6 +10,11 @@ from django.views.decorators.http import require_GET, require_POST
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from agent_on_demand.auth import require_api_key
+from agent_on_demand.environment_validation import (
+    validate_env_vars,
+    validate_networking,
+    validate_packages,
+)
 from agent_on_demand.models import Environment, EnvironmentVersion
 from agent_on_demand.versioning import check_version_match
 
@@ -29,13 +33,6 @@ def _env_safe_props(env: Environment) -> dict:
     }
 
 
-VALID_PACKAGE_MANAGERS = {"apt", "cargo", "gem", "go", "npm", "pip"}
-
-# Valid POSIX shell variable names. Keys that don't match this will corrupt
-# /tmp/aod-env when written as `KEY=value` shell assignments.
-_ENV_VAR_KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
-
-
 class CreateEnvironmentRequest(BaseModel):
     name: str = Field(max_length=200)
     packages: dict[str, list[str]] = Field(default_factory=dict)
@@ -45,37 +42,18 @@ class CreateEnvironmentRequest(BaseModel):
 
     @field_validator("packages")
     @classmethod
-    def validate_packages(cls, v: dict) -> dict:
-        # The list[str] shape check is enforced by pydantic's
-        # `dict[str, list[str]]` annotation; we only need to validate the
-        # manager name here.
-        for manager in v:
-            if manager not in VALID_PACKAGE_MANAGERS:
-                raise ValueError(
-                    f"Unknown package manager: {manager}. "
-                    f"Must be one of: {sorted(VALID_PACKAGE_MANAGERS)}"
-                )
-        return v
+    def _validate_packages(cls, v: dict) -> dict:
+        return validate_packages(v)
 
     @field_validator("env_vars")
     @classmethod
-    def validate_env_vars(cls, v: dict) -> dict:
-        for key in v:
-            if not _ENV_VAR_KEY_RE.match(key):
-                raise ValueError(f"Invalid env_var key {key!r}: must match [A-Za-z_][A-Za-z0-9_]*")
-        return v
+    def _validate_env_vars(cls, v: dict) -> dict:
+        return validate_env_vars(v)
 
     @field_validator("networking")
     @classmethod
-    def validate_networking(cls, v: dict) -> dict:
-        net_type = v.get("type", "unrestricted")
-        if net_type not in ("unrestricted", "limited"):
-            raise ValueError("networking.type must be 'unrestricted' or 'limited'")
-        if net_type == "limited":
-            hosts = v.get("allowed_hosts", [])
-            if not isinstance(hosts, list):
-                raise ValueError("networking.allowed_hosts must be a list")
-        return v
+    def _validate_networking(cls, v: dict) -> dict:
+        return validate_networking(v)
 
 
 class UpdateEnvironmentRequest(BaseModel):
@@ -88,42 +66,18 @@ class UpdateEnvironmentRequest(BaseModel):
 
     @field_validator("packages")
     @classmethod
-    def validate_packages(cls, v: dict | None) -> dict | None:
-        # The list[str] shape check is enforced by pydantic's
-        # `dict[str, list[str]] | None` annotation; we only need to validate
-        # the manager name here.
-        if v is not None:
-            for manager in v:
-                if manager not in VALID_PACKAGE_MANAGERS:
-                    raise ValueError(
-                        f"Unknown package manager: {manager}. "
-                        f"Must be one of: {sorted(VALID_PACKAGE_MANAGERS)}"
-                    )
-        return v
+    def _validate_packages(cls, v: dict | None) -> dict | None:
+        return validate_packages(v) if v is not None else v
 
     @field_validator("env_vars")
     @classmethod
-    def validate_env_vars(cls, v: dict | None) -> dict | None:
-        if v is not None:
-            for key in v:
-                if not _ENV_VAR_KEY_RE.match(key):
-                    raise ValueError(
-                        f"Invalid env_var key {key!r}: must match [A-Za-z_][A-Za-z0-9_]*"
-                    )
-        return v
+    def _validate_env_vars(cls, v: dict | None) -> dict | None:
+        return validate_env_vars(v) if v is not None else v
 
     @field_validator("networking")
     @classmethod
-    def validate_networking(cls, v: dict | None) -> dict | None:
-        if v is not None:
-            net_type = v.get("type", "unrestricted")
-            if net_type not in ("unrestricted", "limited"):
-                raise ValueError("networking.type must be 'unrestricted' or 'limited'")
-            if net_type == "limited":
-                hosts = v.get("allowed_hosts", [])
-                if not isinstance(hosts, list):
-                    raise ValueError("networking.allowed_hosts must be a list")
-        return v
+    def _validate_networking(cls, v: dict | None) -> dict | None:
+        return validate_networking(v) if v is not None else v
 
 
 def _serialize_environment(env: Environment) -> dict:
