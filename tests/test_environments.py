@@ -748,6 +748,47 @@ class TestEnvironmentErrorPaths:
         )
         assert resp.status_code == 422
 
+    def test_create_env_vars_invalid_key_returns_422(self, client: Client, auth_headers):
+        """env_vars keys must match [A-Za-z_][A-Za-z0-9_]*. Hyphens or
+        leading digits would corrupt the /tmp/aod-env shell file when
+        written as `KEY=value` lines and could be sourced into the
+        agent's process environment as a different name. Pin the
+        rejection on the create path — the update path is already
+        tested but this validator runs on both."""
+        resp = client.post(
+            "/environments",
+            data=json.dumps(
+                {
+                    "name": "bad",
+                    "env_vars": {"BAD-KEY": "v"},
+                }
+            ),
+            content_type="application/json",
+            **auth_headers,
+        )
+        assert resp.status_code == 422
+        assert "BAD-KEY" in str(resp.json()["detail"])
+
+    def test_create_limited_networking_with_non_list_hosts_returns_422(
+        self, client: Client, auth_headers
+    ):
+        """allowed_hosts must be a list — a string would silently bypass
+        the firewall config for limited networking. The update path is
+        already tested; pin the create path too so a refactor that
+        diverges the two validators fails loudly."""
+        resp = client.post(
+            "/environments",
+            data=json.dumps(
+                {
+                    "name": "bad",
+                    "networking": {"type": "limited", "allowed_hosts": "evil.example.com"},
+                }
+            ),
+            content_type="application/json",
+            **auth_headers,
+        )
+        assert resp.status_code == 422
+
     def test_update_env_vars_change_increments_version(
         self, client: Client, auth_headers, environment
     ):
