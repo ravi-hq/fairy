@@ -203,6 +203,7 @@ Do **not** rollback past a migration without checking `migrations/` — the work
 - Only the API service is monitored. Worker failures don't trigger auto-revert. (Worker deploys rarely fail in isolation since they share the same commit.)
 - PRs created by `GITHUB_TOKEN` don't trigger downstream workflows. If CI doesn't appear on the auto-revert PR, push an empty commit (`git commit --allow-empty -m "trigger CI" && git push`) or re-run checks manually.
 - Reverts of reverts are skipped (subject starts with `Revert `) so a botched revert can't loop.
+- Dedup is via `gh pr list --search`, which routes through GitHub's search API and can lag by seconds to minutes. In rare cases, two consecutive cron ticks against the same still-failing commit may both miss the existing PR and open a duplicate. If you see two open auto-revert PRs for the same SHA, close the newer one — the script won't crash on the duplicate, just wastes a PR slot.
 
 **Disabling.** Comment out the `schedule` trigger in `.github/workflows/auto-revert.yml`, or remove the `RENDER_SERVICE_ID_API` repo variable (the workflow `if:` short-circuits without it).
 

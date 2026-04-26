@@ -59,8 +59,21 @@ def test_fetch_failed_deploys_filters_to_failed_statuses(mocker):
 
     out = fetch_failed_deploys("srv-x", "tok")
 
-    assert {d.deploy_id for d in out} == {"dep-bf", "dep-uf", "dep-cancel"}
+    # `canceled` is excluded — Render uses it for superseded deploys, which
+    # are not bad commits. See FAILED_STATUSES comment.
+    assert {d.deploy_id for d in out} == {"dep-bf", "dep-uf"}
     assert all(d.status in FAILED_STATUSES for d in out)
+
+
+def test_fetch_failed_deploys_excludes_canceled(mocker):
+    """Pin: superseded-deploy `canceled` is NOT actionable — would open
+    spurious revert PRs whenever two commits land in quick succession."""
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = [_deploy_entry(status="canceled", deploy_id="dep-cancel")]
+    mocker.patch("scripts.auto_revert.requests.get", return_value=mock_resp)
+
+    assert fetch_failed_deploys("srv-x", "tok") == []
+    assert "canceled" not in FAILED_STATUSES
 
 
 def test_fetch_failed_deploys_skips_entries_without_commit_sha(mocker):
@@ -283,7 +296,7 @@ def test_open_revert_pr_passes_draft_flag_to_gh(mocker):
 
     from scripts.auto_revert import open_revert_pr
 
-    open_revert_pr(_deploy(), draft=True, repo="owner/repo")
+    open_revert_pr(_deploy(), draft=True, migrations_touched=True, repo="owner/repo")
 
     # Find the gh pr create invocation.
     pr_create_calls = [
@@ -299,7 +312,7 @@ def test_open_revert_pr_omits_draft_flag_when_not_draft(mocker):
 
     from scripts.auto_revert import open_revert_pr
 
-    open_revert_pr(_deploy(), draft=False, repo="owner/repo")
+    open_revert_pr(_deploy(), draft=False, migrations_touched=False, repo="owner/repo")
 
     pr_create_calls = [
         c for c in run.call_args_list if c.args and c.args[0][:3] == ["gh", "pr", "create"]
@@ -313,7 +326,7 @@ def test_open_revert_pr_labels_draft_with_needs_human_review(mocker):
 
     from scripts.auto_revert import open_revert_pr
 
-    open_revert_pr(_deploy(), draft=True, repo="owner/repo")
+    open_revert_pr(_deploy(), draft=True, migrations_touched=True, repo="owner/repo")
 
     label_calls = [
         c for c in run.call_args_list if c.args and c.args[0][:3] == ["gh", "pr", "edit"]
@@ -328,12 +341,31 @@ def test_open_revert_pr_does_not_label_when_not_draft(mocker):
 
     from scripts.auto_revert import open_revert_pr
 
-    open_revert_pr(_deploy(), draft=False, repo="owner/repo")
+    open_revert_pr(_deploy(), draft=False, migrations_touched=False, repo="owner/repo")
 
     label_calls = [
         c for c in run.call_args_list if c.args and c.args[0][:3] == ["gh", "pr", "edit"]
     ]
     assert label_calls == []
+
+
+def test_open_revert_pr_migration_warning_decoupled_from_draft(mocker):
+    """Pin: the migration warning in the body is driven by
+    `migrations_touched`, not by `draft`. If a future change adds another
+    reason to draft, the body must NOT show a misleading migration warning."""
+    run = mocker.patch("scripts.auto_revert.subprocess.run")
+    run.return_value = MagicMock(stdout="https://github.com/owner/repo/pull/9\n")
+
+    from scripts.auto_revert import open_revert_pr
+
+    open_revert_pr(_deploy(), draft=True, migrations_touched=False, repo="owner/repo")
+
+    pr_create_call = next(
+        c for c in run.call_args_list if c.args and c.args[0][:3] == ["gh", "pr", "create"]
+    )
+    body_idx = pr_create_call.args[0].index("--body")
+    body = pr_create_call.args[0][body_idx + 1]
+    assert "Migration touched" not in body
 
 
 # === Sanity: subprocess.CalledProcessError survives the per-deploy try/except ===

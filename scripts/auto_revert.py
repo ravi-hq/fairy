@@ -47,7 +47,11 @@ RENDER_API = "https://api.render.com/v1"
 # Render deploy lifecycle terminal states we treat as "this commit is bad."
 # Render auto-rolls-forward to the previous live commit on failure, but
 # `main` still has the offending SHA — that's what we're here to fix.
-FAILED_STATUSES = frozenset({"build_failed", "update_failed", "canceled"})
+#
+# `canceled` is intentionally excluded: Render marks a deploy `canceled`
+# when a newer deploy supersedes it — the normal result of pushing two
+# commits in quick succession — and the earlier commit isn't actually bad.
+FAILED_STATUSES = frozenset({"build_failed", "update_failed"})
 
 # Path prefix that identifies a migration file. Matches the layout pinned
 # in CLAUDE.md "Danger zones": migrations are forward-only in prod.
@@ -193,8 +197,16 @@ def render_pr_body(deploy: FailedDeploy, *, migrations_touched: bool) -> str:
     return "\n".join(lines)
 
 
-def open_revert_pr(deploy: FailedDeploy, *, draft: bool, repo: str) -> str:
-    """Create a branch, run git revert, push, open PR. Returns PR URL."""
+def open_revert_pr(
+    deploy: FailedDeploy, *, draft: bool, migrations_touched: bool, repo: str
+) -> str:
+    """Create a branch, run git revert, push, open PR. Returns PR URL.
+
+    `draft` and `migrations_touched` happen to coincide today (a touched
+    migration is the only reason we draft), but they're passed
+    independently so the PR-body warning stays tied to its actual cause
+    if a future change adds another reason to draft.
+    """
     short = deploy.commit_sha[:12]
     branch = f"auto-revert/{short}"
 
@@ -210,7 +222,7 @@ def open_revert_pr(deploy: FailedDeploy, *, draft: bool, repo: str) -> str:
     )
 
     title = f"{PR_TITLE_PREFIX} {short} ({deploy.status})"
-    body = render_pr_body(deploy, migrations_touched=draft)
+    body = render_pr_body(deploy, migrations_touched=migrations_touched)
 
     cmd = [
         "gh",
@@ -255,7 +267,9 @@ def process_deploy(deploy: FailedDeploy, *, repo: str, dry_run: bool) -> str | N
             f"{deploy.commit_sha[:12]} (deploy {deploy.deploy_id})"
         )
         return None
-    return open_revert_pr(deploy, draft=migrations_touched, repo=repo)
+    return open_revert_pr(
+        deploy, draft=migrations_touched, migrations_touched=migrations_touched, repo=repo
+    )
 
 
 def main() -> int:
@@ -278,6 +292,12 @@ def main() -> int:
     api_key = os.environ.get("RENDER_API_KEY")
     if not api_key:
         print("error: RENDER_API_KEY env var not set", file=sys.stderr)
+        return 1
+    if not args.dry_run and not os.environ.get("GH_TOKEN"):
+        print(
+            "error: GH_TOKEN env var not set (required for git push and gh pr create)",
+            file=sys.stderr,
+        )
         return 1
 
     deploys = fetch_failed_deploys(args.service_id, api_key, limit=args.limit)
