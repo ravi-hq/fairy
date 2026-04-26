@@ -1,5 +1,4 @@
 import json
-import re
 
 import posthog
 from django.db import transaction
@@ -17,6 +16,7 @@ from agent_on_demand.models import Agent, AgentVersion, Environment
 from agent_on_demand.models_catalog import MODELS
 from agent_on_demand.runtime_model_compat import check_runtime_model_compat
 from agent_on_demand.runtimes import RUNTIMES
+from agent_on_demand.skill_validation import validate_skills as _validate_skills
 from agent_on_demand.versioning import check_version_match
 
 
@@ -31,113 +31,6 @@ AGENT_VERSIONED_FIELDS = (
     "mcp_servers",
     "metadata",
 )
-
-
-MAX_SKILLS_PER_AGENT = 20
-MAX_SKILL_DESCRIPTION_LEN = 1024
-MAX_SKILL_CONTENT_BYTES = 64 * 1024
-
-_SKILL_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
-# `owner/repo` — same character class GitHub allows for both segments.
-_GITHUB_SOURCE_RE = re.compile(r"^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$")
-
-# Two skill shapes:
-#   inline: {name, description, content}          ← content shipped in-band
-#   github: {type: "github", description, source, name?}
-#                                                 ← installed on the Sprite at
-#                                                   provision time via the
-#                                                   skills.sh CLI
-#                                                   (`npx skills add ...`).
-#                                                   `name` selects a single skill
-#                                                   from the repo via the CLI's
-#                                                   `--skill` flag; omit it to
-#                                                   install every SKILL.md the
-#                                                   repo exposes.
-# Detection: presence of `type` field. Inline shape omits it.
-_INLINE_SKILL_KEYS = {"name", "description", "content"}
-_GITHUB_SKILL_KEYS = {"type", "name", "description", "source"}
-_GITHUB_REQUIRED_KEYS = {"type", "description", "source"}
-
-_SKILL_HEREDOC_DELIMITER = "SKILL_EOF"
-
-
-def _validate_skill_inline(skill: dict, i: int) -> None:
-    extra = set(skill) - _INLINE_SKILL_KEYS
-    if extra:
-        raise ValueError(
-            f"skills[{i}]: unknown keys {sorted(extra)!r}. "
-            f"Allowed for inline skills: {sorted(_INLINE_SKILL_KEYS)}"
-        )
-    for field_name in ("name", "description", "content"):
-        if field_name not in skill:
-            raise ValueError(f"skills[{i}] missing required field: {field_name}")
-        if not isinstance(skill[field_name], str):
-            raise ValueError(f"skills[{i}].{field_name} must be a string")
-    content = skill["content"]
-    if len(content.encode("utf-8")) > MAX_SKILL_CONTENT_BYTES:
-        raise ValueError(f"skills[{i}].content exceeds {MAX_SKILL_CONTENT_BYTES} bytes")
-    if _SKILL_HEREDOC_DELIMITER in content:
-        raise ValueError(f"skills[{i}].content must not contain {_SKILL_HEREDOC_DELIMITER!r}")
-
-
-def _validate_skill_github(skill: dict, i: int) -> None:
-    extra = set(skill) - _GITHUB_SKILL_KEYS
-    if extra:
-        raise ValueError(
-            f"skills[{i}]: unknown keys {sorted(extra)!r}. "
-            f"Allowed for github skills: {sorted(_GITHUB_SKILL_KEYS)}"
-        )
-    for field_name in _GITHUB_REQUIRED_KEYS:
-        if field_name not in skill:
-            raise ValueError(f"skills[{i}] missing required field: {field_name}")
-        if not isinstance(skill[field_name], str):
-            raise ValueError(f"skills[{i}].{field_name} must be a string")
-    # `name` is optional for github; if present, must still be a string.
-    if "name" in skill and not isinstance(skill["name"], str):
-        raise ValueError(f"skills[{i}].name must be a string")
-    if skill["type"] != "github":
-        raise ValueError(f"skills[{i}].type {skill['type']!r} unsupported (only 'github')")
-    if not _GITHUB_SOURCE_RE.match(skill["source"]):
-        raise ValueError(f"skills[{i}].source {skill['source']!r} must be 'owner/repo'")
-
-
-def _validate_skills(skills: list) -> list:
-    if len(skills) > MAX_SKILLS_PER_AGENT:
-        raise ValueError(f"Maximum {MAX_SKILLS_PER_AGENT} skills per agent")
-    seen_dedup_keys: set[str] = set()
-    for i, skill in enumerate(skills):
-        if not isinstance(skill, dict):
-            raise ValueError(f"skills[{i}] must be an object")
-
-        # Discriminate by presence of `type`. Inline skills omit it.
-        is_github = "type" in skill
-        if is_github:
-            _validate_skill_github(skill, i)
-        else:
-            _validate_skill_inline(skill, i)
-
-        # Name regex applies whenever `name` is present. Github skills may
-        # omit it (means: install every SKILL.md from the repo); inline
-        # validation above already required it.
-        if "name" in skill:
-            name = skill["name"]
-            if not _SKILL_NAME_RE.match(name):
-                raise ValueError(f"skills[{i}].name {name!r} must match [a-z0-9][a-z0-9-]{{0,63}}")
-            dedup_key = name
-        else:
-            # Whole-repo github install. Dedup on source so two "all skills
-            # from owner/repo" entries collide, but a per-skill entry from
-            # the same source can coexist (different dedup key).
-            dedup_key = f"@github:{skill['source']}"
-
-        if dedup_key in seen_dedup_keys:
-            label = "name" if "name" in skill else "source"
-            raise ValueError(f"skills[{i}]: duplicate {label} {dedup_key!r}")
-        seen_dedup_keys.add(dedup_key)
-
-        if len(skill["description"]) > MAX_SKILL_DESCRIPTION_LEN:
-            raise ValueError(f"skills[{i}].description exceeds {MAX_SKILL_DESCRIPTION_LEN} chars")
-    return skills
 
 
 class CreateAgentRequest(BaseModel):
