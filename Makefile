@@ -38,6 +38,15 @@ mutation-test:
 	rm -rf mutants/
 	DATABASE_URL=sqlite:///test.db uv run python -m scripts.check_mutmut
 
+# Render mutants/ into mutants/report.html — per-file/per-function kill-rate
+# heatmap plus the unified diff for every surviving mutant. Run after
+# `make mutation-test` (or any `mutmut run`).
+mutation-report:
+	@if [ ! -f mutants/mutmut-cicd-stats.json ]; then \
+		echo "No mutmut data — run 'make mutation-test' first."; exit 1; \
+	fi
+	uv run python -m scripts.mutmut_report
+
 # E2E tests against a running agent-on-demand deployment.
 # Required:  AOD_API_TOKEN
 # Optional:  AOD_API_URL (default http://localhost:8777 — matches `make dev`)
