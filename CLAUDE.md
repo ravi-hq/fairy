@@ -89,6 +89,72 @@ directly (without `make`), `tests/e2e/conftest.py` defaults to
 - E2E fixtures (`create_agent`, `create_environment`, `create_session` in
   `tests/e2e/conftest.py`) auto-clean up created rows after each test.
 
+### Scoped e2e on PRs
+
+The `e2e-scoped` CI job runs only the e2e tests that map to source files
+changed on the current branch (via `scripts/scope_e2e.py`). The mapping
+is in that script's `RULES` table and is pinned by `tests/test_scope_e2e.py`
+— don't change either without updating the other.
+
+To preview locally what e2e would run for your branch:
+
+```bash
+make scope-e2e          # prints the test files + runtimes
+make test-e2e-scoped    # actually runs them (needs AOD_API_TOKEN)
+```
+
+**The CI job is currently a no-op preview** — it computes scope and prints
+what *would* run, but actual pytest is gated on `AOD_API_TOKEN` and
+`AOD_API_URL` repository secrets. To activate the gate, add both secrets
+under Repository Settings → Secrets and variables → Actions.
+
+## Danger zones
+
+Files and patterns where mistakes have outsized blast radius. Treat any
+non-trivial change to the files below as needing human review even if a
+test passes — automated coverage cannot catch every class of bug here.
+
+**Files: any change here requires explicit human review before landing.**
+
+- `src/agent_on_demand/auth.py` — bearer-token check. A weakened comparison
+  or short-circuited check is a full breach. Mutation-tested.
+- `src/agent_on_demand/crypto.py` — Fernet wrapper for `env_vars` and other
+  secrets at rest. A wrong key derivation silently corrupts every encrypted
+  field. Mutation-tested.
+- `src/agent_on_demand/versioning.py` — optimistic-concurrency mismatch
+  response. The exact `detail` string is part of the API contract; SDKs
+  parse it. Mutation-tested.
+- `src/agent_on_demand/session_state.py` — session state-machine
+  predicates. Wrong rejection = duplicate agent runs (\$\$\$) or stuck
+  sessions. Mutation-tested.
+- `src/agent_on_demand/migrations/*.py` — DB migrations are forward-only in
+  prod. New migrations are linted in CI (`make check-migrations`); see
+  `MIGRATION_LINTER_OPTIONS` in `src/config/settings.py`.
+
+**Forbidden patterns (do not do these without explicit human approval):**
+
+- Removing or weakening a `version` check in a write path. Optimistic
+  concurrency is the only thing preventing silent data loss under
+  concurrent updates.
+- Removing the `select_for_update()` lock around session state changes
+  (`terminate_session`, `delete_session`, `send_prompt`'s post-lock check).
+  These prevent races that orphan Sprites or double-spend agent runs.
+- Changing the response shape of any documented endpoint without
+  also updating `docs/openapi.yaml` and `docs/request_schemas.json`. CI
+  enforces request-schema snapshots; response shapes are pinned by tests.
+- Skipping CI hooks (`--no-verify`, `--no-gpg-sign`) or disabling a
+  required check. If a check fails, fix the underlying issue.
+- Adding migrations that drop columns / tables, add NOT NULL on populated
+  tables, or change column types without a backfill plan. The migration
+  linter catches the mechanical patterns; the deploy-time impact still
+  needs review.
+
+**When the mutation-test gate fires unexpectedly,** read the survivor list
+in the CI output — `scripts/check_mutmut.py` prints the exact `mutmut
+show <name>` command. Don't add the survivor to the equivalent allowlist
+unless you can prove (with the diff) that no input distinguishes the
+mutant from the original.
+
 ## Style
 
 - Python 3.11+, ruff with `line-length = 100`.

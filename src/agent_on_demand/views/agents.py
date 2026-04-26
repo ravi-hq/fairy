@@ -14,6 +14,7 @@ from agent_on_demand.auth import require_api_key
 from agent_on_demand.models import Agent, AgentVersion, Environment
 from agent_on_demand.models_catalog import MODELS
 from agent_on_demand.runtimes import RUNTIMES
+from agent_on_demand.versioning import check_version_match
 
 
 AGENT_VERSIONED_FIELDS = (
@@ -326,6 +327,10 @@ def agents_list_create(request):
                 env_obj = Environment.objects.get(pk=req.environment_id, user=request.user)
             except (Environment.DoesNotExist, ValueError):
                 return JsonResponse({"detail": "Environment not found"}, status=404)
+            if env_obj.is_archived:
+                return JsonResponse(
+                    {"detail": "Cannot assign an archived environment to an agent"}, status=409
+                )
 
         with transaction.atomic():
             agent = Agent.objects.create(
@@ -397,11 +402,9 @@ def agent_detail(request, agent_id):
         except ValidationError as e:
             return JsonResponse({"detail": e.errors(include_context=False)}, status=422)
 
-        if req.version != agent.version:
-            return JsonResponse(
-                {"detail": f"Version mismatch: expected {agent.version}, got {req.version}"},
-                status=409,
-            )
+        version_err = check_version_match(req.version, agent.version)
+        if version_err is not None:
+            return version_err
 
         if req.runtime is not None and req.runtime not in RUNTIMES:
             return JsonResponse(
@@ -419,24 +422,27 @@ def agent_detail(request, agent_id):
         # Detect changes
         changed = False
 
-        # Resolve environment_id only when the key was explicitly present in the
-        # request body. model_fields_set distinguishes:
-        #   key absent            → no-op (caller did not intend to touch environment)
-        #   key present as null   → clear the agent's environment
-        #   key present as a UUID → set / change the agent's environment
+        # Resolve environment_id only when it was explicitly included in the
+        # request body. environment_id defaults to None in the schema, so we
+        # must consult model_fields_set to distinguish "absent from payload"
+        # from "explicitly set to null" (which clears the environment).
         if "environment_id" in req.model_fields_set:
-            if req.environment_id is None:
-                if agent.environment_id is not None:
-                    agent.environment = None
-                    changed = True
-            else:
+            if req.environment_id is not None:
                 try:
                     env_obj = Environment.objects.get(pk=req.environment_id, user=request.user)
                 except (Environment.DoesNotExist, ValueError):
                     return JsonResponse({"detail": "Environment not found"}, status=404)
+                if env_obj.is_archived:
+                    return JsonResponse(
+                        {"detail": "Cannot assign an archived environment to an agent"}, status=409
+                    )
                 if env_obj.id != agent.environment_id:
                     agent.environment = env_obj
                     changed = True
+            elif agent.environment_id is not None:
+                # Explicit null — detach the environment.
+                agent.environment = None
+                changed = True
 
         for field in ("name", "model", "runtime", "system", "description", "skills", "mcp_servers"):
             value = getattr(req, field)
