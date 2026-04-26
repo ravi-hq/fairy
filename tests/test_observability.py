@@ -97,8 +97,36 @@ def test_init_otel_short_circuits_when_already_initialized(monkeypatch):
 @pytest.fixture
 def reset_otel(monkeypatch):
     """Reset OTel global state for tests that exercise init_otel's full body.
-    Each test is responsible for cleaning up loggers it attached."""
+    Each test is responsible for cleaning up loggers it attached.
+
+    Also patches the OTLP exporters with no-ops so the lingering
+    BatchSpanProcessor / BatchLogRecordProcessor inside the global providers
+    don't try to flush to api.honeycomb.io with the fake key at session
+    teardown — that produces noisy 401 errors in CI logs even though the
+    tests themselves pass.
+    """
     import logging
+
+    class _NoopExporter:
+        def export(self, _records):
+            return 0  # SUCCESS
+
+        def shutdown(self):
+            return None
+
+        def force_flush(self, _timeout_millis=30000):
+            return True
+
+    # The exporters are imported lazily inside init_otel, so patch the
+    # source modules rather than `observability.<name>`.
+    monkeypatch.setattr(
+        "opentelemetry.exporter.otlp.proto.http.trace_exporter.OTLPSpanExporter",
+        lambda **_kw: _NoopExporter(),
+    )
+    monkeypatch.setattr(
+        "opentelemetry.exporter.otlp.proto.http._log_exporter.OTLPLogExporter",
+        lambda **_kw: _NoopExporter(),
+    )
 
     monkeypatch.setattr(observability, "_otel_initialized", False)
     root = logging.getLogger()
