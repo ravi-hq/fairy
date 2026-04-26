@@ -1,6 +1,7 @@
 """Direct tests for the field-encryption helpers in agent_on_demand.crypto."""
 
 import pytest
+from cryptography.fernet import InvalidToken
 from django.test import override_settings
 
 from agent_on_demand.crypto import decrypt, encrypt
@@ -57,7 +58,13 @@ def test_decrypt_invalid_token_raises_value_error():
 
     Callers (e.g. _build_spec_for_session) catch ValueError to mark the
     session failed; letting cryptography's InvalidToken escape would bypass
-    that and leave the session stuck.
+    that and leave the session stuck. The exact message is asserted so a
+    drift in the diagnostic wording is caught (and to keep mutmut honest).
     """
-    with pytest.raises(ValueError, match="Decryption failed"):
+    with pytest.raises(ValueError) as exc_info:
         decrypt(b"this-is-not-a-valid-fernet-token")
+    assert (
+        str(exc_info.value)
+        == "Decryption failed: data may be corrupted or the encryption key has changed"
+    )
+    assert isinstance(exc_info.value.__cause__, InvalidToken)
