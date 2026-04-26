@@ -61,6 +61,22 @@ dev = [
 target-version = "py311"
 line-length = 100
 
+[tool.ruff.lint]
+# Default ruff selection (E4, E7, E9, F) plus rule families that catch real
+# bugs without requiring code changes today. Each addition was zero-violation
+# at adoption time — adding here is a one-way ratchet that prevents the same
+# class of bug from sneaking back in.
+select = [
+    "E4",     # pycodestyle: import errors
+    "E7",     # pycodestyle: statement errors
+    "E9",     # pycodestyle: runtime errors (syntax)
+    "F",      # pyflakes: undefined names, unused imports
+    "B",      # flake8-bugbear: likely bugs (mutable defaults, stale references)
+    "ASYNC",  # flake8-async: blocking calls in async, missing awaits
+    "PIE",    # flake8-pie: misc anti-patterns
+    "TID",    # flake8-tidy-imports: relative-import drift, banned imports
+]
+
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "config.settings"
 pythonpath = ["src"]
