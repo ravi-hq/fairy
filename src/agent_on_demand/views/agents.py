@@ -327,20 +327,21 @@ def agents_list_create(request):
             except (Environment.DoesNotExist, ValueError):
                 return JsonResponse({"detail": "Environment not found"}, status=404)
 
-        agent = Agent.objects.create(
-            user=request.user,
-            name=req.name,
-            description=req.description,
-            system=req.system,
-            model=req.model,
-            runtime=req.runtime,
-            environment=env_obj,
-            skills=req.skills,
-            mcp_servers=req.mcp_servers,
-            metadata=req.metadata,
-            version=1,
-        )
-        _snapshot_version(agent)
+        with transaction.atomic():
+            agent = Agent.objects.create(
+                user=request.user,
+                name=req.name,
+                description=req.description,
+                system=req.system,
+                model=req.model,
+                runtime=req.runtime,
+                environment=env_obj,
+                skills=req.skills,
+                mcp_servers=req.mcp_servers,
+                metadata=req.metadata,
+                version=1,
+            )
+            _snapshot_version(agent)
 
         with posthog.new_context():
             posthog.identify_context(str(request.user.id))
@@ -399,9 +400,12 @@ def agent_detail(request, agent_id):
             )
 
         # Resolve environment before acquiring the row lock (fast 404 path).
+        # Use model_fields_set to distinguish "absent from payload" from
+        # "explicitly set to null" (which clears the environment).
         env_obj = None
-        env_id_provided = req.environment_id is not None
-        if env_id_provided:
+        env_id_provided = "environment_id" in req.model_fields_set
+
+        if env_id_provided and req.environment_id is not None:
             try:
                 env_obj = Environment.objects.get(pk=req.environment_id, user=request.user)
             except (Environment.DoesNotExist, ValueError):
@@ -431,11 +435,24 @@ def agent_detail(request, agent_id):
                     return JsonResponse({"detail": compat_err}, status=422)
 
             if env_id_provided:
-                if env_obj.id != agent.environment_id:
-                    agent.environment = env_obj
+                if req.environment_id is not None:
+                    if env_obj.id != agent.environment_id:
+                        agent.environment = env_obj
+                        changed = True
+                elif agent.environment_id is not None:
+                    # Explicit null — detach the environment.
+                    agent.environment = None
                     changed = True
 
-            for field in ("name", "model", "runtime", "system", "description", "skills", "mcp_servers"):
+            for field in (
+                "name",
+                "model",
+                "runtime",
+                "system",
+                "description",
+                "skills",
+                "mcp_servers",
+            ):
                 value = getattr(req, field)
                 if value is not None and value != getattr(agent, field):
                     setattr(agent, field, value)
@@ -455,11 +472,21 @@ def agent_detail(request, agent_id):
 
             if changed:
                 agent.version += 1
-                agent.save(update_fields=[
-                    "name", "description", "system", "model", "runtime",
-                    "environment_id", "skills", "mcp_servers", "metadata",
-                    "version", "updated_at",
-                ])
+                agent.save(
+                    update_fields=[
+                        "name",
+                        "description",
+                        "system",
+                        "model",
+                        "runtime",
+                        "environment_id",
+                        "skills",
+                        "mcp_servers",
+                        "metadata",
+                        "version",
+                        "updated_at",
+                    ]
+                )
                 _snapshot_version(agent)
 
         if changed:
