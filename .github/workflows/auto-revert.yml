@@ -13,12 +13,16 @@ name: Auto-revert failed deploys
 #
 # See docs/runbook.md "Auto-revert (failed deploys)" for operator guidance.
 
+# PAUSED: cron trigger commented out so this workflow does not run on
+# schedule. Manual `workflow_dispatch` is intentionally left active so
+# operators can dry-run while the workflow is paused. To re-enable
+# automatic revert PRs, uncomment the `schedule:` block below.
 on:
-  schedule:
-    # Every 5 minutes. Render auto-rollback handles user impact in ~30s,
-    # so a 5-min revert latency only affects the time `main` carries the
-    # bad commit — fine for v1.
-    - cron: "*/5 * * * *"
+  # schedule:
+  #   # Every 5 minutes. Render auto-rollback handles user impact in ~30s,
+  #   # so a 5-min revert latency only affects the time `main` carries the
+  #   # bad commit — fine for v1.
+  #   - cron: "*/5 * * * *"
   workflow_dispatch:
     inputs:
       dry-run:
