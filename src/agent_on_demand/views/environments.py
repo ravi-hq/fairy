@@ -117,6 +117,10 @@ class UpdateEnvironmentRequest(BaseModel):
             net_type = v.get("type", "unrestricted")
             if net_type not in ("unrestricted", "limited"):
                 raise ValueError("networking.type must be 'unrestricted' or 'limited'")
+            if net_type == "limited":
+                hosts = v.get("allowed_hosts", [])
+                if not isinstance(hosts, list):
+                    raise ValueError("networking.allowed_hosts must be a list")
         return v
 
 
