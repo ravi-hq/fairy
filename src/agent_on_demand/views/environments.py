@@ -60,9 +60,7 @@ class CreateEnvironmentRequest(BaseModel):
     def validate_env_vars(cls, v: dict) -> dict:
         for key in v:
             if not _ENV_VAR_KEY_RE.match(key):
-                raise ValueError(
-                    f"Invalid env_var key {key!r}: must match [A-Za-z_][A-Za-z0-9_]*"
-                )
+                raise ValueError(f"Invalid env_var key {key!r}: must match [A-Za-z_][A-Za-z0-9_]*")
         return v
 
     @field_validator("networking")
@@ -340,9 +338,7 @@ def environment_delete(request, environment_id):
             # session referencing this environment between the existence check
             # and the delete. Without the lock, the cascade would silently
             # NULL-out the new session's environment FK.
-            env = Environment.objects.select_for_update().get(
-                pk=environment_id, user=request.user
-            )
+            env = Environment.objects.select_for_update().get(pk=environment_id, user=request.user)
             if env.sessions.exists():
                 return JsonResponse(
                     {"detail": "Cannot delete environment with existing sessions"},
