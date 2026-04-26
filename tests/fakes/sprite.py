@@ -35,15 +35,31 @@ class _FSPath:
         return _FSPath(self.fs, joined)
 
     def write_text(self, text: str) -> None:
-        self.fs.writes.append(RecordedWrite(path="/" + self.path.lstrip("/"), text=text))
+        normalized = "/" + self.path.lstrip("/")
+        self.fs._maybe_raise_on_write(normalized)
+        self.fs.writes.append(RecordedWrite(path=normalized, text=text))
 
 
 @dataclass
 class _Filesystem:
     writes: list[RecordedWrite] = field(default_factory=list)
+    _write_raise_predicates: list[tuple] = field(default_factory=list)
 
     def __truediv__(self, other: str) -> _FSPath:
         return _FSPath(self, str(other).lstrip("/"))
+
+    def raise_on_write(self, path_predicate, exc: Exception) -> None:
+        """Arrange for the next write_text whose normalized path matches
+        `path_predicate(path)` to raise `exc`. Predicate can also be a
+        substring; matches paths containing it."""
+        self._write_raise_predicates.append((path_predicate, exc))
+
+    def _maybe_raise_on_write(self, path: str) -> None:
+        for i, (pred, exc) in enumerate(self._write_raise_predicates):
+            matched = pred(path) if callable(pred) else pred in path
+            if matched:
+                del self._write_raise_predicates[i]
+                raise exc
 
 
 class _CommandHandle:
