@@ -12,6 +12,7 @@ agent_on_demand.db-wal
 .gstack/
 .coverage
 .mypy_cache/
+mutants/
 .agent-mcp-config.json
 site/docs/api/openapi.json
 site/site/
