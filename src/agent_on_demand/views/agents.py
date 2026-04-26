@@ -11,6 +11,7 @@ from django.views.decorators.http import require_GET, require_POST
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from agent_on_demand.auth import require_api_key
+from agent_on_demand.metadata_merge import merge_metadata
 from agent_on_demand.models import Agent, AgentVersion, Environment
 from agent_on_demand.models_catalog import MODELS
 from agent_on_demand.runtimes import RUNTIMES
@@ -465,14 +466,12 @@ def agent_detail(request, agent_id):
                     setattr(agent, field, value)
                     changed = True
 
-            # Metadata merges at key level (matching Anthropic semantics)
+            # Metadata merges at key level (matching Anthropic semantics).
+            # See agent_on_demand.metadata_merge for the contract — pinned by
+            # mutation testing because the "" → delete branch is the kind of
+            # thing a refactor can quietly drop.
             if req.metadata is not None:
-                merged = dict(agent.metadata)
-                for k, v in req.metadata.items():
-                    if v == "":
-                        merged.pop(k, None)
-                    else:
-                        merged[k] = v
+                merged = merge_metadata(agent.metadata, req.metadata)
                 if merged != agent.metadata:
                     agent.metadata = merged
                     changed = True
