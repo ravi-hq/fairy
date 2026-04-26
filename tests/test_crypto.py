@@ -1,7 +1,6 @@
 """Direct tests for the field-encryption helpers in agent_on_demand.crypto."""
 
 import pytest
-from cryptography.fernet import InvalidToken
 from django.test import override_settings
 
 from agent_on_demand.crypto import decrypt, encrypt
@@ -34,7 +33,7 @@ def test_field_encryption_key_overrides_secret_key():
         assert decrypt(cipher_a) == "payload"
 
     with override_settings(FIELD_ENCRYPTION_KEY="key-B-material"):
-        with pytest.raises(InvalidToken):
+        with pytest.raises(ValueError, match="Decryption failed"):
             decrypt(cipher_a)
 
 
@@ -49,5 +48,16 @@ def test_secret_key_used_when_field_encryption_key_unset():
         assert decrypt(cipher_secret) == "payload"
 
     with override_settings(FIELD_ENCRYPTION_KEY="some-other-key"):
-        with pytest.raises(InvalidToken):
+        with pytest.raises(ValueError, match="Decryption failed"):
             decrypt(cipher_secret)
+
+
+def test_decrypt_invalid_token_raises_value_error():
+    """Corrupted ciphertext should raise ValueError, not Fernet's InvalidToken.
+
+    Callers (e.g. _build_spec_for_session) catch ValueError to mark the
+    session failed; letting cryptography's InvalidToken escape would bypass
+    that and leave the session stuck.
+    """
+    with pytest.raises(ValueError, match="Decryption failed"):
+        decrypt(b"this-is-not-a-valid-fernet-token")
