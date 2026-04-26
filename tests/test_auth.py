@@ -11,8 +11,10 @@ from datetime import timedelta
 import pytest
 from asgiref.sync import async_to_sync
 from django.contrib.auth import get_user_model
+from django.db import connection
 from django.http import JsonResponse
 from django.test import RequestFactory
+from django.test.utils import CaptureQueriesContext
 from django.utils import timezone as tz
 
 from agent_on_demand.auth import require_api_key
@@ -213,3 +215,36 @@ def test_async_valid_key_attaches_user(factory, user, api_key):
     payload = body(resp)
     assert payload["user_id"] == user.id
     assert payload["key_id"] == instance.id
+
+
+# === select_related("user") pin (auth N+1 guard) ===
+#
+# `_check_api_key_{sync,async}` use `APIKey.objects.select_related("user").get(...)`
+# so `request.user = api_key.user` in the wrapper doesn't trigger a second
+# query. Drop the `select_related("user")` and the auth check goes from one
+# query to two — these tests fail in that case, killing the mutation that
+# replaces the join hint with `None`.
+
+
+def test_sync_auth_select_related_keeps_user_load_to_one_query(factory, api_key):
+    _, raw = api_key
+    request = factory.get("/", HTTP_AUTHORIZATION=f"Bearer {raw}")
+    with CaptureQueriesContext(connection) as ctx:
+        resp = _make_sync_view()(request)
+    assert resp.status_code == 200
+    assert len(ctx.captured_queries) == 1, (
+        f"expected 1 query (select_related join), got {len(ctx.captured_queries)}: "
+        f"{[q['sql'] for q in ctx.captured_queries]}"
+    )
+
+
+def test_async_auth_select_related_keeps_user_load_to_one_query(factory, api_key):
+    _, raw = api_key
+    request = factory.get("/", HTTP_AUTHORIZATION=f"Bearer {raw}")
+    with CaptureQueriesContext(connection) as ctx:
+        resp = call_async(_make_async_view(), request)
+    assert resp.status_code == 200
+    assert len(ctx.captured_queries) == 1, (
+        f"expected 1 query (select_related join), got {len(ctx.captured_queries)}: "
+        f"{[q['sql'] for q in ctx.captured_queries]}"
+    )
