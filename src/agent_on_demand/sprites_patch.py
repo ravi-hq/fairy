@@ -16,4 +16,4 @@ def _patched_connect(*args, **kwargs):
     return _orig_connect(*args, **kwargs)
 
 
-_ws.websockets.connect = _patched_connect
+_ws.websockets.connect = _patched_connect  # type: ignore[misc,assignment]
