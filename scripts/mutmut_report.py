@@ -1,20 +1,24 @@
-"""Generate a self-contained HTML report from mutmut output.
+"""Generate a report from mutmut output, in HTML or Markdown.
 
-Reads `mutants/src/**/*.py.meta` and `mutants/mutmut-cicd-stats.json`, then
-emits a single `mutants/report.html` with:
-  - top-line kill-rate stats,
-  - per-file kill rate (heatmap row per source file),
-  - per-function kill rate (collapsible per file),
-  - unified diffs for every surviving mutant, with known-equivalent mutants
-    flagged using the allowlist in `scripts.check_mutmut`.
+Reads `mutants/src/**/*.py.meta` and `mutants/mutmut-cicd-stats.json`.
+
+`--format=html` (default) writes a self-contained `mutants/report.html` with
+top-line stats, per-file/per-function kill-rate heatmap, and the unified diff
+of every surviving mutant.
+
+`--format=markdown` prints a PR-comment-friendly summary to stdout.
+
+Both modes flag known-equivalent survivors using the allowlist in
+`scripts.check_mutmut`.
 
 Assumes `make mutation-test` (or `mutmut run`) has already populated `mutants/`.
 
-Run: `uv run python -m scripts.mutmut_report`
+Run: `uv run python -m scripts.mutmut_report [--format html|markdown]`
 """
 
 from __future__ import annotations
 
+import argparse
 import datetime as dt
 import html
 import json
@@ -174,7 +178,7 @@ def _heat_color(rate: float) -> str:
     return "#b91c1c"
 
 
-def _render(files: dict[str, FileBucket], totals: dict[str, int]) -> str:
+def _render_html(files: dict[str, FileBucket], totals: dict[str, int]) -> str:
     cicd = json.loads(CICD_STATS_PATH.read_text()) if CICD_STATS_PATH.exists() else {}
     generated_at = dt.datetime.now().strftime("%Y-%m-%d %H:%M")
 
@@ -372,7 +376,97 @@ _HEAD = """<!doctype html>
 """
 
 
+def _render_markdown(files: dict[str, FileBucket], totals: dict[str, int]) -> str:
+    total = totals.get("total", 0)
+    killed = totals.get("killed", 0)
+    survived = totals.get("survived", 0)
+    timeout = totals.get("timeout", 0)
+    suspicious = totals.get("suspicious", 0)
+    kill_rate = killed / total if total else 0.0
+
+    survivors = [
+        m
+        for fb in files.values()
+        for func in fb.funcs.values()
+        for m in func.mutants
+        if m.exit_code == EXIT_SURVIVED
+    ]
+    new_survivors = [m for m in survivors if m.mutant_id not in KNOWN_EQUIVALENT]
+
+    if new_survivors or timeout or suspicious:
+        emoji = "❌"
+    elif survivors:
+        emoji = "✅"  # only known-equivalents
+    else:
+        emoji = "✅"
+
+    lines: list[str] = []
+    lines.append("<!-- mutation-report -->")
+    lines.append("## 🧬 Mutation testing report")
+    lines.append("")
+
+    headline = f"{emoji} **{kill_rate:.1%} kill rate** — {killed} killed, {survived} survived"
+    extras = []
+    if timeout:
+        extras.append(f"{timeout} timeout")
+    if suspicious:
+        extras.append(f"{suspicious} suspicious")
+    if extras:
+        headline += " (" + ", ".join(extras) + ")"
+    headline += f", {total} total."
+    lines.append(headline)
+    if survivors and not new_survivors:
+        lines.append("")
+        lines.append(f"All {len(survivors)} survivors are documented known-equivalents.")
+    elif new_survivors:
+        lines.append("")
+        lines.append(
+            f"⚠️ **{len(new_survivors)} new surviving mutant(s)** — "
+            f"see [`scripts/check_mutmut.py`](../blob/main/scripts/check_mutmut.py) "
+            "for the equivalent-mutant allowlist."
+        )
+    lines.append("")
+
+    lines.append("### By file")
+    lines.append("")
+    lines.append("| File | Killed | Survived | Total | Rate |")
+    lines.append("|---|---:|---:|---:|---:|")
+    for path, fb in sorted(files.items()):
+        lines.append(
+            f"| `{path}` | {fb.killed} | {fb.survived} | {fb.total} | {fb.kill_rate:.1%} |"
+        )
+    lines.append("")
+
+    lines.append(f"### Surviving mutants ({len(survivors)})")
+    lines.append("")
+    if not survivors:
+        lines.append("_None — every mutant was killed._")
+        return "\n".join(lines) + "\n"
+
+    for mutant in sorted(survivors, key=lambda m: m.mutant_id):
+        equivalent = mutant.mutant_id in KNOWN_EQUIVALENT
+        marker = "✓ known-equivalent" if equivalent else "❌ new survivor"
+        diff = _diff_for(mutant.mutant_id)
+        lines.append(
+            f"<details{'' if not equivalent else ''}><summary>"
+            f"{marker} — <code>{mutant.mutant_id}</code></summary>"
+        )
+        lines.append("")
+        lines.append("```diff")
+        lines.append(diff.rstrip())
+        lines.append("```")
+        lines.append("")
+        lines.append("</details>")
+        lines.append("")
+
+    return "\n".join(lines) + "\n"
+
+
 def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--format", choices=("html", "markdown"), default="html")
+    args = parser.parse_args()
+
     if not MUTANTS_DIR.exists():
         print("No mutants/ directory — run `make mutation-test` first.", file=sys.stderr)
         return 1
@@ -382,8 +476,12 @@ def main() -> int:
             "No *.py.meta files under mutants/ — run `make mutation-test` first.", file=sys.stderr
         )
         return 1
-    REPORT_PATH.write_text(_render(files, totals))
-    print(f"Wrote {REPORT_PATH}")
+
+    if args.format == "html":
+        REPORT_PATH.write_text(_render_html(files, totals))
+        print(f"Wrote {REPORT_PATH}")
+    else:
+        sys.stdout.write(_render_markdown(files, totals))
     return 0
 
 

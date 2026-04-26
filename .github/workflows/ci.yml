@@ -65,6 +65,9 @@ jobs:
 
   mutation-test:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -74,7 +77,41 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --all-extras
-      - run: make mutation-test
+      - id: mutmut
+        run: make mutation-test
+
+      # Render report artifact + PR comment whether the gate passed or failed —
+      # the report is most useful when there's a new survivor to inspect.
+      - if: always() && (steps.mutmut.conclusion == 'success' || steps.mutmut.conclusion == 'failure')
+        run: uv run python -m scripts.mutmut_report --format=html
+      - if: always() && (steps.mutmut.conclusion == 'success' || steps.mutmut.conclusion == 'failure')
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutation-report
+          path: mutants/report.html
+          if-no-files-found: ignore
+
+      - if: always() && (steps.mutmut.conclusion == 'success' || steps.mutmut.conclusion == 'failure') && github.event_name == 'pull_request'
+        run: uv run python -m scripts.mutmut_report --format=markdown > /tmp/summary.md
+      - if: always() && (steps.mutmut.conclusion == 'success' || steps.mutmut.conclusion == 'failure') && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          # Append a link to the workflow run (full HTML report is uploaded as an artifact there).
+          printf '\n_[Full HTML report in workflow artifacts](%s)_\n' "$RUN_URL" >> /tmp/summary.md
+
+          # Sticky comment: delete any prior comment carrying our marker, then post fresh.
+          MARKER='<!-- mutation-report -->'
+          existing=$(gh api "repos/$REPO/issues/$PR_NUMBER/comments" \
+            --jq ".[] | select(.body | startswith(\"$MARKER\")) | .id")
+          for id in $existing; do
+            gh api -X DELETE "repos/$REPO/issues/comments/$id"
+          done
+          gh pr comment "$PR_NUMBER" --repo "$REPO" --body-file /tmp/summary.md
 
   migration-lint:
     runs-on: ubuntu-latest
