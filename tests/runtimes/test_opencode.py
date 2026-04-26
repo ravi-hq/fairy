@@ -157,3 +157,48 @@ def test_write_config_empty_mcp_servers_writes_nothing(user):
     sprite = RecordingSprite("s")
     OpencodeRuntime().write_config(sprite, _spec(user), [])
     assert "/home/sprite/.config/opencode/opencode.json" not in sprite.write_map()
+
+
+@pytest.mark.django_db
+def test_write_config_skips_unknown_type_server(user):
+    """The API validator (`VALID_MCP_SERVER_TYPES`) blocks anything but
+    `url`/`stdio` at request time, so this defensive `else: continue`
+    branch only fires if a future spec drift introduces a new MCP type
+    without an opencode builder. Pin the skip-don't-crash behavior so a
+    refactor can't silently turn unknown types into `entry`-undefined
+    NameError 500s.
+
+    Mixed list — the unknown is skipped, the valid one is still written."""
+    sprite = RecordingSprite("s")
+    OpencodeRuntime().write_config(
+        sprite,
+        _spec(user),
+        [
+            McpServerSpec(name="ghost", type="future-shape"),
+            McpServerSpec(name="real", type="url", url="https://example.com/mcp"),
+        ],
+    )
+    cfg = json.loads(sprite.write_map()["/home/sprite/.config/opencode/opencode.json"])
+    assert "ghost" not in cfg["mcp"]
+    assert cfg["mcp"]["real"]["url"] == "https://example.com/mcp"
+
+
+@pytest.mark.django_db
+def test_write_config_all_unknown_types_writes_nothing(user):
+    """Sibling case to the empty-list test: when *every* server is an
+    unknown type, every iteration takes the `else: continue` branch,
+    `config` stays empty, and the early `if not config: return` prevents
+    the file from being written at all. Pins the file-not-written
+    behavior so a refactor that drops the `if not config` guard would
+    surface as a regression here rather than a stray empty-mcp file
+    landing on every Sprite."""
+    sprite = RecordingSprite("s")
+    OpencodeRuntime().write_config(
+        sprite,
+        _spec(user),
+        [
+            McpServerSpec(name="ghost-1", type="future-shape"),
+            McpServerSpec(name="ghost-2", type="another-future-shape"),
+        ],
+    )
+    assert "/home/sprite/.config/opencode/opencode.json" not in sprite.write_map()
