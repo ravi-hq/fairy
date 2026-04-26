@@ -516,17 +516,16 @@ def list_session_turns(request, session_id):
 def terminate_session(request, session_id):
     """Terminate a session's Sprite without deleting the session record."""
     try:
-        session = AgentSession.objects.get(pk=session_id, user=request.user)
+        with transaction.atomic():
+            session = AgentSession.objects.select_for_update().get(pk=session_id, user=request.user)
+            if session.status == "terminated":
+                return JsonResponse({"detail": "Session is already terminated"}, status=409)
+            sprite_name = session.sprite_name
+            session.status = "terminated"
+            session.sprite_name = ""
+            session.save(update_fields=["status", "sprite_name", "updated_at"])
     except (AgentSession.DoesNotExist, ValueError):
         return JsonResponse({"detail": "Session not found"}, status=404)
-
-    if session.status == "terminated":
-        return JsonResponse({"detail": "Session is already terminated"}, status=409)
-
-    sprite_name = session.sprite_name
-    session.status = "terminated"
-    session.sprite_name = ""
-    session.save(update_fields=["status", "sprite_name", "updated_at"])
 
     if sprite_name:
         session_service.destroy_session_task.defer(user_id=request.user.id, sprite_name=sprite_name)
@@ -554,15 +553,14 @@ def delete_session(request, session_id):
         return JsonResponse({"detail": "Method not allowed"}, status=405)
 
     try:
-        session = AgentSession.objects.get(pk=session_id, user=request.user)
+        with transaction.atomic():
+            session = AgentSession.objects.select_for_update().get(pk=session_id, user=request.user)
+            if session.status == "running":
+                return JsonResponse({"detail": "Cannot delete a running session"}, status=409)
+            session_id_str = str(session.id)
+            session.delete()  # pre_delete signal handles Sprite cleanup
     except (AgentSession.DoesNotExist, ValueError):
         return JsonResponse({"detail": "Session not found"}, status=404)
-
-    if session.status == "running":
-        return JsonResponse({"detail": "Cannot delete a running session"}, status=409)
-
-    session_id_str = str(session.id)
-    session.delete()  # pre_delete signal handles Sprite cleanup
 
     with posthog.new_context():
         posthog.identify_context(str(request.user.id))
