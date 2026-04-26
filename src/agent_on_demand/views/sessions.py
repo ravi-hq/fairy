@@ -255,6 +255,30 @@ def _create_session(request):
         effective_prompt = f"{agent_obj.system}\n\n{req.prompt}"
 
     with transaction.atomic():
+        # Re-check the concurrent session quota inside a transaction, locking
+        # the UserQuota row so two simultaneous requests cannot both pass the
+        # pre-check above and each create a session, silently exceeding the limit.
+        # We read locked_max directly from the locked row rather than going
+        # through user.quota (which Django caches on the instance and may
+        # reflect state from before the get_or_create below).
+        locked_quota, _ = UserQuota.objects.get_or_create(user=request.user)
+        locked_quota = UserQuota.objects.select_for_update().get(pk=locked_quota.pk)
+        locked_max = (
+            locked_quota.max_concurrent_sessions or settings.DEFAULT_MAX_CONCURRENT_SESSIONS
+        )
+        locked_count = UserQuota.active_session_count_for(request.user)
+        if locked_count >= locked_max:
+            return JsonResponse(
+                {
+                    "detail": (
+                        f"Concurrent session limit reached ({locked_count}/{locked_max}). "
+                        "Terminate an active session before starting a new one."
+                    ),
+                    "limit": locked_max,
+                    "active": locked_count,
+                },
+                status=429,
+            )
         session = AgentSession.objects.create(
             user=request.user,
             agent=agent_obj,
@@ -446,7 +470,9 @@ def send_prompt(request, session_id):
             locked.exit_code = None
             locked.save(update_fields=["prompt", "status", "exit_code", "updated_at"])
             session = locked
-            session_service.run_turn(session, turn, sprite, req.prompt, "continue", float(req.timeout))
+            session_service.run_turn(
+                session, turn, sprite, req.prompt, "continue", float(req.timeout)
+            )
     except AgentSession.DoesNotExist:
         return JsonResponse({"detail": "Session not found"}, status=404)
 

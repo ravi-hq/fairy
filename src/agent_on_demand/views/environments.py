@@ -30,7 +30,7 @@ def _env_safe_props(env: Environment) -> dict:
 
 VALID_PACKAGE_MANAGERS = {"apt", "cargo", "gem", "go", "npm", "pip"}
 
-_ENV_VAR_NAME_RE = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
+_ENV_VAR_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 class CreateEnvironmentRequest(BaseModel):
