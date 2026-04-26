@@ -187,6 +187,8 @@ Do **not** rollback past a migration without checking `migrations/` — the work
 
 ### Auto-revert (failed deploys)
 
+> **Status: paused (2026-04-26).** The cron trigger in `.github/workflows/auto-revert.yml` is commented out — default-off until the workflow has been validated end-to-end against at least one real failed deploy. #200 added unit-test coverage but the live Render-API + GitHub-API path was never exercised. Manual `workflow_dispatch` runs still work for that validation. **Exit criteria:** a successful manual dry-run on a real `build_failed`/`update_failed` deploy, followed by a non-dry-run that opens a single revert PR without being duplicated on the next tick. Once both conditions are met, uncomment the `schedule:` block in the workflow file to re-enable.
+
 `.github/workflows/auto-revert.yml` polls Render every 5 min for failed deploys of `agent-on-demand-api`. When it finds one, it opens a `git revert` PR on the offending commit so `main` doesn't keep building on poison. **Render's auto-rollback handles the running image** — this workflow only handles the source-of-truth (`main`).
 
 **What you'll see when it fires.** A new PR titled `Auto-revert: <short-sha> (<status>)` from `github-actions[bot]`, base `main`. The body has the deploy ID, commit SHA, and instructions. CI runs against it like any other PR.
