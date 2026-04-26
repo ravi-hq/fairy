@@ -120,6 +120,39 @@ def test_create_session_with_runtime_provider_mismatch_returns_422(
 
 
 @pytest.mark.django_db
+def test_create_session_with_runtime_no_longer_in_registry_returns_400(
+    client, auth_headers, runtime_key, user
+):
+    """Agent rows persist forever; the runtime registry can change between
+    deploys. An agent created when runtime "ghost" was valid and persisted
+    in the DB after "ghost" was removed from RUNTIMES must reject session
+    creation with a 400 listing the current valid runtimes — not a 500
+    from a downstream KeyError on RUNTIMES[runtime].
+
+    Reaches the branch by inserting an agent directly via the ORM with a
+    runtime string the API validator would now reject. This is the only
+    way that branch is reachable, since the create-agent path also rejects
+    unknown runtimes."""
+    ghost_agent = Agent.objects.create(
+        user=user,
+        name="ghost",
+        model="anthropic/claude-sonnet-4-6",
+        runtime="ghost-runtime",
+        version=1,
+    )
+    resp = client.post(
+        "/sessions",
+        data=json.dumps({"agent_id": str(ghost_agent.id), "prompt": "hi"}),
+        content_type="application/json",
+        **auth_headers,
+    )
+    assert resp.status_code == 400
+    detail = resp.json()["detail"]
+    assert "Unknown runtime: ghost-runtime" in detail
+    assert "Must be one of:" in detail
+
+
+@pytest.mark.django_db
 def test_send_prompt_session_not_found(client, auth_headers):
     fake = uuid.uuid4()
     resp = client.post(
