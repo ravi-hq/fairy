@@ -1,7 +1,7 @@
 import base64
 import hashlib
 
-from cryptography.fernet import Fernet
+from cryptography.fernet import Fernet, InvalidToken
 from django.conf import settings
 
 
@@ -16,4 +16,9 @@ def encrypt(plaintext: str) -> bytes:
 
 
 def decrypt(ciphertext: bytes) -> str:
-    return _get_fernet().decrypt(ciphertext).decode()
+    try:
+        return _get_fernet().decrypt(ciphertext).decode()
+    except InvalidToken as e:
+        raise ValueError(
+            "Decryption failed: data may be corrupted or the encryption key has changed"
+        ) from e

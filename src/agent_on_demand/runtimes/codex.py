@@ -4,6 +4,8 @@ from typing import TYPE_CHECKING, Literal
 
 from sprites import Sprite
 
+from agent_on_demand.session_service.errors import ProvisionError
+
 if TYPE_CHECKING:
     from agent_on_demand.session_service.specs import McpServerSpec, SessionSpec
 
@@ -54,6 +56,18 @@ class CodexRuntime:
                         token = val.removeprefix("Bearer ").strip()
                         if token.startswith("${") and token.endswith("}"):
                             lines.append(f'bearer_token_env_var = "{token[2:-1]}"')
+                        else:
+                            raise ProvisionError(
+                                f"MCP server {s.name!r}: Codex only supports env-var Bearer "
+                                f"tokens (e.g. 'Bearer ${{MY_TOKEN}}'); got a literal value",
+                                stage="write_config",
+                            )
+                    else:
+                        raise ProvisionError(
+                            f"MCP server {s.name!r}: Codex config does not support header "
+                            f"{key!r}; only 'Authorization: Bearer ${{ENV_VAR}}' is supported",
+                            stage="write_config",
+                        )
                 lines.append("required = true")
             elif s.type == "stdio":
                 lines.append(f'command = "{s.command}"')
