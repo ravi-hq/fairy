@@ -486,6 +486,47 @@ def test_stream_session_not_found(client: Client, auth_headers):
 
 
 @pytest.mark.django_db(transaction=True)
+async def test_stream_session_emits_heartbeat_for_idle_passthrough(
+    async_client: AsyncClient, mocker
+):
+    """`stream_session_from_db` yields an empty string when its 15-second
+    idle timer fires — the view must convert that to an SSE comment
+    line `: heartbeat\\n\\n` so proxies and clients keep the
+    connection alive. Without that branch, the empty string would land
+    in the response as a bare `data: \\n\\n` payload, which clients
+    parse as an event with empty data and emit as a spurious user-
+    visible message.
+
+    Reaches the branch by patching stream_session_from_db to yield a
+    heartbeat then a real event, then asserting both the heartbeat
+    comment and the real `data:` line appear in the response body."""
+    user, raw_key = await _create_stream_user()
+    session = await AgentSession.objects.acreate(
+        user=user, runtime="claude", prompt="test", status="completed", exit_code=0
+    )
+
+    async def fake_stream(*args, **kwargs):
+        yield ""  # heartbeat signal
+        yield json.dumps({"type": "exit", "exit_code": 0})
+
+    mocker.patch(
+        "agent_on_demand.views.sessions.stream_session_from_db",
+        side_effect=fake_stream,
+    )
+
+    resp = await async_client.get(
+        f"/sessions/{session.id}/stream",
+        headers={"Authorization": f"Bearer {raw_key}"},
+    )
+    assert resp.status_code == 200
+    content = b"".join([chunk async for chunk in resp.streaming_content]).decode()
+    # The heartbeat passthrough emits `: heartbeat\n\n` (an SSE comment).
+    assert ": heartbeat\n\n" in content
+    # And the real event still flows through as a `data:` line.
+    assert '"type": "exit"' in content
+
+
+@pytest.mark.django_db(transaction=True)
 async def test_stream_session_failed_with_no_exit_code(async_client: AsyncClient):
     """Failed session with no exit code yields error event."""
     user, raw_key = await _create_stream_user()
