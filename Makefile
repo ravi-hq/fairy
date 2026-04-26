@@ -31,6 +31,13 @@ worker:
 test:
 	DATABASE_URL=sqlite:///test.db uv run pytest tests/ -v --ignore=tests/e2e
 
+# Run the test suite under coverage and enforce the floor in pyproject.toml
+# (`[tool.coverage.report].fail_under`). Floor is a ratchet — raise it in PRs
+# that add tests; lowering it requires explicit human approval.
+coverage:
+	DATABASE_URL=sqlite:///test.db uv run coverage run -m pytest tests/ --ignore=tests/e2e
+	uv run coverage report
+
 # Mutation testing for danger-zone modules (auth.py, crypto.py). Asserts that
 # every mutant is killed except a small documented set of known-equivalents.
 # See scripts/check_mutmut.py for the equivalent-mutant allowlist.

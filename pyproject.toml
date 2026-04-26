@@ -88,6 +88,12 @@ exclude_lines = [
     "if TYPE_CHECKING:",
     "if __name__ == .__main__.:",
 ]
+# Ratcheted floor — raise this in PRs that add tests, never lower it without
+# explicit human approval. `make coverage` enforces. See docs/runbook.md.
+fail_under = 87
+precision = 2
+show_missing = true
+skip_covered = true
 
 [tool.mypy]
 python_version = "3.11"

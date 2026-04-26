@@ -155,6 +155,12 @@ show <name>` command. Don't add the survivor to the equivalent allowlist
 unless you can prove (with the diff) that no input distinguishes the
 mutant from the original.
 
+**Coverage floor is a ratchet.** `make coverage` enforces
+`[tool.coverage.report].fail_under` in `pyproject.toml`. PRs that add
+tests should raise the floor toward the new total; PRs that remove tests
+must justify lowering it. Treat the floor like a high-water mark — never
+move it down to "make CI green."
+
 ## Production observability
 
 `/health` exercises a real DB query plus a field-encryption round-trip — a
