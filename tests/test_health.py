@@ -86,3 +86,52 @@ def test_health_does_not_require_auth(client: Client, db):
     assert resp.status_code == 200
     # No Authorization header sent.
     assert resp.headers.get("WWW-Authenticate") is None
+
+
+# The tests above monkey-patch `_check_db` / `_check_crypto` to short-circuit
+# the failure response, which means the *actual* exception-handling branches
+# never execute. The tests below exercise those branches with real raises so
+# a future refactor that narrows `except Exception` to a specific class can't
+# silently slip past CI.
+
+
+def test_check_db_returns_failure_string_on_real_exception(db, monkeypatch):
+    """The bare `except Exception` in _check_db must catch arbitrary errors
+    and surface the class name. If a refactor narrows that catch and the DB
+    raises an unexpected class, /health would 500 instead of returning 503,
+    defeating Render auto-rollback."""
+
+    from agent_on_demand.views import health
+
+    class _BoomConnection:
+        def cursor(self):
+            raise RuntimeError("simulated outage")
+
+    monkeypatch.setattr(health, "connection", _BoomConnection())
+    assert health._check_db() == "fail: RuntimeError"
+
+
+def test_check_crypto_returns_round_trip_mismatch_when_decrypt_differs(monkeypatch):
+    """If encrypt/decrypt are wired up but the round-trip yields a different
+    plaintext (key rotation gone wrong, wrong cipher selected), the helper
+    must report 'round-trip mismatch' — a distinct signal from a hard raise."""
+
+    from agent_on_demand.views import health
+
+    monkeypatch.setattr(health, "encrypt", lambda s: b"opaque-bytes")
+    monkeypatch.setattr(health, "decrypt", lambda b: "not-ping")
+    assert health._check_crypto() == "fail: round-trip mismatch"
+
+
+def test_check_crypto_returns_failure_string_on_real_exception(monkeypatch):
+    """An exception thrown by encrypt or decrypt (e.g. InvalidToken from a
+    rotated FIELD_ENCRYPTION_KEY) must be caught and surfaced via class
+    name — same contract as _check_db."""
+
+    from agent_on_demand.views import health
+
+    def _boom(_):
+        raise ValueError("simulated cipher failure")
+
+    monkeypatch.setattr(health, "encrypt", _boom)
+    assert health._check_crypto() == "fail: ValueError"

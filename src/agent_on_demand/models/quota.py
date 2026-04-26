@@ -26,15 +26,5 @@ class UserQuota(models.Model):
         return f"{self.user} — quota"
 
     @classmethod
-    def max_concurrent_sessions_for(cls, user) -> int:
-        try:
-            quota = user.quota
-        except cls.DoesNotExist:
-            return settings.DEFAULT_MAX_CONCURRENT_SESSIONS
-        if quota.max_concurrent_sessions is None:
-            return settings.DEFAULT_MAX_CONCURRENT_SESSIONS
-        return quota.max_concurrent_sessions
-
-    @classmethod
     def active_session_count_for(cls, user) -> int:
         return AgentSession.objects.filter(user=user, status__in=ACTIVE_SESSION_STATUSES).count()

@@ -292,3 +292,50 @@ def test_ui_does_not_expose_env_var_values(logged_in_client, user):
     assert resp.status_code == 200
     assert b"DATABASE_URL" in resp.content
     assert b"super-secret" not in resp.content
+
+
+# --- GET-form-render coverage ---
+#
+# Existing tests POST submissions and assert resulting state. The plain
+# GET-renders that show empty forms had no coverage — a refactor that
+# returned 500 (e.g. a template syntax error in the empty-state branch)
+# would slip past CI.
+
+
+@pytest.mark.django_db
+def test_register_get_renders_form(client: Client):
+    resp = client.get("/ui/register")
+    assert resp.status_code == 200
+    # The form template references the field id_username produced by Django.
+    assert b"id_username" in resp.content
+
+
+@pytest.mark.django_db
+def test_sprites_key_get_renders_form(logged_in_client):
+    resp = logged_in_client.get("/ui/sprites-key")
+    assert resp.status_code == 200
+    assert b"<form" in resp.content
+
+
+@pytest.mark.django_db
+def test_api_keys_get_renders_form(logged_in_client):
+    resp = logged_in_client.get("/ui/api-keys")
+    assert resp.status_code == 200
+    assert b"<form" in resp.content
+
+
+@pytest.mark.django_db
+def test_agent_detail_renders_for_owner(logged_in_client, user):
+    """`test_agent_detail_404_for_other_user` pins the negative case;
+    this pins the positive render so a template-rendering regression
+    can't slip past."""
+    agent = Agent.objects.create(
+        user=user,
+        name="Owned-Agent",
+        model="anthropic/claude-sonnet-4-6",
+        runtime="claude",
+        version=1,
+    )
+    resp = logged_in_client.get(f"/ui/agents/{agent.id}")
+    assert resp.status_code == 200
+    assert b"Owned-Agent" in resp.content

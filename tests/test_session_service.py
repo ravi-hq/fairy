@@ -149,6 +149,88 @@ class TestProvisionSessionFailureHandling:
         assert ei.value.stage == "provision_setup"
         assert fake_sprites.deleted == ["sprite-x"]
 
+    def test_install_runtime_sprite_error_tags_stage(self, user, fake_sprites, mocker):
+        """Runtime-install failure must surface as ProvisionError(stage=
+        install_runtime). Without this, a meta-runtime npm-install hiccup
+        would fall through to the generic SpriteError catch and report
+        the wrong stage in the failed-stage telemetry."""
+        from agent_on_demand.runtimes import RUNTIMES
+
+        opencode = RUNTIMES["opencode"]
+        mocker.patch.object(opencode, "install", side_effect=SpriteError("npm boom"))
+        with pytest.raises(ProvisionError) as ei:
+            provision_session(user, _spec(user, runtime=opencode))
+        assert ei.value.stage == "install_runtime"
+        # Sprite was created, then deleted as best-effort cleanup.
+        assert fake_sprites.deleted == ["sprite-x"]
+
+    def test_apply_network_policy_sprite_error_tags_stage(self, user, fake_sprites):
+        """If sprite.update_network_policy raises, ProvisionError must tag
+        stage=network_policy so failed-stage telemetry attributes the
+        outage to the right subsystem."""
+        env = Environment.objects.create(
+            user=user,
+            name="limited-env",
+            networking_type="limited",
+            networking_config={"allowed_hosts": ["api.example.com"]},
+            version=1,
+        )
+        # Wrap create_sprite so the recording sprite raises when policy is set.
+        original_create = fake_sprites.create_sprite
+
+        def wrapped(name):
+            sprite = original_create(name)
+            sprite.raise_on("update_network_policy", SpriteError("policy fail"))
+            return sprite
+
+        fake_sprites.create_sprite = wrapped  # patch directly, no mocker needed
+
+        with pytest.raises(ProvisionError) as ei:
+            provision_session(user, _spec(user, environment=env))
+        assert ei.value.stage == "network_policy"
+
+
+class TestDestroyAndResumeSession:
+    """destroy_session is a best-effort cleanup; resume_session is the
+    re-attach for a still-running Sprite. Each has narrow defensive
+    branches that previously had no tests."""
+
+    def test_destroy_session_no_sprite_name_is_noop(self, user, fake_sprites):
+        """A session with empty sprite_name (e.g. terminate already cleared
+        it) must not invoke delete — otherwise we'd queue cleanup for a
+        non-existent Sprite and inflate Sprites-API error rates."""
+        from agent_on_demand.session_service.provisioning import destroy_session
+
+        destroy_session(user, "")
+        assert fake_sprites.deleted == []
+
+    def test_destroy_session_no_client_logs_and_returns(self, user, mocker, caplog):
+        """When the user has no Sprites key at delete time, destroy_session
+        must log + return rather than raising — otherwise a key-rotation
+        race would crash the cleanup task."""
+        import logging
+
+        from agent_on_demand.session_service.provisioning import destroy_session
+
+        mocker.patch("agent_on_demand.session_service.client.get_client", return_value=None)
+        mocker.patch("agent_on_demand.session_service.get_client", return_value=None)
+        with caplog.at_level(logging.WARNING):
+            destroy_session(user, "aod-orphan")
+        assert any("no Sprites key" in r.message for r in caplog.records)
+
+    def test_resume_session_wraps_sprite_error_in_session_handle_not_found(
+        self, user, fake_sprites, mocker
+    ):
+        """If get_sprite raises (Sprite expired or never existed), resume
+        must surface SessionHandleNotFound — the views layer maps that to
+        a 410 distinct from a 500."""
+        from agent_on_demand.session_service.errors import SessionHandleNotFound
+        from agent_on_demand.session_service.provisioning import resume_session
+
+        mocker.patch.object(fake_sprites, "get_sprite", side_effect=SpriteError("gone"))
+        with pytest.raises(SessionHandleNotFound):
+            resume_session(user, "aod-gone")
+
 
 class TestProvisionStageEvents:
     """Stage rows are written to AgentSessionLog so the SSE stream can surface

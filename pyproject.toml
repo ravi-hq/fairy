@@ -106,7 +106,7 @@ exclude_lines = [
 ]
 # Ratcheted floor — raise this in PRs that add tests, never lower it without
 # explicit human approval. `make coverage` enforces. See docs/runbook.md.
-fail_under = 87
+fail_under = 89.7
 precision = 2
 show_missing = true
 skip_covered = true
