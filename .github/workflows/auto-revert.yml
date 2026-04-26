@@ -13,10 +13,18 @@ name: Auto-revert failed deploys
 #
 # See docs/runbook.md "Auto-revert (failed deploys)" for operator guidance.
 
-# PAUSED: cron trigger commented out so this workflow does not run on
-# schedule. Manual `workflow_dispatch` is intentionally left active so
-# operators can dry-run while the workflow is paused. To re-enable
-# automatic revert PRs, uncomment the `schedule:` block below.
+# PAUSED 2026-04-26: cron trigger commented out so this workflow does
+# not run on schedule. Default-off until the workflow has been validated
+# end-to-end against at least one real failed deploy (the polling logic,
+# `gh pr list` dedup, and revert PR creation were all unit-tested in
+# #200, but never exercised against the live Render API + GitHub
+# combination). Manual `workflow_dispatch` is intentionally left active
+# so operators can dry-run for that validation.
+#
+# Exit criteria: a successful manual dry-run on a real `build_failed` /
+# `update_failed` deploy, followed by a non-dry-run that opens a single
+# revert PR and isn't duplicated on subsequent ticks. Once that's done,
+# uncomment the `schedule:` block below to re-enable.
 on:
   # schedule:
   #   # Every 5 minutes. Render auto-rollback handles user impact in ~30s,
