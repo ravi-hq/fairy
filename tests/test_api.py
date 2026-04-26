@@ -332,27 +332,19 @@ def test_run_other_users_sessions_do_not_count(
 def test_locked_quota_check_catches_race(
     client: Client, auth_headers, runtime_key, agent, user, settings, mocker
 ):
-    """Locked re-check inside the transaction catches sessions created after the
-    early pre-check passes.
+    """Locked quota check inside the transaction rejects when the count is at
+    the limit by the time the lock is acquired.
 
-    Simulates the race: the pre-check at the top of _create_session sees
-    active_count=0 (below the limit), but by the time the locked re-check inside
-    the transaction runs, another concurrent request has already created a session
-    and the count is now at the limit. The locked check must reject the request.
+    Simulates the race: another concurrent request committed an AgentSession
+    between this request entering ``_create_session`` and acquiring the
+    ``UserQuota`` row lock. The locked check must observe ``active=1`` and
+    reject with 429 rather than inserting a second session that exceeds the cap.
     """
     settings.DEFAULT_MAX_CONCURRENT_SESSIONS = 1
 
-    call_count = {"n": 0}
-
-    def _simulate_race(u):
-        call_count["n"] += 1
-        if call_count["n"] == 1:
-            # Pre-check call: return 0 so the early guard passes.
-            return 0
-        # Locked re-check call: another request "sneaked in" between the two checks.
-        return 1
-
-    mocker.patch.object(UserQuota, "active_session_count_for", staticmethod(_simulate_race))
+    # Force the locked-check call to observe a count at the limit, simulating a
+    # concurrent insert that committed before this request grabbed the lock.
+    mocker.patch.object(UserQuota, "active_session_count_for", staticmethod(lambda u: 1))
 
     resp = client.post(
         "/sessions",
