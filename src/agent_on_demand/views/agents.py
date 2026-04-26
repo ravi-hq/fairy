@@ -2,6 +2,7 @@ import json
 import re
 
 import posthog
+from django.db import transaction
 from django.http import JsonResponse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
@@ -326,20 +327,21 @@ def agents_list_create(request):
             except (Environment.DoesNotExist, ValueError):
                 return JsonResponse({"detail": "Environment not found"}, status=404)
 
-        agent = Agent.objects.create(
-            user=request.user,
-            name=req.name,
-            description=req.description,
-            system=req.system,
-            model=req.model,
-            runtime=req.runtime,
-            environment=env_obj,
-            skills=req.skills,
-            mcp_servers=req.mcp_servers,
-            metadata=req.metadata,
-            version=1,
-        )
-        _snapshot_version(agent)
+        with transaction.atomic():
+            agent = Agent.objects.create(
+                user=request.user,
+                name=req.name,
+                description=req.description,
+                system=req.system,
+                model=req.model,
+                runtime=req.runtime,
+                environment=env_obj,
+                skills=req.skills,
+                mcp_servers=req.mcp_servers,
+                metadata=req.metadata,
+                version=1,
+            )
+            _snapshot_version(agent)
 
         with posthog.new_context():
             posthog.identify_context(str(request.user.id))
@@ -420,8 +422,8 @@ def agent_detail(request, agent_id):
         # Resolve environment_id only when the key was explicitly present in the
         # request body. model_fields_set distinguishes:
         #   key absent            → no-op (caller did not intend to touch environment)
-        #   key present as null   → clear the agent’s environment
-        #   key present as a UUID → set / change the agent’s environment
+        #   key present as null   → clear the agent's environment
+        #   key present as a UUID → set / change the agent's environment
         if "environment_id" in req.model_fields_set:
             if req.environment_id is None:
                 if agent.environment_id is not None:
@@ -456,8 +458,9 @@ def agent_detail(request, agent_id):
 
         if changed:
             agent.version += 1
-            agent.save()
-            _snapshot_version(agent)
+            with transaction.atomic():
+                agent.save()
+                _snapshot_version(agent)
             with posthog.new_context():
                 posthog.identify_context(str(request.user.id))
                 posthog.capture(
