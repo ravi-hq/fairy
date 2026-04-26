@@ -75,6 +75,8 @@ select = [
     "ASYNC",  # flake8-async: blocking calls in async, missing awaits
     "PIE",    # flake8-pie: misc anti-patterns
     "TID",    # flake8-tidy-imports: relative-import drift, banned imports
+    "C4",     # flake8-comprehensions: dict()/list() literal preferences
+    "RET",    # flake8-return: unnecessary elif/else after return
 ]
 
 [tool.pytest.ini_options]
