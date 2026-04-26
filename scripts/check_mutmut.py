@@ -5,7 +5,7 @@ Fails if:
   - any mutant times out (indicates async/test runner trouble), or
   - any mutant is marked suspicious.
 
-The four KNOWN_EQUIVALENT mutants below are semantically identical to the
+The KNOWN_EQUIVALENT mutants below are semantically identical to the
 original code under any input — see the explanations alongside each entry.
 They cannot be killed by tests; the only way to remove them from this list
 is to change the production code.
@@ -24,17 +24,12 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 STATS_PATH = REPO_ROOT / "mutants" / "mutmut-cicd-stats.json"
 
 KNOWN_EQUIVALENT: set[str] = {
-    # getattr default arg dropped; FIELD_ENCRYPTION_KEY is always defined in
-    # settings (possibly None), so getattr-without-default still resolves.
-    "agent_on_demand.crypto.x__get_fernet__mutmut_7",
     # Header default "" -> "XXXX". Both fail startswith("Bearer "), so the
-    # missing-header path returns the same 401 response either way.
+    # missing-header path returns the same 401 response either way. There
+    # is no way to distinguish these without rewriting the check (e.g. into
+    # a try/except KeyError), which is worse code for no real benefit.
     "agent_on_demand.auth.x__check_api_key_sync__mutmut_8",
     "agent_on_demand.auth.x__check_api_key_async__mutmut_8",
-    # select_related("user") -> select_related(None). The latter clears the
-    # join hint, but request.user = api_key.user still resolves via lazy load,
-    # so behavior is identical (one extra query in the failure case).
-    "agent_on_demand.auth.x__check_api_key_sync__mutmut_30",
 }
 
 
