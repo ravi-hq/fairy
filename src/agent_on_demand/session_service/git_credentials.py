@@ -1,15 +1,21 @@
 """Compose the body of `/tmp/.git-credentials`.
 
 The file is consumed by git's `store` credential helper at clone /
-fetch / push time. Each line follows the format
-``https://<token>:x-oauth-basic@github.com`` — GitHub's documented
-contract for using a personal access token as the password component
-of HTTP basic auth (the username is the literal ``x-oauth-basic``
-sentinel). A wrong format silently breaks git auth or — worse —
-exposes tokens in error messages, so the line builder lives in its
-own pure module direct-testable under mutmut's hammett runner without
-pulling in the Sprite or ORM dependencies that
-`write_git_credentials` carries.
+fetch / push time. Each line is exactly
+``https://<token>:x-oauth-basic@github.com`` — the PAT goes in the
+*username* slot and the literal ``x-oauth-basic`` sentinel in the
+*password* slot. This is the inverse of GitHub's documented
+PAT-as-password form (``https://x-oauth-basic:<token>@...``), but it
+is the empirically-working shape we ship: production sessions clone
+private repos with this format today. GitHub's basic-auth handling
+accepts the PAT in either credential slot, so do NOT "fix" the order
+to match the docs — flipping it risks silently breaking every active
+session's git auth.
+
+A wrong format silently breaks git auth or — worse — exposes tokens
+in error messages, so the line builder lives in its own pure module
+direct-testable under mutmut's hammett runner without pulling in the
+Sprite or ORM dependencies that `write_git_credentials` carries.
 
 Returns a ``list[str]`` rather than a joined string: line-joining and
 trailing-newline handling are concerns of the caller writing to the

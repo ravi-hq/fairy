@@ -1,7 +1,7 @@
 """Direct unit tests for `build_git_credentials_lines`.
 
 Mutation-tested. Each test pins one mutation-killable property of the
-`/tmp/.git-credentials` body that GitHub's `store` credential helper
+`/tmp/.git-credentials` body that git's `store` credential helper
 consumes:
 
   - Empty input → empty output.
@@ -9,9 +9,12 @@ consumes:
   - Mixed input → only token-bearing repos appear, in input order.
   - Each emitted line is exactly
     ``https://<token>:x-oauth-basic@github.com`` — character-for-
-    character. The ``:x-oauth-basic@github.com`` suffix is GitHub's
-    PAT-as-password contract; mutating any character silently breaks
-    git auth on the Sprite.
+    character. The PAT goes in the username slot and the literal
+    ``x-oauth-basic`` in the password slot; this is the inverse of
+    GitHub's documented PAT-as-password form but is the empirically-
+    working shape production sessions ship today. See the module
+    docstring on ``git_credentials.py`` — do NOT "fix" the order.
+    Mutating any character silently breaks git auth on the Sprite.
   - Tokens are interpolated VERBATIM; no URL-encoding, no
     transformation, no dedup, no sort.
 
@@ -54,10 +57,11 @@ def test_mixed_none_and_empty_string_returns_empty():
 
 def test_single_repo_line_is_exact_full_string():
     """Full-string equality on the single emitted line. The
-    ``:x-oauth-basic@github.com`` suffix is GitHub's documented
-    contract for PAT-as-password basic auth — any mutant that drops a
-    character (the colon, the literal ``x-oauth-basic``, the ``@``,
-    the ``github.com`` host) breaks auth on the Sprite."""
+    ``:x-oauth-basic@github.com`` suffix encodes the
+    ``x-oauth-basic`` password sentinel and the ``github.com`` host
+    that GitHub's basic-auth handler matches against — any mutant
+    that drops a character (the colon, the literal ``x-oauth-basic``,
+    the ``@``, the ``github.com`` host) breaks auth on the Sprite."""
     lines = build_git_credentials_lines([_repo("ghp_abc123")])
     assert lines == ["https://ghp_abc123:x-oauth-basic@github.com"]
 
@@ -79,9 +83,14 @@ def test_line_starts_with_https_scheme():
 
 
 def test_line_uses_x_oauth_basic_username_literal():
-    """The literal ``x-oauth-basic`` is GitHub's required username
-    sentinel when using a PAT as the password. A mutant that swaps it
-    for any other string (even ``oauth2`` or empty) breaks auth."""
+    """The literal ``x-oauth-basic`` appears after the ``:`` — i.e.
+    in the *password* slot of the basic-auth URL — with the PAT in
+    the username slot. (The function name dates from a misreading of
+    GitHub's documented form, which puts the sentinel in the
+    username slot; the empirically-working shape we ship inverts
+    that order. See the module docstring.) A mutant that swaps the
+    literal for any other string (even ``oauth2`` or empty) breaks
+    auth."""
     lines = build_git_credentials_lines([_repo("tok")])
     assert lines[0] == "https://tok:x-oauth-basic@github.com"
 
