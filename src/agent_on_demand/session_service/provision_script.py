@@ -4,7 +4,7 @@ Extracted from `session_service/provisioning.py` so the script-building
 logic — order-of-operations, per-stage line emission, the conditionals
 around env-file chmod / git creds / packages / clones / user setup —
 can be mutation-tested in isolation. The original
-``_run_provision_setup`` keeps the file write + ``sprite.command`` call;
+``run_provision_setup`` keeps the file write + ``sprite.command`` call;
 this module is pure (spec in, shell-script string out).
 
 The provision flow is shaped around the WebSocket round-trip cost of
