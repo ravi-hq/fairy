@@ -415,7 +415,7 @@ def send_prompt(request, session_id):
         return JsonResponse({"detail": e.errors(include_context=False)}, status=422)
 
     try:
-        sprite = session_service.resume_session(request.user, session.sprite_name)
+        session_service.resume_session(request.user, session.sprite_name)
     except session_service.NoSpritesKeyError as e:
         return JsonResponse({"detail": str(e)}, status=400)
     except session_service.SessionHandleNotFound:
@@ -459,9 +459,7 @@ def send_prompt(request, session_id):
             locked.exit_code = None
             locked.save(update_fields=["prompt", "status", "exit_code", "updated_at"])
             session = locked
-            session_service.run_turn(
-                session, turn, req.prompt, "continue", float(req.timeout)
-            )
+            session_service.run_turn(session, turn, req.prompt, "continue", float(req.timeout))
     except AgentSession.DoesNotExist:
         return JsonResponse({"detail": "Session not found"}, status=404)
 
