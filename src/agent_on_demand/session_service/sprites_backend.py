@@ -116,7 +116,7 @@ class _SpritesHandle:
 
     def apply_network_policy(self, policy: NetworkPolicy) -> None:
         translated = sprites.NetworkPolicy(
-            rules=[sprites.PolicyRule(domain=r.domain, action=r.action) for r in policy.rules]
+            rules=[sprites.PolicyRule(domain=r.domain, action=r.action) for r in policy.rules],
         )
         try:
             self._sprite.update_network_policy(translated)
@@ -131,10 +131,13 @@ class _SpritesBackendClient:
         self._client = client
 
     def provision(self, name: str) -> SessionHandle:
+        # NotFoundError from create_sprite means a referenced pool/template
+        # is missing — the session itself doesn't exist yet, so we don't
+        # surface SessionNotFoundError here. Callers see this as a generic
+        # BackendError, which is what they are already prepared to handle
+        # for any other create failure.
         try:
             return _SpritesHandle(self._client.create_sprite(name))
-        except sprites.NotFoundError as e:
-            raise SessionNotFoundError(str(e)) from e
         except sprites.SpriteError as e:
             raise BackendError(str(e)) from e
 

@@ -10,42 +10,6 @@ def client():
 
 
 @pytest.fixture
-def fake_backend(mocker):
-    """Swap session_service.get_client to return a recording BackendClient.
-
-    Parallel to `fake_sprites` for tests that consume the Backend Protocol
-    directly. The provision/destroy task `.defer` patching mirrors
-    `fake_sprites` so HTTP-layer tests still observe the recorded calls.
-    """
-    # Imported here (not at module top) because the agent_on_demand package
-    # touches Django models at import time, and pytest-django hasn't
-    # configured settings until fixtures run.
-    from tests.fakes.backend import RecordingBackendClient
-
-    fake = RecordingBackendClient()
-    mocker.patch("agent_on_demand.session_service.client.get_client", return_value=fake)
-    mocker.patch("agent_on_demand.session_service.get_client", return_value=fake)
-
-    mocker.patch("agent_on_demand.session_service.tasks.execute_turn.defer")
-    mocker.patch("agent_on_demand.session_service.turn.execute_turn.defer")
-
-    from agent_on_demand.session_service.tasks import (
-        destroy_session_task,
-        provision_session_task,
-    )
-
-    def _inline_provision(**kwargs):
-        provision_session_task(**kwargs)
-
-    def _inline_destroy(**kwargs):
-        destroy_session_task(**kwargs)
-
-    mocker.patch.object(provision_session_task, "defer", side_effect=_inline_provision)
-    mocker.patch.object(destroy_session_task, "defer", side_effect=_inline_destroy)
-    return fake
-
-
-@pytest.fixture
 def fake_sprites(mocker):
     """Swap the real SpritesClient for a recording fake, run the provision
     task inline, and stub the per-turn task enqueue.

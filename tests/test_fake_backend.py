@@ -167,7 +167,7 @@ def test_command_outcome_can_raise():
 def test_apply_network_policy_records_policies():
     client = RecordingBackendClient()
     handle = client.provision("s")
-    p = NetworkPolicy(rules=[PolicyRule(domain="x", action="allow")])
+    p = NetworkPolicy(rules=(PolicyRule(domain="x", action="allow"),))
     handle.apply_network_policy(p)
     assert handle.network_policies == [p]
 
@@ -177,7 +177,7 @@ def test_apply_network_policy_can_be_made_to_raise_once():
     handle = client.provision("s")
     handle.raise_on_apply_network_policy(BackendError("policy backend down"))
     with pytest.raises(BackendError):
-        handle.apply_network_policy(NetworkPolicy(rules=[]))
+        handle.apply_network_policy(NetworkPolicy())
     # Second call succeeds.
     handle.apply_network_policy(NetworkPolicy(rules=[]))
     assert len(handle.network_policies) == 1

@@ -12,7 +12,6 @@ from typing import Any, BinaryIO, Callable
 
 from agent_on_demand.session_service.backend import (
     BackendClient,
-    BackendError,
     Command,
     NetworkPolicy,
     SessionHandle,
@@ -62,14 +61,23 @@ class RecordingFS:
         self.chmods.append(RecordedChmod(path="/" + path.lstrip("/"), mode=mode))
 
     def raise_on_write(self, predicate: Any, exc: Exception) -> None:
-        """Arrange the next matching write_text to raise. Predicate may be
-        a callable taking the normalized path or a substring."""
+        """Arrange the next matching write_text to raise.
+
+        ``predicate`` is matched against the normalized absolute path. A
+        callable is invoked with that path and must return truthy; any
+        other value is treated as a **substring** check (``predicate in
+        path``). Single-shot — the predicate is removed after firing."""
         self._write_raise_predicates.append((predicate, exc))
 
 
 class RecordingCommand:
-    def __init__(self, handle: "RecordingHandle", argv: tuple[str, ...],
-                 cwd: str | None, timeout: float | None) -> None:
+    def __init__(
+        self,
+        handle: "RecordingHandle",
+        argv: tuple[str, ...],
+        cwd: str | None,
+        timeout: float | None,
+    ) -> None:
         self._handle = handle
         self._record = RecordedCommand(argv=argv, cwd=cwd, timeout=timeout)
         self._stdout: BinaryIO | None = None
@@ -86,8 +94,10 @@ class RecordingCommand:
     def run(self) -> int:
         self._record.ran = True
         for i, (pred, action) in enumerate(self._handle._command_actions):
-            matched = pred(self._record.argv) if callable(pred) else (
-                bool(self._record.argv) and self._record.argv[0] == pred
+            matched = (
+                pred(self._record.argv)
+                if callable(pred)
+                else (bool(self._record.argv) and self._record.argv[0] == pred)
             )
             if matched:
                 del self._handle._command_actions[i]
@@ -107,9 +117,7 @@ class RecordingHandle:
         self._fs = RecordingFS()
         self.commands: list[RecordedCommand] = []
         self.network_policies: list[NetworkPolicy] = []
-        self._command_actions: list[
-            tuple[Any, tuple[int, bytes, Exception | None]]
-        ] = []
+        self._command_actions: list[tuple[Any, tuple[int, bytes, Exception | None]]] = []
         self._policy_raise: Exception | None = None
 
     @property
@@ -153,8 +161,15 @@ class RecordingHandle:
         stderr: bytes = b"",
         exc: Exception | None = None,
     ) -> None:
-        """Arrange the next matching command to exit with `exit_code`,
-        write `stderr` to the assigned buffer, or raise `exc`."""
+        """Arrange the next matching command to exit with ``exit_code``,
+        write ``stderr`` to the assigned buffer, or raise ``exc``.
+
+        ``predicate`` is matched against the recorded argv tuple. A
+        callable is invoked with the full argv and must return truthy;
+        a string is treated as an **exact match against argv[0]** (not a
+        substring of the full argv). Single-shot. This deliberately
+        differs from :meth:`raise_on_write` — write paths are matched by
+        substring while command argv is matched by program name."""
         self._command_actions.append((predicate, (exit_code, stderr, exc)))
 
     def raise_on_apply_network_policy(self, exc: Exception) -> None:
@@ -226,7 +241,3 @@ __all__ = [
     "RecordedCommand",
     "RecordedWrite",
 ]
-
-
-# Re-export errors for convenience in tests
-_ = (BackendError, SessionNotFoundError)

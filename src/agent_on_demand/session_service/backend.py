@@ -18,7 +18,7 @@ in `thoughts/plans/2026-04-27-session-backend-extraction.md`:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import BinaryIO, Protocol
 
 
@@ -59,7 +59,7 @@ class PolicyRule:
 
 @dataclass(frozen=True)
 class NetworkPolicy:
-    rules: list[PolicyRule] = field(default_factory=list)
+    rules: tuple[PolicyRule, ...] = ()
 
 
 class WorkspaceFS(Protocol):

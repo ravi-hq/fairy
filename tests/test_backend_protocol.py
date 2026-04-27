@@ -39,12 +39,16 @@ def _fake_sprite(name: str = "test"):
 # ---------- _SpritesBackendClient ----------
 
 
-def test_provision_translates_not_found_error():
+def test_provision_does_not_translate_not_found_to_session_not_found():
+    """NotFoundError from create_sprite means a referenced pool/template
+    is missing, not the session — so it surfaces as a generic
+    BackendError, NOT SessionNotFoundError."""
     client_mock = _fake_sprites_client()
-    client_mock.create_sprite.side_effect = sprites.NotFoundError("missing")
+    client_mock.create_sprite.side_effect = sprites.NotFoundError("pool missing")
     bc = _SpritesBackendClient(client_mock)
-    with pytest.raises(SessionNotFoundError):
+    with pytest.raises(BackendError) as exc:
         bc.provision("name")
+    assert not isinstance(exc.value, SessionNotFoundError)
 
 
 def test_provision_translates_other_sprite_errors_to_backend_error():
@@ -178,9 +182,7 @@ def test_make_command_passes_args_cwd_timeout():
     handle = _SpritesHandle(sprite)
     cmd = handle.make_command("bash", "-lc", "true", cwd="/home/sprite", timeout=30.0)
 
-    sprite.command.assert_called_once_with(
-        "bash", "-lc", "true", cwd="/home/sprite", timeout=30.0
-    )
+    sprite.command.assert_called_once_with("bash", "-lc", "true", cwd="/home/sprite", timeout=30.0)
     assert isinstance(cmd, _SpritesCommand)
 
 
@@ -190,10 +192,10 @@ def test_make_command_passes_args_cwd_timeout():
 def test_apply_network_policy_translates_to_sprites_types():
     sprite = _fake_sprite()
     policy = NetworkPolicy(
-        rules=[
+        rules=(
             PolicyRule(domain="github.com", action="allow"),
             PolicyRule(domain="*", action="deny"),
-        ]
+        )
     )
     _SpritesHandle(sprite).apply_network_policy(policy)
 
@@ -211,14 +213,14 @@ def test_apply_network_policy_translates_not_found_error():
     sprite = _fake_sprite()
     sprite.update_network_policy.side_effect = sprites.NotFoundError("missing")
     with pytest.raises(SessionNotFoundError):
-        _SpritesHandle(sprite).apply_network_policy(NetworkPolicy(rules=[]))
+        _SpritesHandle(sprite).apply_network_policy(NetworkPolicy())
 
 
 def test_apply_network_policy_translates_other_sprite_errors():
     sprite = _fake_sprite()
     sprite.update_network_policy.side_effect = sprites.SpriteError("boom")
     with pytest.raises(BackendError):
-        _SpritesHandle(sprite).apply_network_policy(NetworkPolicy(rules=[]))
+        _SpritesHandle(sprite).apply_network_policy(NetworkPolicy())
 
 
 # ---------- SpritesBackend ----------
