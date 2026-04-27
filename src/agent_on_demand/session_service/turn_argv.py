@@ -30,12 +30,13 @@ def build_turn_argv(runtime: Runtime, spec: SessionSpec, mode: str) -> list[str]
     Prompt delivery is out of band: callers attach `cmd.stdin` with the
     prompt bytes so it flows through the bash shim into the runtime CLI.
 
-    Raises ``ValueError`` if ``mode`` is anything other than ``"run"`` or
-    ``"continue"`` — runtime validation in place of a ``typing.cast`` so
-    typos surface here instead of being silently forwarded to the runtime
-    CLI (and so the mode tuple becomes a mutation-killable surface
-    rather than an unkillable type-only cast).
+    Raises ``ValueError`` if ``mode`` is not exactly ``"run"`` or
+    ``"continue"``, with the message ``"mode must be 'run' or 'continue',
+    got <repr>"``. Catches typos at the boundary instead of forwarding
+    them to the runtime CLI as opaque flags.
     """
+    # Runtime check (not `typing.cast`) so the literal tuple is a real
+    # surface — don't "simplify" this back into a cast.
     if mode not in ("run", "continue"):
         raise ValueError(f"mode must be 'run' or 'continue', got {mode!r}")
     argv = runtime.build_command(spec, mode)  # type: ignore[arg-type]
