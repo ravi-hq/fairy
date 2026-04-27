@@ -8,7 +8,7 @@ Procrastinate task decorators in tasks.py).
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Literal, cast
+from typing import TYPE_CHECKING
 
 from agent_on_demand.runtimes import Runtime
 
@@ -29,6 +29,14 @@ def build_turn_argv(runtime: Runtime, spec: SessionSpec, mode: str) -> list[str]
 
     Prompt delivery is out of band: callers attach `cmd.stdin` with the
     prompt bytes so it flows through the bash shim into the runtime CLI.
+
+    Raises ``ValueError`` if ``mode`` is anything other than ``"run"`` or
+    ``"continue"`` — runtime validation in place of a ``typing.cast`` so
+    typos surface here instead of being silently forwarded to the runtime
+    CLI (and so the mode tuple becomes a mutation-killable surface
+    rather than an unkillable type-only cast).
     """
-    argv = runtime.build_command(spec, cast(Literal["run", "continue"], mode))
+    if mode not in ("run", "continue"):
+        raise ValueError(f"mode must be 'run' or 'continue', got {mode!r}")
+    argv = runtime.build_command(spec, mode)  # type: ignore[arg-type]
     return ["bash", "-lc", _ENV_SOURCE_SHIM, "--", *argv]

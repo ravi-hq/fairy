@@ -14,6 +14,10 @@ per-turn argv construction:
     (``"run"`` and ``"continue"`` both reach the runtime).
   - An empty ``build_command`` return → argv is exactly the 4-element
     shim with no trailing items.
+  - Any ``mode`` other than the literal lowercase ``"run"`` or
+    ``"continue"`` raises ``ValueError`` with an exact message — pins
+    the validation tuple so a mutant that uppercases or string-wraps
+    the literals dies.
 
 Tests are sync, no Django imports — required so hammett (mutmut's
 runner) can execute them. ``Runtime`` and ``SessionSpec`` are
@@ -21,6 +25,8 @@ duck-typed via ``SimpleNamespace``.
 """
 
 from types import SimpleNamespace
+
+import pytest
 
 from agent_on_demand.session_service.turn_argv import (
     _ENV_SOURCE_SHIM,
@@ -138,3 +144,54 @@ def test_spec_is_forwarded_to_build_command():
     spec = _spec()
     build_turn_argv(_runtime(argv=[], recorder=calls), spec, "run")
     assert calls[0][0] is spec
+
+
+# ---------- mode validation ----------
+#
+# These tests replace what used to be a `typing.cast(Literal[...], mode)`
+# — a runtime no-op that mutmut couldn't kill (5 known-equivalent
+# survivors). Runtime validation gives mutmut a real surface to mutate
+# (the tuple `("run", "continue")`) and gives callers a clear failure
+# at the boundary instead of an opaque downstream error.
+#
+# Exact-equality assertions on `str(exc.value)` (not `match=`) — mutmut's
+# string-wrap mutation `"XXmust be 'run'...XX"` would survive a substring
+# match. Same lesson as PR #232's CI fix.
+
+
+def test_invalid_mode_raises_value_error():
+    """A mode that isn't ``"run"`` or ``"continue"`` raises
+    ``ValueError`` before ``runtime.build_command`` is ever called."""
+    calls: list = []
+    with pytest.raises(ValueError) as exc_info:
+        build_turn_argv(_runtime(argv=["x"], recorder=calls), _spec(), "garbage")
+    assert str(exc_info.value) == "mode must be 'run' or 'continue', got 'garbage'"
+    assert calls == []
+
+
+def test_empty_string_mode_raises_value_error():
+    """An empty mode string raises ``ValueError`` — pins that the
+    validation isn't a truthiness check (``if not mode``) but a
+    membership check against the literal tuple."""
+    with pytest.raises(ValueError) as exc_info:
+        build_turn_argv(_runtime(argv=["x"]), _spec(), "")
+    assert str(exc_info.value) == "mode must be 'run' or 'continue', got ''"
+
+
+def test_uppercase_run_mode_raises_value_error():
+    """``mode="RUN"`` raises — pins the literal lowercase ``"run"``
+    in the validation tuple. Kills a mutant that uppercases the first
+    tuple entry (``("RUN", "continue")``) since ``"RUN"`` would then
+    pass through silently."""
+    with pytest.raises(ValueError) as exc_info:
+        build_turn_argv(_runtime(argv=["x"]), _spec(), "RUN")
+    assert str(exc_info.value) == "mode must be 'run' or 'continue', got 'RUN'"
+
+
+def test_uppercase_continue_mode_raises_value_error():
+    """``mode="CONTINUE"`` raises — pins the literal lowercase
+    ``"continue"`` in the validation tuple. Kills a mutant that
+    uppercases the second tuple entry (``("run", "CONTINUE")``)."""
+    with pytest.raises(ValueError) as exc_info:
+        build_turn_argv(_runtime(argv=["x"]), _spec(), "CONTINUE")
+    assert str(exc_info.value) == "mode must be 'run' or 'continue', got 'CONTINUE'"
