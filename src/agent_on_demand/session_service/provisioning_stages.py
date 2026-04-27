@@ -24,7 +24,8 @@ from .provision_script import (
     PROVISION_SCRIPT_PATH,
     build_provision_script,
 )
-from .provisioning import (
+from .specs import RepoSpec, SessionSpec
+from .stage_events import (
     STAGE_ENV_FILE,
     STAGE_GIT_CREDENTIALS,
     STAGE_INSTALL_RUNTIME,
@@ -34,7 +35,16 @@ from .provisioning import (
     STAGE_SKILLS,
     stage_timer,
 )
-from .specs import RepoSpec, SessionSpec
+
+__all__ = [
+    "apply_network_policy",
+    "install_runtime",
+    "run_provision_setup",
+    "write_env_file",
+    "write_git_credentials",
+    "write_runtime_config",
+    "write_skills",
+]
 
 
 def install_runtime(sprite: Sprite, spec: SessionSpec, session_id: str | None) -> None:
