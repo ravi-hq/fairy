@@ -170,12 +170,15 @@ def test_none_session_id_becomes_empty_string_in_run_mode():
 def test_continue_mode_raises_on_missing_session_id():
     """``mode="continue"`` with a falsy ``runtime_session_id`` is a
     programming error — ``--resume ""`` doesn't identify any session.
-    Pin both ``None`` and ``""`` so a mutant that drops the guard or
-    narrows it to only one falsy value is caught."""
-    with pytest.raises(ValueError, match="continue"):
+    Pin both ``None`` and ``""``, and pin the exact message so a mutant
+    that wraps the string (e.g. ``XX...XX``) is caught."""
+    expected = "mode='continue' requires a non-empty runtime_session_id"
+    with pytest.raises(ValueError) as exc_info:
         build_claude_command(_spec(None), "continue")
-    with pytest.raises(ValueError, match="continue"):
+    assert str(exc_info.value) == expected
+    with pytest.raises(ValueError) as exc_info:
         build_claude_command(_spec(""), "continue")
+    assert str(exc_info.value) == expected
 
 
 # ---------- full argv shape ----------
