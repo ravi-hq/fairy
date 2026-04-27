@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Literal
 
 from sprites import Sprite
 
+from agent_on_demand.runtimes.claude_command import build_claude_command
 from agent_on_demand.runtimes.claude_config import render_claude_mcp_config
 
 if TYPE_CHECKING:
@@ -28,17 +29,7 @@ class ClaudeRuntime:
         return None
 
     def build_command(self, spec: "SessionSpec", mode: Literal["run", "continue"]) -> list[str]:
-        session_id = spec.runtime_session_id or ""
-        return [
-            "claude",
-            "--dangerously-skip-permissions",
-            "--print",
-            "--verbose",
-            "--output-format",
-            "stream-json",
-            "--resume" if mode == "continue" else "--session-id",
-            session_id,
-        ]
+        return build_claude_command(spec, mode)
 
     def write_config(
         self,
