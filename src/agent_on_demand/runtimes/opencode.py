@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Literal
 
 from sprites import Sprite
 
+from agent_on_demand.runtimes.opencode_command import build_opencode_command
 from agent_on_demand.runtimes.opencode_config import render_opencode_mcp_config
 
 if TYPE_CHECKING:
@@ -38,10 +39,7 @@ class OpencodeRuntime:
         sprite.command("bash", "-lc", f"npm install -g opencode-ai@{OPENCODE_VERSION}").run()
 
     def build_command(self, spec: "SessionSpec", mode: Literal["run", "continue"]) -> list[str]:
-        argv = ["opencode", "run", "--model", spec.model, "--format", "json"]
-        if mode == "continue":
-            argv.append("--continue")
-        return argv
+        return build_opencode_command(spec, mode)
 
     def write_config(
         self,
