@@ -46,3 +46,12 @@ def test_error_tuple_is_failed_with_no_exit_code():
 
 def test_empty_holder_is_failed_with_no_exit_code():
     assert compute_final_status([]) == ("failed", None)
+
+
+def test_malformed_exit_tuple_with_string_value_is_failed_with_no_exit_code():
+    # If the inner thread ever populated ``("exit", <non-int>)`` (a
+    # programming error), the non-int must not flow through to the
+    # IntegerField on the session/turn row. Pins the runtime
+    # isinstance guard, which is what defends the contract under
+    # ``python -O`` (where ``assert`` would be stripped).
+    assert compute_final_status([("exit", "not-an-int")]) == ("failed", None)

@@ -27,9 +27,12 @@ def compute_final_status(
     if not result_holder:
         return "failed", None
     kind, value = result_holder[0]
-    if kind == "exit" and value == 0:
+    if kind != "exit" or not isinstance(value, int):
+        # Non-"exit" kind covers the documented `("error", str)` shape;
+        # the isinstance check defends against a malformed tuple where
+        # the inner thread populated `value` with the wrong type. We
+        # can't `assert` here because asserts are stripped under -O.
+        return "failed", None
+    if value == 0:
         return "completed", 0
-    if kind == "exit":
-        assert isinstance(value, int)
-        return "failed", value
-    return "failed", None
+    return "failed", value
