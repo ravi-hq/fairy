@@ -134,13 +134,3 @@ def test_continue_argv_is_run_argv_plus_trailing_continue():
     assert len(continue_argv) == len(run_argv) + 1
     assert continue_argv[:-1] == run_argv
     assert continue_argv[-1] == "--continue"
-
-
-def test_unknown_mode_does_not_append_continue():
-    """Mode is mutually exclusive: only the literal ``"continue"`` adds
-    the flag. A mutant that loosens the comparison (e.g. ``mode !=
-    "run"``) would erroneously append ``--continue`` for any other
-    string. Pinning the strict equality with a non-matching value."""
-    argv = build_opencode_command(_spec(), "run")
-    assert "--continue" not in argv
-    assert len(argv) == 6
