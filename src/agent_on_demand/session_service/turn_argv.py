@@ -8,14 +8,17 @@ Procrastinate task decorators in tasks.py).
 
 from __future__ import annotations
 
-from typing import Literal, cast
+from typing import TYPE_CHECKING, Literal, cast
 
 from agent_on_demand.runtimes import Runtime
+
+if TYPE_CHECKING:
+    from .specs import SessionSpec
 
 _ENV_SOURCE_SHIM = 'set -a; source /tmp/aod-env; set +a; exec "$@"'
 
 
-def build_turn_argv(runtime: Runtime, spec, mode: str) -> list[str]:
+def build_turn_argv(runtime: Runtime, spec: SessionSpec, mode: str) -> list[str]:
     """Return the full argv for the per-turn `sprite.command`.
 
     The first three elements are a thin `bash -lc` shim that sources

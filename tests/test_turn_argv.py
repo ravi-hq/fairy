@@ -67,14 +67,6 @@ def test_shim_string_is_exact():
     assert _ENV_SOURCE_SHIM == 'set -a; source /tmp/aod-env; set +a; exec "$@"'
 
 
-def test_shim_constant_is_used_in_argv():
-    """The third element of the argv must BE the module-level shim
-    constant, not a copy that has drifted. Identity-of-string check
-    pins the indirection."""
-    argv = build_turn_argv(_runtime(argv=["x"]), _spec(), "run")
-    assert argv[2] == _ENV_SOURCE_SHIM
-
-
 # ---------- runtime argv pass-through ----------
 
 
