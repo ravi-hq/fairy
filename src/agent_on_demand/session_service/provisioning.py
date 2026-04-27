@@ -223,20 +223,14 @@ def _write_env_file(sprite: Sprite, spec: SessionSpec, session_id: str | None) -
     Environment.env_vars last — per-environment overrides win."""
     from agent_on_demand.models.auth import CREDENTIAL_ENV_VAR, UserCredential
 
-    lines: list[str] = []
+    from .env_file import build_env_file_body
+
+    credentials: list[tuple[str, str]] = []
     for cred in UserCredential.objects.filter(user=spec.user):
         env_name = CREDENTIAL_ENV_VAR.get(cred.kind)
         if env_name:
-            lines.append(f"{env_name}={shlex.quote(cred.get_value())}")
-    if spec.runtime_session_id:
-        lines.append(f"AOD_SESSION_ID={shlex.quote(spec.runtime_session_id)}")
-    if spec.model:
-        lines.append(f"AOD_MODEL={shlex.quote(spec.model)}")
-    env = spec.environment
-    if env is not None:
-        for key in sorted(env.env_vars or {}):
-            lines.append(f"{key}={shlex.quote(env.env_vars[key])}")
-    body = "\n".join(lines) + "\n"
+            credentials.append((env_name, cred.get_value()))
+    body = build_env_file_body(spec, credentials)
     with stage_timer(session_id, STAGE_ENV_FILE):
         try:
             fs = sprite.filesystem()
