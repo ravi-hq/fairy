@@ -91,8 +91,10 @@ def test_format_event_with_empty_payload_still_carries_type_and_id():
 
 def test_format_event_payload_can_override_nothing_when_keys_distinct():
     """A payload key that doesn't collide with ``type``/``id`` lands
-    verbatim. Pins that the merge order is payload-after-builtins (a
-    swap would let payload silently overwrite ``type``/``id``)."""
+    verbatim. The current merge order is payload-keys-last so payload
+    could in principle overwrite ``type``/``id`` on collision; this
+    test only pins that distinct keys merge cleanly without that
+    situation arising."""
     raw = format_event("stage", 1, {"stage": "create_sprite", "state": "done"})
     parsed = json.loads(raw)
     assert parsed["type"] == "stage"

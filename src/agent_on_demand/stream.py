@@ -55,8 +55,8 @@ async def stream_session_from_db(session_id: str, since: int = 0) -> AsyncGenera
         session = await AgentSession.objects.aget(pk=session_id)
         if session.status in ("completed", "failed", "terminated") and not chunks:
             terminal = format_terminal_event(session.status, session.exit_code, last_id)
-            if terminal is not None:
-                yield terminal
+            assert terminal is not None, f"unexpected terminal status: {session.status}"
+            yield terminal
             break
 
         now = time.monotonic()

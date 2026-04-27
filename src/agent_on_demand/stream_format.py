@@ -22,9 +22,7 @@ def format_event(event_type: str, log_id: int, payload: dict) -> str:
     return json.dumps({"type": event_type, "id": log_id, **payload})
 
 
-def format_chunk_events(
-    chunk: dict, last_turn_id: int | None
-) -> tuple[list[str], int | None]:
+def format_chunk_events(chunk: dict, last_turn_id: int | None) -> tuple[list[str], int | None]:
     """Translate one ``AgentSessionLog`` row into SSE event strings.
 
     Returns ``(events, new_last_turn_id)``:
@@ -51,9 +49,7 @@ def format_chunk_events(
     events: list[str] = []
     turn_id = chunk["turn_id"]
     if turn_id is not None and turn_id != last_turn_id:
-        events.append(
-            format_event("turn_start", log_id, {"turn": chunk["turn__turn_number"]})
-        )
+        events.append(format_event("turn_start", log_id, {"turn": chunk["turn__turn_number"]}))
         last_turn_id = turn_id
     events.append(
         format_event(
@@ -69,9 +65,7 @@ def format_chunk_events(
     return events, last_turn_id
 
 
-def format_terminal_event(
-    status: str, exit_code: int | None, last_id: int
-) -> str | None:
+def format_terminal_event(status: str, exit_code: int | None, last_id: int) -> str | None:
     """Return the SSE event closing out a terminal session, or ``None``.
 
     Branches:
