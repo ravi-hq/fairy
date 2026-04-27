@@ -56,7 +56,7 @@ from .provisioning import (
     provision_session,
     resume_session,
 )
-from .specs import McpServerSpec, RepoSpec, SessionSpec, SkillSpec
+from .spec_factory import build_spec_for_session
 
 logger = logging.getLogger(__name__)
 
@@ -173,7 +173,7 @@ def _provision_session_inner(
         return
 
     try:
-        spec = _build_spec_for_session(session)
+        spec = build_spec_for_session(session)
     except Exception as e:
         logger.exception("failed to build SessionSpec for session %s", session_id)
         _mark_provision_failed(session, turn_id, f"internal error: {e}")
@@ -205,52 +205,6 @@ def _provision_session_inner(
         prompt=prompt,
         mode=mode,
         timeout=timeout,
-    )
-
-
-def _build_spec_for_session(session: AgentSession) -> SessionSpec:
-    """Rehydrate a SessionSpec from persisted session state."""
-    agent = session.agent
-    mcp_servers: list[McpServerSpec] = []
-    skills: list[SkillSpec] = []
-    model = ""
-    if agent is not None:
-        model = agent.model
-        for s in agent.mcp_servers or []:
-            mcp_servers.append(
-                McpServerSpec(
-                    name=s["name"],
-                    type=s.get("type", "url"),
-                    url=s.get("url", ""),
-                    headers=s.get("headers", {}),
-                    command=s.get("command", ""),
-                    args=s.get("args", []),
-                    env=s.get("env", {}),
-                )
-            )
-        for s in agent.skills or []:
-            if s.get("type") == "github":
-                # name is optional for github refs (omit → install all skills
-                # from the repo); pass it through verbatim, including absent.
-                skills.append(SkillSpec(name=s.get("name"), source=s["source"]))
-            else:
-                skills.append(SkillSpec(name=s["name"], content=s["content"]))
-
-    repos = [
-        RepoSpec(url=r.url, mount_path=r.mount_path, token=r.get_token())
-        for r in session.resources.all()
-    ]
-
-    return SessionSpec(
-        name=session.sprite_name,
-        runtime=RUNTIMES[session.runtime],
-        model=model,
-        user=session.user,
-        runtime_session_id=str(session.runtime_session_id) if session.runtime_session_id else None,
-        environment=session.environment,
-        repos=repos,
-        mcp_servers=mcp_servers,
-        skills=skills,
     )
 
 
@@ -293,7 +247,7 @@ def _fail_pending_turn(session: AgentSession, turn: SessionTurn, message: str) -
     """Mark a session and turn as failed when they are still in pending state
     (before _execute_turn_body has set them to running).
 
-    Used when _build_spec_for_session or resume_session fail before
+    Used when build_spec_for_session or resume_session fail before
     _execute_turn_body is entered."""
     AgentSessionLog.objects.create(
         session=session,
@@ -361,7 +315,7 @@ def _execute_turn_inner(
         logger.info("execute_turn: session=%s turn=%s gone, skipping", session_id, turn_id)
         return
     try:
-        spec = _build_spec_for_session(session)
+        spec = build_spec_for_session(session)
     except Exception as e:
         logger.exception("failed to build SessionSpec for session %s turn %s", session_id, turn_id)
         _fail_pending_turn(session, turn, f"internal error: {e}")

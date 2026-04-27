@@ -15,7 +15,7 @@ import pytest
 from django.contrib.auth.models import User
 
 from agent_on_demand.models import Agent, AgentSession
-from agent_on_demand.session_service.tasks import _build_spec_for_session
+from agent_on_demand.session_service.spec_factory import build_spec_for_session as _build_spec_for_session
 
 
 @pytest.fixture

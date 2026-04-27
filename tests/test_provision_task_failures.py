@@ -83,7 +83,7 @@ def test_provision_task_marks_failed_when_build_spec_raises(user, mocker):
     propagate the exception."""
     session, turn = _make_session_and_turn(user)
     mocker.patch(
-        "agent_on_demand.session_service.tasks._build_spec_for_session",
+        "agent_on_demand.session_service.tasks.build_spec_for_session",
         side_effect=ValueError("agent gone"),
     )
 
