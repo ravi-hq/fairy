@@ -1,4 +1,4 @@
-"""Cover `_build_spec_for_session` mcp_servers/skills rehydration paths.
+"""Cover build_spec_for_session mcp_servers/skills rehydration paths.
 
 The function pulls Agent.mcp_servers and Agent.skills (both JSONField
 lists) and rehydrates each into an McpServerSpec / SkillSpec. Without
@@ -15,7 +15,7 @@ import pytest
 from django.contrib.auth.models import User
 
 from agent_on_demand.models import Agent, AgentSession
-from agent_on_demand.session_service.tasks import _build_spec_for_session
+from agent_on_demand.session_service.spec_factory import build_spec_for_session
 
 
 @pytest.fixture
@@ -46,7 +46,7 @@ def test_build_spec_rehydrates_url_mcp_server(user):
         user=user, runtime="claude", prompt="t", agent=agent, status="pending"
     )
 
-    spec = _build_spec_for_session(session)
+    spec = build_spec_for_session(session)
     assert len(spec.mcp_servers) == 1
     s = spec.mcp_servers[0]
     assert s.name == "github"
@@ -77,7 +77,7 @@ def test_build_spec_rehydrates_stdio_mcp_server(user):
     session = AgentSession.objects.create(
         user=user, runtime="claude", prompt="t", agent=agent, status="pending"
     )
-    spec = _build_spec_for_session(session)
+    spec = build_spec_for_session(session)
     s = spec.mcp_servers[0]
     assert s.type == "stdio"
     assert s.command == "npx"
@@ -100,7 +100,7 @@ def test_build_spec_rehydrates_inline_skill(user):
     session = AgentSession.objects.create(
         user=user, runtime="claude", prompt="t", agent=agent, status="pending"
     )
-    spec = _build_spec_for_session(session)
+    spec = build_spec_for_session(session)
     assert len(spec.skills) == 1
     s = spec.skills[0]
     assert s.name == "web-search"
@@ -124,7 +124,7 @@ def test_build_spec_rehydrates_github_skill(user):
     session = AgentSession.objects.create(
         user=user, runtime="claude", prompt="t", agent=agent, status="pending"
     )
-    spec = _build_spec_for_session(session)
+    spec = build_spec_for_session(session)
     s = spec.skills[0]
     assert s.source == "owner/skills-repo"
     assert s.name == "specific-skill"
@@ -145,7 +145,7 @@ def test_build_spec_github_skill_without_name(user):
     session = AgentSession.objects.create(
         user=user, runtime="claude", prompt="t", agent=agent, status="pending"
     )
-    spec = _build_spec_for_session(session)
+    spec = build_spec_for_session(session)
     s = spec.skills[0]
     assert s.source == "owner/whole-repo"
     assert s.name is None
@@ -157,7 +157,7 @@ def test_build_spec_with_no_agent(user):
     still produce a SessionSpec — model is empty, mcp_servers and skills
     are empty lists."""
     session = AgentSession.objects.create(user=user, runtime="claude", prompt="t", status="pending")
-    spec = _build_spec_for_session(session)
+    spec = build_spec_for_session(session)
     assert spec.model == ""
     assert spec.mcp_servers == []
     assert spec.skills == []
