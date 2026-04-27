@@ -14,8 +14,11 @@ per-turn argv handed to Claude Code's CLI:
     index ``-1`` — the trailing pair shape ``["--<flag>", "<id>"]`` is
     what Claude's argv parser expects.
   - ``runtime_session_id`` is forwarded verbatim (no transformation).
-  - A falsy ``runtime_session_id`` (``None``) becomes the empty string
-    placeholder ``""`` — same in both modes.
+  - A falsy ``runtime_session_id`` (``None`` or ``""``) in ``mode="run"``
+    becomes the empty-string placeholder ``""`` (Claude allocates a
+    fresh id on its own).
+  - A falsy ``runtime_session_id`` in ``mode="continue"`` raises
+    ``ValueError`` — there is no session to resume.
 
 Tests are sync, no Django imports — required so hammett (mutmut's
 runner) can execute them. ``SessionSpec`` is duck-typed via
@@ -23,6 +26,8 @@ runner) can execute them. ``SessionSpec`` is duck-typed via
 """
 
 from types import SimpleNamespace
+
+import pytest
 
 from agent_on_demand.runtimes.claude_command import build_claude_command
 
@@ -162,10 +167,15 @@ def test_none_session_id_becomes_empty_string_in_run_mode():
     assert argv[-1] == ""
 
 
-def test_none_session_id_becomes_empty_string_in_continue_mode():
-    """Same fallback applies to ``mode="continue"`` — pin both modes."""
-    argv = build_claude_command(_spec(None), "continue")
-    assert argv[-1] == ""
+def test_continue_mode_raises_on_missing_session_id():
+    """``mode="continue"`` with a falsy ``runtime_session_id`` is a
+    programming error — ``--resume ""`` doesn't identify any session.
+    Pin both ``None`` and ``""`` so a mutant that drops the guard or
+    narrows it to only one falsy value is caught."""
+    with pytest.raises(ValueError, match="continue"):
+        build_claude_command(_spec(None), "continue")
+    with pytest.raises(ValueError, match="continue"):
+        build_claude_command(_spec(""), "continue")
 
 
 # ---------- full argv shape ----------

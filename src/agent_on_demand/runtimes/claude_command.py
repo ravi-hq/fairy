@@ -18,11 +18,13 @@ Each flag in the returned argv is load-bearing:
     distinguishes "start a new run with this id" from "resume the run
     with this id". A swap silently replays every turn from scratch or
     forks a new conversation.
-  - The trailing ``runtime_session_id or ""`` — when the caller hasn't
-    yet allocated a session id we still need a positional placeholder so
-    Claude's argv parser doesn't consume the next flag as the id. The
-    empty string is intentional (not raised) because the same code path
-    handles the first turn of a brand-new session.
+  - The trailing ``runtime_session_id or ""`` fallback — applies ONLY
+    to ``mode="run"``. The first turn of a brand-new session has no id
+    yet; the empty-string placeholder keeps the positional shape so
+    Claude's argv parser doesn't consume the next flag as the id, and
+    Claude allocates a fresh id on its own. ``mode="continue"`` with a
+    falsy ``runtime_session_id`` is a programming error (``--resume ""``
+    doesn't identify any session) and raises ``ValueError``.
 """
 
 from __future__ import annotations
@@ -40,7 +42,13 @@ def build_claude_command(spec: SessionSpec, mode: Literal["run", "continue"]) ->
     ``spec.runtime_session_id``; ``mode="continue"`` resumes the existing
     conversation with that id. The session id is always the final
     element so the calling shim ends with ``[..., "--<flag>", "<id>"]``.
+
+    Raises ``ValueError`` when ``mode="continue"`` and
+    ``spec.runtime_session_id`` is falsy — there is no session to resume,
+    and ``--resume ""`` would not identify one.
     """
+    if mode == "continue" and not spec.runtime_session_id:
+        raise ValueError("mode='continue' requires a non-empty runtime_session_id")
     session_id = spec.runtime_session_id or ""
     return [
         "claude",
