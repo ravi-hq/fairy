@@ -460,7 +460,7 @@ def send_prompt(request, session_id):
             locked.save(update_fields=["prompt", "status", "exit_code", "updated_at"])
             session = locked
             session_service.run_turn(
-                session, turn, sprite, req.prompt, "continue", float(req.timeout)
+                session, turn, req.prompt, "continue", float(req.timeout)
             )
     except AgentSession.DoesNotExist:
         return JsonResponse({"detail": "Session not found"}, status=404)
