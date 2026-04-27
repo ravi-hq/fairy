@@ -177,9 +177,10 @@ broken deploy that can't reach the DB or has a misconfigured
 `src/agent_on_demand/views/health.py` and `tests/test_health.py`.
 
 For post-deploy alerting (5xx spikes, session-completion drops, worker
-error rates), see the **Alerts to configure** section in
-`docs/runbook.md`. Five Honeycomb + PostHog triggers cover the most
-common regression shapes; setup is GUI-only on those services.
+error rates), see the **Alerts** section in `docs/runbook.md`. Five
+Honeycomb + PostHog triggers cover the most common regression shapes;
+4/5 are wired (the `session.completed` volume-drop trigger is still
+pending).
 
 ## Style
 

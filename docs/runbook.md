@@ -31,11 +31,13 @@ External dependencies:
 | Deploys, service health, logs, shell | Render dashboard |
 | Queue depth                    | `SELECT status, queue_name, count(*) FROM procrastinate_jobs GROUP BY 1,2;` |
 
-## Alerts to configure
+## Alerts
 
-Five triggers cover the regressions we most want to catch in the first 5 minutes after a deploy. Set these up in the listed tool with destination Slack `#alerts`. More than five and people start ignoring; fewer and we miss things.
+Five triggers cover the regressions we most want to catch in the first 5 minutes after a deploy. All fire to Slack `#alerts`. More than five and people start ignoring; fewer and we miss things.
 
-**1. Web 5xx rate spike** — Honeycomb `aod-web`
+**Status (2026-04-26):** #1, #3, #4, #5 wired. #2 (`session.completed` volume drop) still to configure.
+
+**1. Web 5xx rate spike** — Honeycomb `aod-web` *(wired)*
 
 ```
 COUNT WHERE response.status_code >= 500 GROUP BY 1m
@@ -43,15 +45,15 @@ COUNT WHERE response.status_code >= 500 GROUP BY 1m
 
 Trigger: more than 5/min for 3 consecutive minutes. Catches the generic "deploy broke a backend handler" class of regression.
 
-**2. `session.completed` volume drop** — PostHog
+**2. `session.completed` volume drop** — PostHog *(not yet wired)*
 
 Insight: count of `session.completed` events, last 30 min vs. previous 30 min. Trigger: > 50% drop. This is the canary for "agents stopped working" — the most user-visible failure mode that doesn't surface as a 5xx.
 
-**3. `session.provision_failed` spike** — PostHog
+**3. `session.provision_failed` spike** — PostHog *(wired)*
 
 Insight: count of `session.provision_failed` events, last 5 min. Trigger: > 5 in 5 min (or > 10× baseline). Specifically catches Sprites outages, env-var decryption failures, and auth-to-Sprites bugs — none of which appear as web 5xxs because they happen in the worker.
 
-**4. Worker `execute_turn` error rate** — Honeycomb `aod-worker`
+**4. Worker `execute_turn` error rate** — Honeycomb `aod-worker` *(wired)*
 
 ```
 COUNT WHERE error = true AND name = "session.execute_turn" GROUP BY 1m
@@ -59,7 +61,7 @@ COUNT WHERE error = true AND name = "session.execute_turn" GROUP BY 1m
 
 Trigger: > 5 errors in 5 min. The worker side is invisible to the `aod-web` 5xx alert; this is its counterpart.
 
-**5. `session.failed` rate** — PostHog
+**5. `session.failed` rate** — PostHog *(wired)*
 
 Insight: ratio of `session.failed` to (`session.completed` + `session.failed`), last 30 min. Trigger: failure ratio > 30% (typical baseline is < 5%). Stronger than #2 because it catches "sessions still start but most of them break" — a regression that volume metrics miss.
 
