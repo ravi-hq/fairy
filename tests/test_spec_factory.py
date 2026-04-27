@@ -29,6 +29,14 @@ Tests are sync, no Django imports — required so hammett (mutmut's
 runner) can execute them. ``AgentSession``, ``Agent``, ``Environment``,
 ``User``, and ``SessionResource`` are duck-typed via ``SimpleNamespace``
 and dict literals.
+
+Helper-default sentinel: ``_session()`` and ``_agent()`` use the
+``_UNSET`` sentinel for parameters whose ``None`` value is itself a
+meaningful input (e.g. ``user=None``, ``environment=None``,
+``mcp_servers=None``). Callers that omit the arg get a sensible default;
+callers that pass ``None`` get ``None`` arriving at the function under
+test. Plain default ``= None`` would make ``None`` indistinguishable
+from "omitted" and silently rewrite the test input.
 """
 
 from __future__ import annotations
@@ -38,6 +46,8 @@ from types import SimpleNamespace
 
 from agent_on_demand.runtimes import RUNTIMES
 from agent_on_demand.session_service.spec_factory import build_spec_for_session
+
+_UNSET = object()
 
 
 def _resources(rows: list | None = None):
@@ -52,17 +62,23 @@ def _resource(url="https://github.com/o/r", mount_path="/repos/r", token=None):
 
 def _session(
     *,
-    agent=None,
-    user=None,
+    agent=_UNSET,
+    user=_UNSET,
     runtime="claude",
     runtime_session_id=None,
     sprite_name="sprite-1",
-    environment=None,
+    environment=_UNSET,
     resources=None,
 ):
+    if agent is _UNSET:
+        agent = None
+    if user is _UNSET:
+        user = SimpleNamespace()
+    if environment is _UNSET:
+        environment = None
     return SimpleNamespace(
         agent=agent,
-        user=user if user is not None else SimpleNamespace(),
+        user=user,
         runtime=runtime,
         runtime_session_id=runtime_session_id,
         sprite_name=sprite_name,
@@ -107,9 +123,7 @@ def test_no_agent_session_still_rehydrates_resources():
 
 def test_agent_model_is_carried_into_spec():
     """``agent.model`` becomes ``spec.model`` verbatim — no transformation."""
-    spec = build_spec_for_session(
-        _session(agent=_agent(model="anthropic/claude-sonnet-4-6"))
-    )
+    spec = build_spec_for_session(_session(agent=_agent(model="anthropic/claude-sonnet-4-6")))
     assert spec.model == "anthropic/claude-sonnet-4-6"
 
 
@@ -135,9 +149,7 @@ def test_mcp_server_minimal_uses_documented_defaults():
     """An MCP entry with only ``name`` set rehydrates to every default —
     one assertion per field so a default-swap mutant is killed
     individually."""
-    spec = build_spec_for_session(
-        _session(agent=_agent(mcp_servers=[{"name": "minimal"}]))
-    )
+    spec = build_spec_for_session(_session(agent=_agent(mcp_servers=[{"name": "minimal"}])))
     assert len(spec.mcp_servers) == 1
     s = spec.mcp_servers[0]
     assert s.name == "minimal"
@@ -153,16 +165,12 @@ def test_mcp_server_name_is_required_field():
     """``name`` is a required dict key — it lands on the spec verbatim,
     no fallback. Pin so a mutant that swaps it with another key is
     caught."""
-    spec = build_spec_for_session(
-        _session(agent=_agent(mcp_servers=[{"name": "github-tools"}]))
-    )
+    spec = build_spec_for_session(_session(agent=_agent(mcp_servers=[{"name": "github-tools"}])))
     assert spec.mcp_servers[0].name == "github-tools"
 
 
 def test_mcp_server_type_default_is_url():
-    spec = build_spec_for_session(
-        _session(agent=_agent(mcp_servers=[{"name": "x"}]))
-    )
+    spec = build_spec_for_session(_session(agent=_agent(mcp_servers=[{"name": "x"}])))
     assert spec.mcp_servers[0].type == "url"
 
 
@@ -174,9 +182,7 @@ def test_mcp_server_type_explicit_overrides_default():
 
 
 def test_mcp_server_url_default_is_empty_string():
-    spec = build_spec_for_session(
-        _session(agent=_agent(mcp_servers=[{"name": "x"}]))
-    )
+    spec = build_spec_for_session(_session(agent=_agent(mcp_servers=[{"name": "x"}])))
     assert spec.mcp_servers[0].url == ""
 
 
@@ -188,27 +194,21 @@ def test_mcp_server_url_explicit_overrides_default():
 
 
 def test_mcp_server_headers_default_is_empty_dict():
-    spec = build_spec_for_session(
-        _session(agent=_agent(mcp_servers=[{"name": "x"}]))
-    )
+    spec = build_spec_for_session(_session(agent=_agent(mcp_servers=[{"name": "x"}])))
     assert spec.mcp_servers[0].headers == {}
 
 
 def test_mcp_server_headers_explicit_overrides_default():
     spec = build_spec_for_session(
         _session(
-            agent=_agent(
-                mcp_servers=[{"name": "x", "headers": {"Authorization": "Bearer t"}}]
-            )
+            agent=_agent(mcp_servers=[{"name": "x", "headers": {"Authorization": "Bearer t"}}])
         )
     )
     assert spec.mcp_servers[0].headers == {"Authorization": "Bearer t"}
 
 
 def test_mcp_server_command_default_is_empty_string():
-    spec = build_spec_for_session(
-        _session(agent=_agent(mcp_servers=[{"name": "x"}]))
-    )
+    spec = build_spec_for_session(_session(agent=_agent(mcp_servers=[{"name": "x"}])))
     assert spec.mcp_servers[0].command == ""
 
 
@@ -220,25 +220,19 @@ def test_mcp_server_command_explicit_overrides_default():
 
 
 def test_mcp_server_args_default_is_empty_list():
-    spec = build_spec_for_session(
-        _session(agent=_agent(mcp_servers=[{"name": "x"}]))
-    )
+    spec = build_spec_for_session(_session(agent=_agent(mcp_servers=[{"name": "x"}])))
     assert spec.mcp_servers[0].args == []
 
 
 def test_mcp_server_args_explicit_overrides_default():
     spec = build_spec_for_session(
-        _session(
-            agent=_agent(mcp_servers=[{"name": "x", "args": ["-y", "@scope/pkg"]}])
-        )
+        _session(agent=_agent(mcp_servers=[{"name": "x", "args": ["-y", "@scope/pkg"]}]))
     )
     assert spec.mcp_servers[0].args == ["-y", "@scope/pkg"]
 
 
 def test_mcp_server_env_default_is_empty_dict():
-    spec = build_spec_for_session(
-        _session(agent=_agent(mcp_servers=[{"name": "x"}]))
-    )
+    spec = build_spec_for_session(_session(agent=_agent(mcp_servers=[{"name": "x"}])))
     assert spec.mcp_servers[0].env == {}
 
 
@@ -283,9 +277,7 @@ def test_github_skill_with_name_carries_name_and_source():
     spec = build_spec_for_session(
         _session(
             agent=_agent(
-                skills=[
-                    {"type": "github", "source": "owner/skills-repo", "name": "specific"}
-                ]
+                skills=[{"type": "github", "source": "owner/skills-repo", "name": "specific"}]
             )
         )
     )
@@ -300,11 +292,7 @@ def test_github_skill_without_name_has_name_none():
     """github skill ``name`` is optional — absent dict key must land on
     the spec as ``None`` (not ``""`` or KeyError)."""
     spec = build_spec_for_session(
-        _session(
-            agent=_agent(
-                skills=[{"type": "github", "source": "owner/whole-repo"}]
-            )
-        )
+        _session(agent=_agent(skills=[{"type": "github", "source": "owner/whole-repo"}]))
     )
     s = spec.skills[0]
     assert s.name is None
@@ -312,17 +300,21 @@ def test_github_skill_without_name_has_name_none():
     assert s.content is None
 
 
-def test_github_skill_dispatch_keyed_on_exact_string():
+def test_github_skill_dispatch_is_case_sensitive():
     """The branch is ``s.get("type") == "github"`` — case-sensitive
-    equality. Anything else (including ``"GitHub"``) takes the inline
-    branch, which would KeyError on missing ``content``."""
-    inline = build_spec_for_session(
+    equality. ``"GitHub"`` (capital G) is *not* the github branch and
+    must take the inline branch, leaving ``source`` as ``None``. Pin so
+    a mutant that lowercases the comparand or swaps ``==`` for
+    ``.lower() ==`` is caught."""
+    spec = build_spec_for_session(
         _session(
-            agent=_agent(skills=[{"name": "n", "content": "body"}])
+            agent=_agent(skills=[{"type": "GitHub", "name": "n", "content": "body"}]),
         )
     )
-    assert inline.skills[0].source is None
-    assert inline.skills[0].content == "body"
+    s = spec.skills[0]
+    assert s.source is None
+    assert s.name == "n"
+    assert s.content == "body"
 
 
 # ---------- inline skill branch ----------
@@ -349,11 +341,7 @@ def test_inline_skill_with_non_github_type_takes_inline_branch():
     branch — pin so a mutant that flips the equality to ``!=`` is
     caught."""
     spec = build_spec_for_session(
-        _session(
-            agent=_agent(
-                skills=[{"type": "inline", "name": "n", "content": "c"}]
-            )
-        )
+        _session(agent=_agent(skills=[{"type": "inline", "name": "n", "content": "c"}]))
     )
     s = spec.skills[0]
     assert s.name == "n"
@@ -397,11 +385,7 @@ def test_resources_are_iterated_via_all():
 
 def test_resource_url_and_mount_path_pass_through():
     spec = build_spec_for_session(
-        _session(
-            resources=[
-                _resource(url="https://github.com/o/r", mount_path="/repos/r")
-            ]
-        )
+        _session(resources=[_resource(url="https://github.com/o/r", mount_path="/repos/r")])
     )
     repo = spec.repos[0]
     assert repo.url == "https://github.com/o/r"
@@ -429,11 +413,7 @@ def test_resource_token_pulled_from_get_token():
 def test_resource_token_none_passes_through_as_none():
     spec = build_spec_for_session(
         _session(
-            resources=[
-                _resource(
-                    url="https://github.com/o/r", mount_path="/repos/r", token=None
-                )
-            ]
+            resources=[_resource(url="https://github.com/o/r", mount_path="/repos/r", token=None)]
         )
     )
     assert spec.repos[0].token is None

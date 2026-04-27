@@ -19,7 +19,8 @@ import uuid
 import pytest
 from django.contrib.auth.models import User
 
-from agent_on_demand.models import Agent, AgentSession, SessionResource
+from agent_on_demand.models import Agent, AgentSession, Environment, SessionResource
+from agent_on_demand.runtimes import RUNTIMES
 from agent_on_demand.session_service.spec_factory import build_spec_for_session
 
 
@@ -194,3 +195,52 @@ def test_runtime_session_id_uuid_stringified(user):
     spec = build_spec_for_session(session)
     assert spec.runtime_session_id == str(rsid)
     assert isinstance(spec.runtime_session_id, str)
+
+
+@pytest.mark.django_db
+def test_pass_through_fields_match_orm_state(user):
+    """Pass-through fields rehydrate against real ORM rows — drift safety
+    net for the duck-typed sync tests in `test_spec_factory.py`. A real
+    `User`, `Environment`, `sprite_name`, `runtime`, and UUID
+    `runtime_session_id` must all flow into the spec exactly."""
+    environment = Environment.objects.create(user=user, name="prod-env", version=1)
+    rsid = uuid.uuid4()
+    session = AgentSession.objects.create(
+        user=user,
+        runtime="claude",
+        prompt="t",
+        status="pending",
+        environment=environment,
+        sprite_name="aod-abc123",
+        runtime_session_id=rsid,
+    )
+
+    spec = build_spec_for_session(session)
+    assert spec.name == "aod-abc123"
+    assert spec.user is session.user
+    assert spec.environment is session.environment
+    assert spec.runtime is RUNTIMES["claude"]
+    assert spec.runtime_session_id == str(rsid)
+
+
+@pytest.mark.django_db
+def test_no_agent_with_resources(user):
+    """The no-agent guard does not short-circuit resource iteration —
+    real `SessionResource` rows must still rehydrate into `RepoSpec`
+    even when `session.agent is None`. Drift safety against the sync
+    test stub of `session.resources.all()`."""
+    session = AgentSession.objects.create(user=user, runtime="claude", prompt="t", status="pending")
+    SessionResource.objects.create(
+        session=session,
+        resource_type="github_repository",
+        url="https://github.com/owner/repo",
+        mount_path="/repos/repo",
+    )
+
+    spec = build_spec_for_session(session)
+    assert spec.model == ""
+    assert spec.mcp_servers == []
+    assert spec.skills == []
+    assert len(spec.repos) == 1
+    assert spec.repos[0].url == "https://github.com/owner/repo"
+    assert spec.repos[0].mount_path == "/repos/repo"
