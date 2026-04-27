@@ -25,7 +25,7 @@ import shlex
 import time
 from typing import Iterator
 
-from sprites import NetworkPolicy, PolicyRule, Sprite, SpriteError
+from sprites import Sprite, SpriteError
 
 from agent_on_demand.models import Environment
 from agent_on_demand.observability import get_tracer
@@ -33,6 +33,7 @@ from agent_on_demand.observability import get_tracer
 from .client import best_effort_delete, require_client
 from .env_file import build_env_file_body
 from .errors import ProvisionError
+from .network_policy import build_network_policy
 from .provision_script import (
     ENV_FILE_PATH,
     GIT_CREDS_PATH,
@@ -199,12 +200,9 @@ def _install_runtime(sprite: Sprite, spec: SessionSpec, session_id: str | None) 
 
 
 def _apply_network_policy(sprite: Sprite, env: Environment | None, session_id: str | None) -> None:
-    if env is None or env.networking_type != "limited":
+    policy = build_network_policy(env)
+    if policy is None:
         return
-    allowed_hosts = (env.networking_config or {}).get("allowed_hosts", [])
-    rules = [PolicyRule(domain=host, action="allow") for host in allowed_hosts]
-    rules.append(PolicyRule(domain="*", action="deny"))
-    policy = NetworkPolicy(rules=rules)
     with stage_timer(session_id, STAGE_NETWORK_POLICY):
         try:
             sprite.update_network_policy(policy)
