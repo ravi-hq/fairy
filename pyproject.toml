@@ -160,6 +160,7 @@ paths_to_mutate = [
     "src/agent_on_demand/session_service/provision_script.py",
     "src/agent_on_demand/session_service/turn_argv.py",
     "src/agent_on_demand/session_service/env_file.py",
+    "src/agent_on_demand/session_service/turn_outcome.py",
     "src/agent_on_demand/session_service/network_policy.py",
 ]
 tests_dir = [
@@ -182,6 +183,7 @@ tests_dir = [
     "tests/test_provision_script.py",
     "tests/test_turn_argv.py",
     "tests/test_env_file.py",
+    "tests/test_turn_outcome.py",
     "tests/test_network_policy.py",
 ]
 # mutmut copies its working tree to ./mutants/ and runs pytest from there;

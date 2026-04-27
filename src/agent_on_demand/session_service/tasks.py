@@ -56,6 +56,7 @@ from .provisioning import (
 )
 from .spec_factory import build_spec_for_session
 from .turn_argv import build_turn_argv
+from .turn_outcome import compute_final_status
 
 logger = logging.getLogger(__name__)
 
@@ -464,17 +465,7 @@ def _execute_turn_body(session, turn, spec, sprite, prompt, mode, timeout, span)
                 },
             )
 
-    if result_holder:
-        kind, value = result_holder[0]
-        if kind == "exit":
-            final_status = "completed" if value == 0 else "failed"
-            exit_code = value
-        else:
-            final_status = "failed"
-            exit_code = None
-    else:
-        final_status = "failed"
-        exit_code = None
+    final_status, exit_code = compute_final_status(result_holder)
 
     ended = timezone.now()
     try:
