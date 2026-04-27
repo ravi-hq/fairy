@@ -40,6 +40,19 @@ KNOWN_EQUIVALENT: set[str] = {
     # Keeping the guard.
     "agent_on_demand.session_service.provision_script.x_build_provision_script__mutmut_29",
     "agent_on_demand.session_service.provision_script.x_build_provision_script__mutmut_31",
+    # `cast(Literal["run", "continue"], mode)` -> any mutation of the type
+    # literal (None, "XXrunXX", "RUN", "XXcontinueXX", "CONTINUE"). At runtime
+    # `typing.cast(typ, val)` is `return val` — the type expression is never
+    # evaluated, so every mutation produces identical bytes. The cast exists
+    # only to satisfy mypy's narrowing of `mode: str` to the Literal that
+    # `Runtime.build_command` requires; removing it would just push the cast
+    # to the caller in `tasks.py` (which is not mutation-tested), gaining
+    # nothing.
+    "agent_on_demand.session_service.turn_argv.x_build_turn_argv__mutmut_6",
+    "agent_on_demand.session_service.turn_argv.x_build_turn_argv__mutmut_10",
+    "agent_on_demand.session_service.turn_argv.x_build_turn_argv__mutmut_11",
+    "agent_on_demand.session_service.turn_argv.x_build_turn_argv__mutmut_12",
+    "agent_on_demand.session_service.turn_argv.x_build_turn_argv__mutmut_13",
 }
 
 
