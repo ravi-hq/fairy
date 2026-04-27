@@ -9,7 +9,6 @@ for emitting its `stage_timer` event and wrapping any `SpriteError` as a
 from __future__ import annotations
 
 import io
-import shlex
 
 from sprites import Sprite, SpriteError
 
@@ -17,6 +16,7 @@ from agent_on_demand.models import Environment
 
 from .env_file import build_env_file_body
 from .errors import ProvisionError
+from .git_credentials import build_git_credentials_lines
 from .network_policy import build_network_policy
 from .provision_script import (
     ENV_FILE_PATH,
@@ -24,6 +24,7 @@ from .provision_script import (
     PROVISION_SCRIPT_PATH,
     build_provision_script,
 )
+from .skills_install import build_skills_install_command
 from .specs import RepoSpec, SessionSpec
 from .stage_events import (
     STAGE_ENV_FILE,
@@ -100,7 +101,7 @@ def write_env_file(sprite: Sprite, spec: SessionSpec, session_id: str | None) ->
 def write_git_credentials(sprite: Sprite, repos: list[RepoSpec], session_id: str | None) -> None:
     """Write /tmp/.git-credentials if any repo has a token (fs.write only;
     chmod + `git config credential.helper` live in the provision script)."""
-    cred_lines = [f"https://{r.token}:x-oauth-basic@github.com" for r in repos if r.token]
+    cred_lines = build_git_credentials_lines(repos)
     if not cred_lines:
         return
     with stage_timer(session_id, STAGE_GIT_CREDENTIALS):
@@ -194,14 +195,7 @@ def write_skills(
             if github and agent_id is not None:
                 for s in github:
                     assert s.source is not None
-                    cmd = (
-                        f"npx -y skills@latest add {shlex.quote(s.source)} "
-                        f"--global --agent {shlex.quote(agent_id)} --yes"
-                    )
-                    if s.name:
-                        # Pin to a single skill from the repo. Without --skill,
-                        # the CLI installs every SKILL.md it finds.
-                        cmd += f" --skill {shlex.quote(s.name)}"
+                    cmd = build_skills_install_command(s.source, agent_id, s.name)
                     sprite.command("bash", "-lc", cmd).run()
         except SpriteError as e:
             raise ProvisionError(f"Failed to write skills: {e}", stage=STAGE_SKILLS) from e
