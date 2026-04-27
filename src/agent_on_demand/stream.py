@@ -1,15 +1,15 @@
 import asyncio
-import json
 import time
 from collections.abc import AsyncGenerator
 
 from agent_on_demand.models import AgentSession, AgentSessionLog
+from agent_on_demand.stream_format import (
+    format_chunk_events,
+    format_event,
+    format_terminal_event,
+)
 
 STREAM_IDLE_LIMIT = 600
-
-
-def _format(event_type: str, log_id: int, payload: dict) -> str:
-    return json.dumps({"type": event_type, "id": log_id, **payload})
 
 
 async def stream_session_from_db(session_id: str, since: int = 0) -> AsyncGenerator[str, None]:
@@ -21,7 +21,7 @@ async def stream_session_from_db(session_id: str, since: int = 0) -> AsyncGenera
       seconds of no chunks.
     """
     last_id = since
-    last_turn_id = None
+    last_turn_id: int | None = None
     last_heartbeat = time.monotonic()
     last_chunk_time = time.monotonic()
 
@@ -48,41 +48,20 @@ async def stream_session_from_db(session_id: str, since: int = 0) -> AsyncGenera
 
         for chunk in chunks:
             last_id = chunk["id"]
-            if chunk["kind"] == "stage":
-                payload = {"stage": chunk["stage"], "state": chunk["state"]}
-                if chunk["duration_ms"] is not None:
-                    payload["duration_ms"] = chunk["duration_ms"]
-                if chunk["state"] == "failed" and chunk["data"]:
-                    payload["message"] = chunk["data"]
-                yield _format("stage", chunk["id"], payload)
-                continue
-            turn_id = chunk["turn_id"]
-            if turn_id is not None and turn_id != last_turn_id:
-                yield _format("turn_start", chunk["id"], {"turn": chunk["turn__turn_number"]})
-                last_turn_id = turn_id
-            yield _format(
-                "output",
-                chunk["id"],
-                {
-                    "stream": chunk["stream"],
-                    "data": chunk["data"],
-                    "turn": chunk["turn__turn_number"],
-                },
-            )
+            events, last_turn_id = format_chunk_events(chunk, last_turn_id)
+            for event in events:
+                yield event
 
         session = await AgentSession.objects.aget(pk=session_id)
         if session.status in ("completed", "failed", "terminated") and not chunks:
-            if session.status == "terminated":
-                yield _format("terminated", last_id, {"message": "Session terminated"})
-            elif session.status == "failed" and session.exit_code is None:
-                yield _format("error", last_id, {"message": "Session failed"})
-            else:
-                yield _format("exit", last_id, {"code": session.exit_code})
+            terminal = format_terminal_event(session.status, session.exit_code, last_id)
+            if terminal is not None:
+                yield terminal
             break
 
         now = time.monotonic()
         if now - last_chunk_time > STREAM_IDLE_LIMIT:
-            yield _format("stale", last_id, {"message": f"No output for {STREAM_IDLE_LIMIT}s"})
+            yield format_event("stale", last_id, {"message": f"No output for {STREAM_IDLE_LIMIT}s"})
             break
 
         if now - last_heartbeat >= 15:
