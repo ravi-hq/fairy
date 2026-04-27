@@ -57,8 +57,8 @@ def test_credential_precedes_session_id():
     spec = _spec(runtime_session_id="sess-1")
     body = build_env_file_body(spec, [("ANTHROPIC_API_KEY", "key123")])
     lines = body.rstrip("\n").splitlines()
-    cred_idx = next(i for i, l in enumerate(lines) if l.startswith("ANTHROPIC_API_KEY="))
-    sid_idx = next(i for i, l in enumerate(lines) if l.startswith("AOD_SESSION_ID="))
+    cred_idx = next(i for i, ln in enumerate(lines) if ln.startswith("ANTHROPIC_API_KEY="))
+    sid_idx = next(i for i, ln in enumerate(lines) if ln.startswith("AOD_SESSION_ID="))
     assert cred_idx < sid_idx
 
 
@@ -66,8 +66,8 @@ def test_session_id_precedes_model():
     spec = _spec(runtime_session_id="sess-1", model="claude-3")
     body = build_env_file_body(spec, [])
     lines = body.rstrip("\n").splitlines()
-    sid_idx = next(i for i, l in enumerate(lines) if l.startswith("AOD_SESSION_ID="))
-    model_idx = next(i for i, l in enumerate(lines) if l.startswith("AOD_MODEL="))
+    sid_idx = next(i for i, ln in enumerate(lines) if ln.startswith("AOD_SESSION_ID="))
+    model_idx = next(i for i, ln in enumerate(lines) if ln.startswith("AOD_MODEL="))
     assert sid_idx < model_idx
 
 
@@ -75,8 +75,8 @@ def test_model_precedes_env_vars():
     spec = _spec(model="claude-3", environment=_env({"ZKEY": "z"}))
     body = build_env_file_body(spec, [])
     lines = body.rstrip("\n").splitlines()
-    model_idx = next(i for i, l in enumerate(lines) if l.startswith("AOD_MODEL="))
-    env_idx = next(i for i, l in enumerate(lines) if l.startswith("ZKEY="))
+    model_idx = next(i for i, ln in enumerate(lines) if ln.startswith("AOD_MODEL="))
+    env_idx = next(i for i, ln in enumerate(lines) if ln.startswith("ZKEY="))
     assert model_idx < env_idx
 
 
@@ -84,8 +84,8 @@ def test_credentials_precede_env_vars():
     spec = _spec(environment=_env({"AKEY": "val"}))
     body = build_env_file_body(spec, [("OPENAI_API_KEY", "sk-xyz")])
     lines = body.rstrip("\n").splitlines()
-    cred_idx = next(i for i, l in enumerate(lines) if l.startswith("OPENAI_API_KEY="))
-    env_idx = next(i for i, l in enumerate(lines) if l.startswith("AKEY="))
+    cred_idx = next(i for i, ln in enumerate(lines) if ln.startswith("OPENAI_API_KEY="))
+    env_idx = next(i for i, ln in enumerate(lines) if ln.startswith("AKEY="))
     assert cred_idx < env_idx
 
 
@@ -170,7 +170,7 @@ def test_env_vars_emitted_in_alphabetical_order():
     spec = _spec(environment=_env({"BETA": "2", "ALPHA": "1"}))
     body = build_env_file_body(spec, [])
     lines = body.rstrip("\n").splitlines()
-    keys = [l.split("=", 1)[0] for l in lines]
+    keys = [ln.split("=", 1)[0] for ln in lines]
     assert keys == ["ALPHA", "BETA"]
 
 
@@ -178,7 +178,7 @@ def test_env_vars_three_keys_alphabetical():
     spec = _spec(environment=_env({"ZZZ": "z", "AAA": "a", "MMM": "m"}))
     body = build_env_file_body(spec, [])
     lines = body.rstrip("\n").splitlines()
-    keys = [l.split("=", 1)[0] for l in lines]
+    keys = [ln.split("=", 1)[0] for ln in lines]
     assert keys == ["AAA", "MMM", "ZZZ"]
 
 
