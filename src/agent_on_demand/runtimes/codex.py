@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING, Literal
 
 from sprites import Sprite
 
+from agent_on_demand.runtimes.codex_command import build_codex_command
 from agent_on_demand.runtimes.codex_config import render_codex_mcp_config
 
 if TYPE_CHECKING:
@@ -22,21 +23,7 @@ class CodexRuntime:
         return None
 
     def build_command(self, spec: "SessionSpec", mode: Literal["run", "continue"]) -> list[str]:
-        if mode == "continue":
-            return [
-                "codex",
-                "exec",
-                "resume",
-                "--last",
-                "--dangerously-bypass-approvals-and-sandbox",
-                "--json",
-            ]
-        return [
-            "codex",
-            "exec",
-            "--dangerously-bypass-approvals-and-sandbox",
-            "--json",
-        ]
+        return build_codex_command(spec, mode)
 
     def write_config(
         self,
