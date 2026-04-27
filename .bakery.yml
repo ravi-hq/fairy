@@ -20,16 +20,31 @@ gates:
 
   # --- Security tier (preflight, no DB needed) ---
   - name: security-deps
-    command: uv run pip-audit
+    # CVE-2026-3219: pip itself, no fix version available as of 2026-04-26.
+    # Mirrors `make security`; revisit when pip publishes a fix.
+    command: uv run pip-audit --ignore-vuln CVE-2026-3219
     preflight: true
 
   - name: security-code
     command: uv run bandit -r src/ -ll
     preflight: true
 
+  # --- Static contract checks (danger-zone gates per CLAUDE.md) ---
+  - name: migrations
+    command: BASE_SHA=$(git merge-base origin/main HEAD 2>/dev/null || git merge-base main HEAD) make check-migrations
+    preflight: true
+
+  - name: schemas
+    command: make check-schemas
+    preflight: true
+
   # --- Coverage-gated test tier ---
+  # DATABASE_URL forces SQLite so Django doesn't try to reach the dev Postgres
+  # (port 5460) which doesn't exist in the bakery sandbox. Coverage floor comes
+  # from [tool.coverage.report].fail_under in pyproject.toml (96 today) — do
+  # not pin --cov-fail-under here or it will drift from the ratchet.
   - name: test
-    command: uv run pytest --cov=agent_on_demand --cov-report=term-missing --cov-fail-under=85
+    command: env DATABASE_URL=sqlite:///test.db uv run pytest --cov=agent_on_demand --cov-report=term-missing
     preflight: false
 
   # --- Duplication check (catch AI copy-paste drift) ---
