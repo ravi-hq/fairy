@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Literal
 
 from sprites import Sprite
 
+from agent_on_demand.runtimes.gemini_command import build_gemini_command
 from agent_on_demand.runtimes.gemini_config import render_gemini_mcp_config
 
 if TYPE_CHECKING:
@@ -23,9 +24,7 @@ class GeminiRuntime:
         return None
 
     def build_command(self, spec: "SessionSpec", mode: Literal["run", "continue"]) -> list[str]:
-        if mode == "continue":
-            return ["gemini", "--resume", "--output-format", "stream-json"]
-        return ["gemini", "--output-format", "stream-json"]
+        return build_gemini_command(spec, mode)
 
     def write_config(
         self,
