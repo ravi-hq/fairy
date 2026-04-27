@@ -5,7 +5,7 @@ runtime CLI inherits the credential, session, and Environment env vars.
 A quoting or precedence bug here silently leaks raw shell metacharacters
 into the runtime's process environment, so the body builder lives in its
 own pure module — direct-testable under mutmut's hammett runner without
-pulling in the Sprite or ORM dependencies that `_write_env_file` carries.
+pulling in the Sprite or ORM dependencies that `write_env_file` carries.
 """
 
 from __future__ import annotations

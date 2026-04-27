@@ -278,11 +278,11 @@ class TestProvisionSessionFailureHandling:
         it as ProvisionError(stage="unknown") *and* still trigger
         best_effort_delete — otherwise the orphaned Sprite leaks.
 
-        Reaches the branch by patching one of the helpers (`_install_runtime`)
+        Reaches the branch by patching one of the helpers (`install_runtime`)
         to raise SpriteError directly, bypassing its own wrapper."""
         from agent_on_demand.session_service import provisioning
 
-        mocker.patch.object(provisioning, "_install_runtime", side_effect=SpriteError("unwrapped"))
+        mocker.patch.object(provisioning, "install_runtime", side_effect=SpriteError("unwrapped"))
 
         with pytest.raises(ProvisionError) as ei:
             provision_session(user, _spec(user))
@@ -496,7 +496,7 @@ class TestProvisionSessionEnvFileShape:
 
 
 class TestProvisionSkills:
-    """_write_skills materializes both inline and github skills on the Sprite.
+    """write_skills materializes both inline and github skills on the Sprite.
 
     Inline skills are written verbatim to
     `<skills_root>/<name>/SKILL.md`. Github skills shell out to
@@ -558,10 +558,10 @@ class TestProvisionSkills:
     def test_github_skill_uses_runtime_specific_agent_identifier(
         self, user, fake_sprites, runtime_name, expected_agent
     ):
-        # _write_skills only reads `runtime.skills_sh_agent` and the skill
+        # write_skills only reads `runtime.skills_sh_agent` and the skill
         # source; no credentials or env setup are needed, so call it directly
         # instead of running full provision_session.
-        from agent_on_demand.session_service.provisioning import _write_skills
+        from agent_on_demand.session_service.provisioning_stages import write_skills
         from tests.fakes.sprite import RecordingSprite
 
         sprite = RecordingSprite("s")
@@ -570,7 +570,7 @@ class TestProvisionSkills:
             runtime=RUNTIMES[runtime_name],
             skills=[SkillSpec(name="aod", source="ravi-hq/agent-on-demand")],
         )
-        _write_skills(sprite, spec, session_id=None)
+        write_skills(sprite, spec, session_id=None)
         shell_lines = sprite.shell_strings()
         assert any(f"--agent {expected_agent} --yes" in line for line in shell_lines), shell_lines
 

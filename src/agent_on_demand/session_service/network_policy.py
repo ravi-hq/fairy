@@ -4,7 +4,7 @@ The deny-all rule must be appended *last* so allow-listed hosts take
 precedence — a reorder would silently let everything through. The pure
 construction lives here so it can be direct-tested under mutmut's
 hammett runner without pulling in the Sprite SDK or ORM dependencies
-that `_apply_network_policy` carries.
+that `apply_network_policy` carries.
 """
 
 from __future__ import annotations
