@@ -72,6 +72,7 @@ export interface Environment {
   type: "environment";
   name: string;
   packages: Record<string, string[]>;
+  env_vars: Record<string, string>;
   setup_script?: string | null;
   networking: Networking;
   version: number;
@@ -85,6 +86,7 @@ export interface EnvironmentVersion {
   type: "environment";
   name: string;
   packages: Record<string, string[]>;
+  env_vars: Record<string, string>;
   setup_script?: string | null;
   networking: Networking;
   version: number;

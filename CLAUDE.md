@@ -69,9 +69,10 @@ directly (without `make`), `tests/e2e/conftest.py` defaults to
   `test_agents.py::test_metadata_merge_semantics`.
 - **Archive is idempotent-error**: archiving an already-archived row returns
   `409`, not `200`. Same for terminating an already-terminated session.
-- **Environment `env_vars`** are encrypted at rest and never returned in API
-  responses. If you add new secret fields, follow the same pattern in
-  `crypto.py`.
+- **Environment `env_vars`** are returned in API responses (so clients can
+  diff before updating). Storage is plaintext today; if you add new
+  truly-secret fields, follow `crypto.py` for at-rest encryption and
+  redact at the serializer layer.
 - **Session states**: `pending → running → {completed, failed, terminated}`.
   `POST /prompt` is only valid on a `pending`/`completed` session;
   `running`, `failed`, and `terminated` all return `409`.

@@ -79,6 +79,7 @@ class Environment(_Model):
     type: Literal["environment"] = "environment"
     name: str
     packages: dict[str, list[str]] = Field(default_factory=dict)
+    env_vars: dict[str, str] = Field(default_factory=dict)
     setup_script: str | None = None
     networking: Networking
     version: int
@@ -92,6 +93,7 @@ class EnvironmentVersion(_Model):
     type: Literal["environment"] = "environment"
     name: str
     packages: dict[str, list[str]] = Field(default_factory=dict)
+    env_vars: dict[str, str] = Field(default_factory=dict)
     setup_script: str | None = None
     networking: Networking
     version: int

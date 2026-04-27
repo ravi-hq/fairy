@@ -114,6 +114,7 @@ export function makeEnvironment(
     type: "environment",
     name: "demo-env",
     packages: {},
+    env_vars: {},
     setup_script: null,
     networking: { type: "unrestricted" },
     version: 1,
