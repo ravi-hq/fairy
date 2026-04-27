@@ -74,9 +74,7 @@ def test_both_modes_contain_dangerous_bypass_flag():
     Pin so a mutant that drops the bypass flag (which would make Codex
     interactively prompt and hang in the worker) is caught."""
     assert "--dangerously-bypass-approvals-and-sandbox" in build_codex_command(_spec(), "run")
-    assert "--dangerously-bypass-approvals-and-sandbox" in build_codex_command(
-        _spec(), "continue"
-    )
+    assert "--dangerously-bypass-approvals-and-sandbox" in build_codex_command(_spec(), "continue")
 
 
 def test_both_modes_contain_json_flag():
