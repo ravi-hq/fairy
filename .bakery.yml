@@ -20,7 +20,8 @@ gates:
 
   # --- Security tier (preflight, no DB needed) ---
   - name: security-deps
-    command: uv run pip-audit
+    # CVE-2026-3219: pip itself, no fix version available. Matches make security target.
+    command: uv run pip-audit --ignore-vuln CVE-2026-3219
     preflight: true
 
   - name: security-code
@@ -29,7 +30,7 @@ gates:
 
   # --- Coverage-gated test tier ---
   - name: test
-    command: uv run pytest --cov=agent_on_demand --cov-report=term-missing --cov-fail-under=85
+    command: DATABASE_URL=sqlite:///test.db uv run pytest --cov=agent_on_demand --cov-report=term-missing --cov-fail-under=85
     preflight: false
 
   # --- Duplication check (catch AI copy-paste drift) ---
