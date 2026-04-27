@@ -117,9 +117,7 @@ def test_inline_skill(user):
 
 @pytest.mark.django_db
 def test_session_resources_with_and_without_token(user):
-    session = AgentSession.objects.create(
-        user=user, runtime="claude", prompt="p", status="pending"
-    )
+    session = AgentSession.objects.create(user=user, runtime="claude", prompt="p", status="pending")
     r1 = SessionResource(
         session=session,
         resource_type="github_repository",

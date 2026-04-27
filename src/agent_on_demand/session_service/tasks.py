@@ -46,7 +46,7 @@ from agent_on_demand.models import (
     SessionTurn,
 )
 from agent_on_demand.observability import get_tracer
-from agent_on_demand.runtimes import RUNTIMES, Runtime
+from agent_on_demand.runtimes import Runtime
 
 from .errors import NoSpritesKeyError, ProvisionError, SessionHandleNotFound
 from .provisioning import (
