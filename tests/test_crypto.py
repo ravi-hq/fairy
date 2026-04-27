@@ -56,7 +56,7 @@ def test_secret_key_used_when_field_encryption_key_unset():
 def test_decrypt_invalid_token_raises_value_error():
     """Corrupted ciphertext should raise ValueError, not Fernet's InvalidToken.
 
-    Callers (e.g. _build_spec_for_session) catch ValueError to mark the
+    Callers (e.g. build_spec_for_session) catch ValueError to mark the
     session failed; letting cryptography's InvalidToken escape would bypass
     that and leave the session stuck. The exact message is asserted so a
     drift in the diagnostic wording is caught (and to keep mutmut honest).

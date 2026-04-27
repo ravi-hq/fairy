@@ -738,13 +738,13 @@ def test_cmd_thread_leak_detected(user, mocker):
 
 @pytest.mark.django_db
 def test_execute_turn_marks_failed_when_build_spec_raises(user, mocker):
-    """If `_build_spec_for_session` raises (e.g. an agent or environment row
+    """If `build_spec_for_session` raises (e.g. an agent or environment row
     was deleted between turn enqueue and worker pickup), the turn must be
     marked failed rather than 500'ing the worker — `_fail_pending_turn`
     handles that. Pin the contract end-to-end."""
     session, turn = _make_session_and_turn(user)
     mocker.patch(
-        "agent_on_demand.session_service.tasks._build_spec_for_session",
+        "agent_on_demand.session_service.tasks.build_spec_for_session",
         side_effect=ValueError("agent gone"),
     )
 

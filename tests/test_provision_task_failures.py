@@ -4,7 +4,7 @@ The existing test_tasks.py covers the ProvisionError stage-tagging path
 through `test_provision_task_marks_failed_on_sprite_error`. These
 tests fill the two adjacent paths:
 
-  - `_build_spec_for_session` raises (line 177-180): an agent or
+  - `build_spec_for_session` raises (line 177-180): an agent or
     environment row went missing between turn enqueue and worker
     pickup. Must mark provision failed with the error in the log,
     not crash the worker.
@@ -78,12 +78,12 @@ def _make_session_and_turn(user):
 @pytest.mark.django_db
 def test_provision_task_marks_failed_when_build_spec_raises(user, mocker):
     """Race: agent row deleted between turn enqueue and provision-task
-    pickup. _build_spec_for_session raises (likely AttributeError on
+    pickup. build_spec_for_session raises (likely AttributeError on
     None agent). The task must mark provision failed and log, not
     propagate the exception."""
     session, turn = _make_session_and_turn(user)
     mocker.patch(
-        "agent_on_demand.session_service.tasks._build_spec_for_session",
+        "agent_on_demand.session_service.tasks.build_spec_for_session",
         side_effect=ValueError("agent gone"),
     )
 
