@@ -26,15 +26,17 @@ if TYPE_CHECKING:
 
 
 def build_gemini_command(
-    spec: SessionSpec,
+    _spec: SessionSpec,
     mode: Literal["run", "continue"],
 ) -> list[str]:
     """Return the Gemini CLI argv for a single turn.
 
-    ``spec`` is currently unused — Gemini's CLI doesn't take any
+    ``_spec`` is currently unused — Gemini's CLI doesn't take any
     spec-derived flags at the top level — but the parameter is kept so
     this function matches the ``Runtime.build_command`` shape and can
-    accept spec-derived flags later without changing every caller.
+    accept spec-derived flags later without changing every caller. The
+    leading underscore signals intentional non-use to readers and lint
+    rules (ARG001).
     """
     if mode == "continue":
         return ["gemini", "--resume", "--output-format", "stream-json"]

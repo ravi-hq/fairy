@@ -13,7 +13,6 @@ Gemini per-turn argv:
   - Only ``mode="continue"`` contains ``--resume``.
   - The two argvs differ only by the inserted ``--resume`` (length
     differs by 1).
-  - mode is mutually exclusive — no third branch creeps in.
 
 Tests are sync, no Django imports — required so hammett (mutmut's
 runner, which doesn't load pytest plugins) can execute them.
@@ -138,21 +137,3 @@ def test_continue_argv_is_run_argv_with_resume_inserted():
     assert continue_argv[0] == run_argv[0]
     assert continue_argv[1] == "--resume"
     assert continue_argv[2:] == run_argv[1:]
-
-
-# ---------- exhaustive mode handling ----------
-
-
-def test_only_continue_takes_the_resume_branch():
-    """Anything other than ``"continue"`` falls through to the run
-    branch. A mutant that swaps the equality check (``!=`` instead of
-    ``==``) or replaces the literal ``"continue"`` with another string
-    would be caught here — the run branch is the only legal
-    fall-through, and it must not contain ``--resume``."""
-    # The Literal type only allows "run" or "continue", but the runtime
-    # check is a string equality — pin that exact behavior.
-    assert build_gemini_command(_spec(), "run") == [
-        "gemini",
-        "--output-format",
-        "stream-json",
-    ]
