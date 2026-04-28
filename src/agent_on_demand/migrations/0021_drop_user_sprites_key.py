@@ -1,12 +1,13 @@
 """Drop the legacy ``UserSpritesKey`` table.
 
 Step 2 of the credential generalization started in #256 (migration
-``0019_user_backend_credential``). PR 8 created ``UserBackendCredential``,
-backfilled every ``UserSpritesKey`` row into it as ``backend="sprites"``,
-and left the legacy table in place behind a ``_lookup_token`` fallback so
-no caller lost access during the deploy window. The backfill has now
-soaked in production, so this forward-only migration removes the legacy
-table and the application-side fallback that read from it.
+``0019_user_backend_credential``). That PR created
+``UserBackendCredential``, backfilled every ``UserSpritesKey`` row into
+it as ``backend="sprites"``, and left the legacy table in place behind a
+``_lookup_token`` fallback so no caller lost access during the deploy
+window. The backfill has now soaked in production, so this forward-only
+migration removes the legacy table and the application-side fallback
+that read from it.
 
 The conditional ``IgnoreMigration`` opts this migration out of
 django-migration-linter, which flags the underlying ``DROP TABLE`` —
