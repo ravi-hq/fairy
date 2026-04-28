@@ -19,8 +19,7 @@ runner) can execute them. ``Environment`` is duck-typed via
 
 from types import SimpleNamespace
 
-from sprites import NetworkPolicy, PolicyRule
-
+from agent_on_demand.session_service.backend import NetworkPolicy, PolicyRule
 from agent_on_demand.session_service.network_policy import build_network_policy
 
 
@@ -63,11 +62,11 @@ def test_limited_returns_network_policy_instance():
 def test_limited_with_two_allowed_hosts_emits_three_rules_in_order():
     env = _env(networking_config={"allowed_hosts": ["github.com", "pypi.org"]})
     policy = build_network_policy(env)
-    assert policy.rules == [
+    assert policy.rules == (
         PolicyRule(domain="github.com", action="allow"),
         PolicyRule(domain="pypi.org", action="allow"),
         PolicyRule(domain="*", action="deny"),
-    ]
+    )
 
 
 def test_limited_preserves_input_order_of_allowed_hosts():
@@ -81,10 +80,10 @@ def test_limited_preserves_input_order_of_allowed_hosts():
 def test_limited_with_one_allowed_host_emits_two_rules():
     env = _env(networking_config={"allowed_hosts": ["api.anthropic.com"]})
     policy = build_network_policy(env)
-    assert policy.rules == [
+    assert policy.rules == (
         PolicyRule(domain="api.anthropic.com", action="allow"),
         PolicyRule(domain="*", action="deny"),
-    ]
+    )
 
 
 # ---------- empty / missing allowed_hosts ----------
@@ -93,19 +92,19 @@ def test_limited_with_one_allowed_host_emits_two_rules():
 def test_limited_with_empty_allowed_hosts_emits_only_deny():
     env = _env(networking_config={"allowed_hosts": []})
     policy = build_network_policy(env)
-    assert policy.rules == [PolicyRule(domain="*", action="deny")]
+    assert policy.rules == (PolicyRule(domain="*", action="deny"),)
 
 
 def test_limited_with_none_networking_config_emits_only_deny():
     env = _env(networking_config=None)
     policy = build_network_policy(env)
-    assert policy.rules == [PolicyRule(domain="*", action="deny")]
+    assert policy.rules == (PolicyRule(domain="*", action="deny"),)
 
 
 def test_limited_with_empty_networking_config_emits_only_deny():
     env = _env(networking_config={})
     policy = build_network_policy(env)
-    assert policy.rules == [PolicyRule(domain="*", action="deny")]
+    assert policy.rules == (PolicyRule(domain="*", action="deny"),)
 
 
 # ---------- final rule is always *-deny ----------
@@ -164,10 +163,10 @@ def test_allow_rules_carry_host_as_domain():
 def test_wildcard_allow_host_passes_through():
     env = _env(networking_config={"allowed_hosts": ["*.github.com"]})
     policy = build_network_policy(env)
-    assert policy.rules == [
+    assert policy.rules == (
         PolicyRule(domain="*.github.com", action="allow"),
         PolicyRule(domain="*", action="deny"),
-    ]
+    )
 
 
 # ---------- rule count invariants ----------

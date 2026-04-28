@@ -3,7 +3,9 @@ import json
 import pytest
 from django.contrib.auth.models import User
 from django.test import Client
-from sprites import NetworkPolicy, PolicyRule, SpriteError
+from sprites import SpriteError
+
+from agent_on_demand.session_service.backend import NetworkPolicy, PolicyRule
 
 from agent_on_demand.models import (
     Agent,
@@ -107,11 +109,11 @@ class TestSessionNetworkingIntegration:
         assert len(sprite.policies) == 1
         policy = sprite.policies[0]
         assert isinstance(policy, NetworkPolicy)
-        assert policy.rules == [
+        assert policy.rules == (
             PolicyRule(domain="api.anthropic.com", action="allow"),
             PolicyRule(domain="*.github.com", action="allow"),
             PolicyRule(domain="*", action="deny"),
-        ]
+        )
 
     def test_unrestricted_networking_skips_policy_call(
         self, client: Client, auth_headers, runtime_key, user, agent, fake_sprites
@@ -204,4 +206,4 @@ class TestSessionNetworkingIntegration:
 
         sprite = fake_sprites.last_sprite()
         assert len(sprite.policies) == 1
-        assert sprite.policies[0].rules == [PolicyRule(domain="*", action="deny")]
+        assert sprite.policies[0].rules == (PolicyRule(domain="*", action="deny"),)

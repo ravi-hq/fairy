@@ -181,3 +181,27 @@ def test_apply_network_policy_can_be_made_to_raise_once():
     # Second call succeeds.
     handle.apply_network_policy(NetworkPolicy(rules=[]))
     assert len(handle.network_policies) == 1
+
+
+@pytest.mark.django_db
+def test_destroy_session_round_trip_through_fake_backend(fake_backend):
+    """End-to-end round-trip via the new `fake_backend` fixture: a
+    `BackendClient` Protocol-only fake plugged in for `get_client`
+    drives `destroy_session` and the deletion is recorded.
+
+    `provision_session` itself is not exercised here because the
+    runtime-touching stages still expect the legacy sprite SDK shape
+    (PR 3 will port them); this round-trip pins the parts of the
+    Protocol that PR 2 already drives end-to-end."""
+    from django.contrib.auth.models import User
+
+    from agent_on_demand.models import UserSpritesKey
+    from agent_on_demand.session_service.provisioning import destroy_session
+
+    user = User.objects.create_user(username="bk-rt", password="p")
+    usk = UserSpritesKey(user=user)
+    usk.set_api_key("token")
+    usk.save()
+
+    destroy_session(user, "session-xyz")
+    assert fake_backend.deleted == ["session-xyz"]

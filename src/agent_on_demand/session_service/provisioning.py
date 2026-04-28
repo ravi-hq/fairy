@@ -1,7 +1,7 @@
-"""Sprite provisioning — orchestrator that creates a Sprite and dispatches to
-the per-stage helpers in `provisioning_stages.py`.
+"""Session provisioning — orchestrator that creates a backend handle and dispatches
+to the per-stage helpers in `provisioning_stages.py`.
 
-Each `sprite.command()` round trip costs ~5s of WebSocket-layer overhead
+Each backend `make_command()` round trip costs ~5s of WebSocket-layer overhead
 regardless of what it runs, so the provisioning flow is shaped to minimize
 the number of commands. See `provisioning_stages.py` for the per-stage I/O
 and `provision_script.py` for the combined bash script that folds the
@@ -12,12 +12,16 @@ from __future__ import annotations
 
 import logging
 
-from sprites import Sprite, SpriteError
-
 from agent_on_demand.observability import get_tracer
 
+from .backend import BackendError, SessionHandle
 from .client import best_effort_delete, require_client
 from .errors import ProvisionError
+
+# Transitional: catches a `SpriteError` that leaked from a stage helper
+# whose internal `try/except` did not yet wrap it. Removed once
+# runtimes (PR 3) and the threading core (PR 4) are on the Protocol.
+from .sprites_backend import SpriteError
 
 # Re-exported so call-sites in `provision_session` resolve through this
 # module's namespace — that lets tests patch e.g. `provisioning.install_runtime`
@@ -37,10 +41,10 @@ from .stage_events import STAGE_CREATE_SPRITE, stage_timer
 logger = logging.getLogger(__name__)
 
 
-def provision_session(user, spec: SessionSpec, session_id: str | None = None) -> Sprite:
-    """Create a Sprite and run all setup stages against it.
+def provision_session(user, spec: SessionSpec, session_id: str | None = None) -> SessionHandle:
+    """Create a session handle on the backend and run all setup stages against it.
 
-    On any failure the Sprite is best-effort deleted before a `ProvisionError`
+    On any failure the handle is best-effort destroyed before a `ProvisionError`
     is re-raised. Per-stage `stage_timer` events are emitted as rows in
     `AgentSessionLog` so clients can render provisioning progress via the SSE
     stream. Passing `session_id=None` disables emission (used by unit tests
@@ -64,8 +68,8 @@ def provision_session(user, spec: SessionSpec, session_id: str | None = None) ->
         try:
             with stage_timer(session_id, STAGE_CREATE_SPRITE):
                 try:
-                    sprite = client.create_sprite(spec.name)
-                except SpriteError as e:
+                    handle = client.provision(spec.name)
+                except BackendError as e:
                     raise ProvisionError(
                         f"Failed to create Sprite: {e}", stage=STAGE_CREATE_SPRITE
                     ) from e
@@ -74,38 +78,38 @@ def provision_session(user, spec: SessionSpec, session_id: str | None = None) ->
             raise
 
         try:
-            install_runtime(sprite, spec, session_id)
-            apply_network_policy(sprite, env, session_id)
-            write_env_file(sprite, spec, session_id)
-            write_git_credentials(sprite, spec.repos, session_id)
-            run_provision_setup(sprite, spec, session_id)
-            write_runtime_config(sprite, spec, session_id)
-            write_skills(sprite, spec, session_id)
+            install_runtime(handle, spec, session_id)
+            apply_network_policy(handle, env, session_id)
+            write_env_file(handle, spec, session_id)
+            write_git_credentials(handle, spec.repos, session_id)
+            run_provision_setup(handle, spec, session_id)
+            write_runtime_config(handle, spec, session_id)
+            write_skills(handle, spec, session_id)
         except ProvisionError as e:
             span.set_attribute("aod.failure_stage", e.stage)
             best_effort_delete(client, spec.name)
             raise
-        except SpriteError as e:
+        except (BackendError, SpriteError) as e:
             span.set_attribute("aod.failure_stage", "unknown")
             best_effort_delete(client, spec.name)
             raise ProvisionError(f"Failed to prepare Sprite: {e}", stage="unknown") from e
 
-        return sprite
+        return handle
 
 
-def resume_session(user, sprite_name: str) -> Sprite:
-    """Look up the Sprite backing an existing session."""
+def resume_session(user, sprite_name: str) -> SessionHandle:
+    """Look up the backend handle backing an existing session."""
     from .errors import SessionHandleNotFound
 
     client = require_client(user)
     try:
-        return client.get_sprite(sprite_name)
-    except SpriteError as e:
+        return client.get(sprite_name)
+    except BackendError as e:
         raise SessionHandleNotFound(f"Sprite not found: {e}") from e
 
 
 def destroy_session(user, sprite_name: str) -> None:
-    """Delete the Sprite. Best-effort — logs on failure but never raises."""
+    """Destroy the backend session. Best-effort — logs on failure but never raises."""
     if not sprite_name:
         return
     from .client import get_client
