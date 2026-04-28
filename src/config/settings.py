@@ -125,6 +125,19 @@ DEFAULT_MAX_CONCURRENT_SESSIONS = int(os.environ.get("DEFAULT_MAX_CONCURRENT_SES
 # Defaults for `manage.py lintmigrations`. The Makefile's `check-migrations`
 # target overrides these with --git-commit-id to scope linting to migrations
 # added on the current branch (existing migrations are grandfathered).
+#
+# `exclude_migration_tests=["NOT_NULL"]` suppresses one false-positive
+# class. The Makefile pins the linter's DATABASE_URL to SQLite so it
+# doesn't need a running Postgres, but Django's SQLite schema editor
+# emits a full table rebuild (`CREATE TABLE new__foo (...NOT NULL...)`)
+# for ANY AddField — which the SqliteAnalyser then flags as `NOT NULL
+# constraint on columns`, even when the column has a `default=` and
+# production Postgres emits a safe `ADD COLUMN ... DEFAULT ... NOT NULL`.
+# CLAUDE.md's "danger zones" fence remains the line of defense for
+# genuinely unsafe NOT NULL adds (NOT NULL on a populated table with no
+# default + no backfill plan); the other linter checks (DROP_TABLE,
+# RENAME_TABLE, CREATE_INDEX, dropping columns) remain enforced.
 MIGRATION_LINTER_OPTIONS = {
     "include_apps": ["fairy"],
+    "exclude_migration_tests": ["NOT_NULL"],
 }

@@ -71,3 +71,8 @@ class SessionSpec:
     repos: list[RepoSpec]
     mcp_servers: list[McpServerSpec]
     skills: list[SkillSpec]
+    # Backend discriminator — the registry key that selects which Backend
+    # implementation provisions and executes this session. Defaults to
+    # "sprites" so callers that pre-date the discriminator (and tests that
+    # construct SessionSpec directly) keep working.
+    backend: str = "sprites"

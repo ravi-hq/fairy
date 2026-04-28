@@ -32,6 +32,7 @@ class AgentSession(models.Model):
     runtime = models.CharField(max_length=32)
     prompt = models.TextField()
     sprite_name = models.CharField(max_length=100, blank=True)
+    backend = models.CharField(max_length=32, default="sprites")
     runtime_session_id = models.UUIDField(null=True, blank=True)
     status = models.CharField(max_length=16, choices=STATUS_CHOICES, default="pending")
     exit_code = models.IntegerField(null=True, blank=True)

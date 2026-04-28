@@ -1,40 +1,34 @@
 import logging
-from functools import cache
 
 from agent_on_demand.models import UserSpritesKey
 
-from .backend import Backend, BackendClient, BackendError
+from .backend import BackendClient, BackendError
 from .errors import NoBackendCredentialsError
-from .sprites_backend import SpritesBackend
+from .registry import get_backend
 
 logger = logging.getLogger(__name__)
 
 
-@cache
-def _backend() -> Backend:
-    """Lazily construct the backend singleton.
-
-    `SpritesBackend.__init__` applies a websocket close-timeout monkeypatch
-    on first instantiation, so we defer construction until the first
-    `get_client` call rather than running at import time.
-    """
-    return SpritesBackend()
-
-
-def get_client(user) -> BackendClient | None:
+def get_client(user, backend: str = "sprites") -> BackendClient | None:
     """Build a backend client from the caller's stored token.
 
-    Returns None when the user has no token configured.
+    Returns None when the user has no token configured. The backend
+    discriminator selects which `Backend` implementation in the registry
+    creates the per-user client.
     """
+    # TODO PR 8: credential lookup goes through backend selector — today
+    # only the sprites backend has a stored credential model
+    # (`UserSpritesKey`). PR 8 generalizes this to `UserBackendCredential`
+    # keyed on (user, backend).
     try:
         token = user.sprites_key.get_api_key()
     except UserSpritesKey.DoesNotExist:
         return None
-    return _backend().create_client(token)
+    return get_backend(backend).create_client(token)
 
 
-def require_client(user) -> BackendClient:
-    client = get_client(user)
+def require_client(user, backend: str = "sprites") -> BackendClient:
+    client = get_client(user, backend)
     if client is None:
         raise NoBackendCredentialsError("No backend credentials configured")
     return client

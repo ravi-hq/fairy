@@ -14,6 +14,7 @@ from .errors import (
     SessionServiceError,
 )
 from .provisioning import destroy_session, provision_session, resume_session
+from .registry import get_backend
 from .specs import McpServerSpec, RepoSpec, SessionSpec, SkillSpec
 from .tasks import destroy_session_task, provision_session_task
 from .turn import run_turn
@@ -30,6 +31,7 @@ __all__ = [
     "SkillSpec",
     "destroy_session",
     "destroy_session_task",
+    "get_backend",
     "get_client",
     "provision_session",
     "provision_session_task",
