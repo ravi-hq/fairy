@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from agent_on_demand import session_service
 from agent_on_demand.auth import require_api_key
-from agent_on_demand.github_resource_validation import (
+from agent_on_demand.validation.github_resource_validation import (
     resolved_mount_path,
     validate_github_url,
     validate_mount_path,

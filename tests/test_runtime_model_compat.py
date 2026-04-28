@@ -9,7 +9,7 @@ test module doesn't pull Django / sprites imports.
 
 from types import SimpleNamespace
 
-from agent_on_demand.runtime_model_compat import check_runtime_model_compat
+from agent_on_demand.validation.runtime_model_compat import check_runtime_model_compat
 
 
 def _runtime(name="claude", providers=frozenset({"anthropic"})):

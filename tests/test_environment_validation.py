@@ -9,7 +9,7 @@ hammett (mutmut's runner) can execute them.
 
 import pytest
 
-from agent_on_demand.environment_validation import (
+from agent_on_demand.validation.environment_validation import (
     ENV_VAR_KEY_RE,
     VALID_NETWORKING_TYPES,
     VALID_PACKAGE_MANAGERS,

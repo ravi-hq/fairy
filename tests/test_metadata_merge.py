@@ -14,7 +14,7 @@ required so hammett (mutmut's runner, which doesn't load pytest plugins)
 can execute them.
 """
 
-from agent_on_demand.metadata_merge import merge_metadata
+from agent_on_demand.validation.metadata_merge import merge_metadata
 
 
 def test_empty_patch_returns_unchanged_copy():
