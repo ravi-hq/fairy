@@ -17,3 +17,5 @@ mutants/
 site/docs/api/openapi.json
 site/site/
 staticfiles/
+.claude/scheduled_tasks.lock
+.claude/worktrees/
