@@ -55,7 +55,7 @@ def test_registry_is_singleton_across_calls():
 
 
 @pytest.mark.django_db
-def test_get_client_routes_through_registry(mocker, db):
+def test_get_client_routes_through_registry(mocker):
     """`get_client(user, backend=...)` resolves the Backend via
     `get_backend(...)`. Pin so a future refactor that hard-codes
     `SpritesBackend()` is caught."""
@@ -94,3 +94,21 @@ def test_get_client_default_backend_is_sprites(mocker):
     client_module.get_client(user)
 
     get_backend_mock.assert_called_once_with("sprites")
+
+
+def test_get_client_rejects_non_sprites_backends_until_pr8(mocker):
+    """Until PR 8 generalizes `UserSpritesKey` → `UserBackendCredential`,
+    only the sprites backend has a credential model. `get_client(user,
+    backend!="sprites")` must fail fast with a clear `NoBackendCredentials`
+    error rather than silently pass a Sprites token to a foreign backend
+    and produce a confusing downstream auth failure."""
+    from agent_on_demand.session_service.client import get_client
+    from agent_on_demand.session_service.errors import NoBackendCredentialsError
+
+    user = mocker.MagicMock()
+    with pytest.raises(NoBackendCredentialsError) as exc:
+        get_client(user, backend="modal")
+    msg = str(exc.value)
+    assert "modal" in msg
+    # No credential lookup should happen for unknown backends.
+    user.sprites_key.get_api_key.assert_not_called()

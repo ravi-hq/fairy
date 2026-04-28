@@ -16,10 +16,17 @@ def get_client(user, backend: str = "sprites") -> BackendClient | None:
     discriminator selects which `Backend` implementation in the registry
     creates the per-user client.
     """
-    # TODO PR 8: credential lookup goes through backend selector — today
-    # only the sprites backend has a stored credential model
-    # (`UserSpritesKey`). PR 8 generalizes this to `UserBackendCredential`
-    # keyed on (user, backend).
+    # Until PR 8 generalizes `UserSpritesKey` → `UserBackendCredential`
+    # keyed on (user, backend), only the sprites backend has a stored
+    # credential model. Reject other backends explicitly so the boundary
+    # fails fast at the credential layer instead of silently passing a
+    # Sprites token to (e.g.) a Modal client and producing a confusing
+    # downstream auth error.
+    if backend != "sprites":
+        raise NoBackendCredentialsError(
+            f"Backend {backend!r} has no credential model yet "
+            "(blocked until PR 8 generalizes UserSpritesKey → UserBackendCredential)"
+        )
     try:
         token = user.sprites_key.get_api_key()
     except UserSpritesKey.DoesNotExist:
