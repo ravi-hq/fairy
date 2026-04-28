@@ -18,11 +18,11 @@ from .errors import ProvisionError
 from .git_credentials import build_git_credentials_lines
 from .network_policy import build_network_policy
 
-# Transitional: runtime methods (`install`, `write_config`) still raise
-# native `SpriteError` because runtimes haven't ported to the Protocol
-# yet (PR 3 of the session-backend extraction). This catches that path
-# alongside `BackendError`; once runtimes are ported, the SpriteError
-# catches in `install_runtime` / `write_runtime_config` go away.
+# Defensive: runtime methods now route through the `SessionHandle` Protocol,
+# which translates `SpriteError` to `BackendError` at the adapter boundary.
+# The `SpriteError` catch is retained as a safety net — tests assert that
+# a `SpriteError` raised directly by a mocked runtime impl is still tagged
+# with the correct provisioning stage.
 from .sprites_backend import SpriteError
 from .provision_script import (
     ENV_FILE_PATH,
@@ -60,12 +60,7 @@ def install_runtime(handle: SessionHandle, spec: SessionSpec, session_id: str | 
     meta-runtimes that fetch binaries, internet access is required here."""
     with stage_timer(session_id, STAGE_INSTALL_RUNTIME):
         try:
-            # Runtime methods still type their arg as `Sprite` until PR 3
-            # of the session-backend extraction. The recording fake and
-            # the production sprite both expose the legacy shape, so the
-            # call works at runtime; the `type: ignore` lifts when
-            # runtimes accept `SessionHandle`.
-            spec.runtime.install(handle)  # type: ignore[arg-type]
+            spec.runtime.install(handle)
         except (BackendError, SpriteError) as e:
             raise ProvisionError(
                 f"Failed to install runtime: {e}", stage=STAGE_INSTALL_RUNTIME
@@ -158,9 +153,7 @@ def write_runtime_config(
     nothing to say."""
     with stage_timer(session_id, STAGE_RUNTIME_CONFIG):
         try:
-            # Same `type: ignore` story as `install_runtime` above —
-            # lifts in PR 3 when runtimes accept `SessionHandle`.
-            spec.runtime.write_config(handle, spec, spec.mcp_servers)  # type: ignore[arg-type]
+            spec.runtime.write_config(handle, spec, spec.mcp_servers)
         except (BackendError, SpriteError) as e:
             raise ProvisionError(
                 f"Failed to write runtime config: {e}", stage=STAGE_RUNTIME_CONFIG
