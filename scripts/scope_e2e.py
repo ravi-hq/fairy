@@ -69,7 +69,9 @@ RULES: tuple[tuple[str, object], ...] = (
     ("src/agent_on_demand/models/agents.py", ("test_agents.py",)),
     ("src/agent_on_demand/views/environments.py", ("test_environments.py",)),
     ("src/agent_on_demand/models/environments.py", ("test_environments.py",)),
-    ("src/agent_on_demand/views/sessions.py", ("test_sessions.py",)),
+    # Matches both the package directory (`views/sessions/...`) and any
+    # legacy single-file callers (`views/sessions.py`).
+    ("src/agent_on_demand/views/sessions", ("test_sessions.py",)),
     ("src/agent_on_demand/models/sessions.py", ("test_sessions.py",)),
     ("src/agent_on_demand/stream.py", ("test_sessions.py",)),
     # Session orchestration touches every test that creates a real session.
