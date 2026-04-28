@@ -166,7 +166,6 @@ def _create_session(request):
             environment=environment_obj,
             runtime=runtime,
             prompt=req.prompt,
-            sprite_name=name,
             backend_handle=name,
             runtime_session_id=runtime_session_id,
             status="pending",

@@ -375,10 +375,10 @@ class TestDestroyAndResumeSession:
     re-attach for a still-running Sprite. Each has narrow defensive
     branches that previously had no tests."""
 
-    def test_destroy_session_no_sprite_name_is_noop(self, user, fake_sprites):
-        """A session with empty sprite_name (e.g. terminate already cleared
-        it) must not invoke delete — otherwise we'd queue cleanup for a
-        non-existent Sprite and inflate Sprites-API error rates."""
+    def test_destroy_session_no_handle_is_noop(self, user, fake_sprites):
+        """A session with empty backend_handle (e.g. terminate already
+        cleared it) must not invoke delete — otherwise we'd queue cleanup
+        for a non-existent Sprite and inflate Sprites-API error rates."""
         from agent_on_demand.session_service.provisioning import destroy_session
 
         destroy_session(user, "")
@@ -396,7 +396,7 @@ class TestDestroyAndResumeSession:
         mocker.patch("agent_on_demand.session_service.get_client", return_value=None)
         with caplog.at_level(logging.WARNING):
             destroy_session(user, "aod-orphan")
-        assert any("no Sprites key" in r.message for r in caplog.records)
+        assert any("no backend credentials" in r.message for r in caplog.records)
 
     def test_resume_session_wraps_sprite_error_in_session_handle_not_found(
         self, user, fake_sprites, mocker

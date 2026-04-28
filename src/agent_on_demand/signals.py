@@ -10,7 +10,7 @@ def delete_sprite_on_session_delete(sender, instance, **kwargs):
     """Enqueue Sprite cleanup when a session is deleted, regardless of
     deletion path. Runs async so DELETE /sessions/{id} doesn't block on the
     Sprites API."""
-    handle = instance.backend_handle or instance.sprite_name
+    handle = instance.backend_handle
     if not handle:
         return
-    session_service.destroy_session_task.defer(user_id=instance.user_id, sprite_name=handle)
+    session_service.destroy_session_task.defer(user_id=instance.user_id, handle=handle)

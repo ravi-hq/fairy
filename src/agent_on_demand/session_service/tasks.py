@@ -190,7 +190,7 @@ def _provision_session_inner(
 
 def _mark_provision_failed(session: AgentSession, turn_id: int, message: str) -> None:
     """Record a provision failure: log stderr chunk, mark session + turn failed,
-    clear sprite_name (nothing was left behind — provision_session deletes on
+    clear backend_handle (nothing was left behind — provision_session deletes on
     failure), and emit the posthog event."""
     AgentSessionLog.objects.create(
         session=session,
@@ -203,9 +203,8 @@ def _mark_provision_failed(session: AgentSession, turn_id: int, message: str) ->
     session.refresh_from_db(fields=["status"])
     if session.status != "terminated":
         session.status = "failed"
-        session.sprite_name = ""
         session.backend_handle = ""
-        session.save(update_fields=["status", "sprite_name", "backend_handle", "updated_at"])
+        session.save(update_fields=["status", "backend_handle", "updated_at"])
 
     SessionTurn.objects.filter(pk=turn_id).update(
         status="failed",
@@ -315,7 +314,7 @@ def _execute_turn_inner(
         },
     ) as span:
         try:
-            handle = resume_session(session.user, session.backend_handle or session.sprite_name)
+            handle = resume_session(session.user, session.backend_handle)
         except SessionHandleNotFound as e:
             logger.warning("sprite not found for session %s turn %s: %s", session_id, turn_id, e)
             span.set_attribute("aod.failure_stage", "sprite_not_found")
@@ -500,31 +499,31 @@ def _execute_turn_body(session, turn, spec, handle, prompt, mode, timeout, span)
 
 
 @procrastinate_app.task(queue="sessions", name="destroy_session", pass_context=False)
-def destroy_session_task(*, user_id: int, sprite_name: str) -> None:
-    """Delete a Sprite on the worker. Best-effort — failures are logged,
-    not retried, matching the pre-existing `destroy_session` contract.
+def destroy_session_task(*, user_id: int, handle: str) -> None:
+    """Delete a backend session on the worker. Best-effort — failures are
+    logged, not retried, matching the pre-existing `destroy_session` contract.
 
     User resolution lives inside the task (rather than the view passing a
     client/token) so there's nothing sensitive on the Procrastinate queue.
     If the user row is gone by the time the worker picks up, we skip
-    cleanup — the Sprite will eventually time out server-side.
+    cleanup — the backend resource will eventually time out server-side.
     """
     close_old_connections()
     try:
         with posthog.new_context(capture_exceptions=True):
             posthog.tag("task", "destroy_session")
             posthog.tag("user_id", user_id)
-            posthog.tag("sprite_name", sprite_name)
+            posthog.tag("handle", handle)
             User = get_user_model()
             try:
                 user = User.objects.get(pk=user_id)
             except User.DoesNotExist:
                 logger.warning(
-                    "destroy_session_task: user %s gone, skipping Sprite %s",
+                    "destroy_session_task: user %s gone, skipping handle %s",
                     user_id,
-                    sprite_name,
+                    handle,
                 )
                 return
-            destroy_session(user, sprite_name)
+            destroy_session(user, handle)
     finally:
         close_old_connections()

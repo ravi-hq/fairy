@@ -267,13 +267,12 @@ class AgentSessionLogInline(admin.TabularInline):
 class AgentSessionAdmin(admin.ModelAdmin):
     list_display = ("id", "user", "runtime", "status", "exit_code", "created_at")
     list_filter = ("runtime", "status")
-    search_fields = ("id", "sprite_name", "backend_handle", "user__email")
+    search_fields = ("id", "backend_handle", "user__email")
     readonly_fields = (
         "id",
         "user",
         "runtime",
         "prompt",
-        "sprite_name",
         "backend_handle",
         "status",
         "exit_code",
@@ -300,7 +299,7 @@ class AgentSessionAdmin(admin.ModelAdmin):
         terminated = 0
         missing_key_users: set[str] = set()
         for session in queryset.exclude(status="terminated"):
-            handle = session.backend_handle or session.sprite_name
+            handle = session.backend_handle
             if handle:
                 client = client_for(session.user)
                 if client is None:
@@ -311,9 +310,8 @@ class AgentSessionAdmin(admin.ModelAdmin):
                     except BackendError:
                         pass
             session.status = "terminated"
-            session.sprite_name = ""
             session.backend_handle = ""
-            session.save(update_fields=["status", "sprite_name", "backend_handle", "updated_at"])
+            session.save(update_fields=["status", "backend_handle", "updated_at"])
             terminated += 1
         skipped = queryset.filter(status="terminated").count()
         msg = f"Terminated {terminated} session(s)."

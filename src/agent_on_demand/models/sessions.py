@@ -31,13 +31,10 @@ class AgentSession(models.Model):
     )
     runtime = models.CharField(max_length=32)
     prompt = models.TextField()
-    sprite_name = models.CharField(max_length=100, blank=True)
     backend = models.CharField(max_length=32, default="sprites")
-    # Step 1 of two-step rename: dual-written with `sprite_name`; reads prefer
-    # this field with `sprite_name` as a fallback. A follow-up PR drops
-    # `sprite_name` after the dual-write deploy soaks. `null=True` is a
-    # migration-linter concession (see migration 0018); app code always
-    # writes a string, so reads stay typed-string.
+    # `null=True` is a migration-linter concession from migration 0018 (the
+    # SQLite analyser flagged the additive column). App code always writes a
+    # string, so reads stay typed-string.
     backend_handle = models.CharField(max_length=100, blank=True, default="", null=True)
     runtime_session_id = models.UUIDField(null=True, blank=True)
     status = models.CharField(max_length=16, choices=STATUS_CHOICES, default="pending")

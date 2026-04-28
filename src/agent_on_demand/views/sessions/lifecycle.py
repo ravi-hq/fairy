@@ -68,7 +68,7 @@ def send_prompt(request, session_id):
         return JsonResponse({"detail": e.errors(include_context=False)}, status=422)
 
     try:
-        session_service.resume_session(request.user, session.backend_handle or session.sprite_name)
+        session_service.resume_session(request.user, session.backend_handle)
     except session_service.NoBackendCredentialsError as e:
         return JsonResponse({"detail": str(e)}, status=400)
     except session_service.SessionHandleNotFound:
@@ -164,16 +164,15 @@ def terminate_session(request, session_id):
             err = _pkg.check_can_terminate(session.status)
             if err is not None:
                 return err
-            handle = session.backend_handle or session.sprite_name
+            handle = session.backend_handle
             session.status = "terminated"
-            session.sprite_name = ""
             session.backend_handle = ""
-            session.save(update_fields=["status", "sprite_name", "backend_handle", "updated_at"])
+            session.save(update_fields=["status", "backend_handle", "updated_at"])
     except AgentSession.DoesNotExist:
         return JsonResponse({"detail": "Session not found"}, status=404)
 
     if handle:
-        session_service.destroy_session_task.defer(user_id=request.user.id, sprite_name=handle)
+        session_service.destroy_session_task.defer(user_id=request.user.id, handle=handle)
 
     with posthog.new_context():
         posthog.identify_context(str(request.user.id))

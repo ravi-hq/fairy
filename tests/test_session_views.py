@@ -240,7 +240,7 @@ def test_send_prompt_without_sprites_key_returns_400(client, auth_headers, user)
     client.py breaks this test loudly, rather than silently drifting away
     from the API contract SDK clients parse against."""
     session = AgentSession.objects.create(
-        user=user, runtime="claude", prompt="x", status="completed", sprite_name="s"
+        user=user, runtime="claude", prompt="x", status="completed", backend_handle="s"
     )
     resp = client.post(
         f"/sessions/{session.id}/prompt",
@@ -266,7 +266,7 @@ def test_send_prompt_when_sprite_is_gone_returns_409(
     from agent_on_demand.session_service.errors import SessionHandleNotFound
 
     session = AgentSession.objects.create(
-        user=user, runtime="claude", prompt="x", status="completed", sprite_name="s"
+        user=user, runtime="claude", prompt="x", status="completed", backend_handle="s"
     )
     mocker.patch(
         "agent_on_demand.views.sessions.session_service.resume_session",
@@ -303,7 +303,7 @@ def test_send_prompt_session_deleted_between_pre_lock_and_lock_returns_404(
     from unittest.mock import MagicMock
 
     session = AgentSession.objects.create(
-        user=user, runtime="claude", prompt="x", status="completed", sprite_name="s"
+        user=user, runtime="claude", prompt="x", status="completed", backend_handle="s"
     )
     fake_sprite = object()
     mocker.patch(
@@ -343,7 +343,7 @@ def test_send_prompt_post_lock_status_change_returns_409(
     from django.http import JsonResponse
 
     session = AgentSession.objects.create(
-        user=user, runtime="claude", prompt="x", status="completed", sprite_name="s"
+        user=user, runtime="claude", prompt="x", status="completed", backend_handle="s"
     )
     fake_sprite = object()
     mocker.patch(
@@ -389,7 +389,7 @@ def test_send_prompt_post_lock_pending_race_returns_409(
     session row reports status='pending', simulating a sibling caller
     who won the lock first and transitioned the row."""
     session = AgentSession.objects.create(
-        user=user, runtime="claude", prompt="x", status="completed", sprite_name="s"
+        user=user, runtime="claude", prompt="x", status="completed", backend_handle="s"
     )
     fake_sprite = object()
     mocker.patch(
