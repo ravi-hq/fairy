@@ -13,7 +13,7 @@ Agent on Demand streams session output as [Server-Sent Events](https://developer
 - `Cache-Control: no-cache`
 - `X-Accel-Buffering: no`
 
-Each event is a line of the form `data: <json>\n\n`, preceded by an `id: <int>\n` line for every event except `start`.
+Each event is a line of the form `data: <json>\n\n`. All events except `start` and `turn_start` are preceded by an `id: <int>\n` line. `turn_start` is a synthetic event derived from the same log row as the `output` event that follows it; advancing the SSE cursor on `turn_start` would cause the subsequent `output` event (same id) to be skipped on reconnect, so it deliberately has no `id:` line.
 
 ## Event types
 
@@ -75,7 +75,6 @@ Connecting to a stream always replays all stored output from the beginning:
 ```
 data: {"type": "start", "runtime": "claude", "session_id": "..."}
 
-id: 1
 data: {"type": "turn_start", "id": 1, "turn": 1}
 
 id: 1

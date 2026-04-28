@@ -39,20 +39,22 @@ A **session** is one execution of an agent inside a Sprite. Sessions are:
                 POST /sessions
                      │
                      ▼
-                ┌─────────┐
-                │ pending │◄──────────────────────────────┐
-                └────┬────┘                               │
-                     │ background execution starts        │ POST /sessions/{id}/prompt
-                     ▼                                    │ (allowed; resets to pending)
+                ┌─────────┐◄──────────────────────────────┐
+                │ pending │                               │ POST /sessions/{id}/prompt
+                └────┬────┘                               │ (resets to pending)
+                     │ background execution starts        │
+                     ▼                                    │
                 ┌─────────┐                               │
-                │ running │───────────────────────────────┘
-                └────┬────┘
-       ┌─────────────┼──────────────┐
-       │             │              │
-       ▼             ▼              ▼
- ┌──────────┐  ┌────────┐  ┌──────────────┐
- │completed │  │ failed │  │  terminated  │◄── POST /sessions/{id}/terminate
- └──────────┘  └────────┘  └──────────────┘
+                │ running │                               │
+                └────┬────┘                               │
+       ┌─────────────┼──────────────┐                     │
+       │             │              │                     │
+       ▼             ▼              ▼                     │
+ ┌──────────┐  ┌────────┐  ┌──────────────┐              │
+ │completed │  │ failed │  │  terminated  │◄─ POST /sessions/{id}/terminate
+ └────┬─────┘  └────────┘  └──────────────┘
+      │
+      └─────────────────────────────────────────────────►┘
 ```
 
 - `pending` → execution has been accepted but hasn't started yet.
@@ -61,7 +63,7 @@ A **session** is one execution of an agent inside a Sprite. Sessions are:
 - `failed` → runtime exited non-zero, or an unhandled exception occurred. `exit_code` may be `null` for the exception case.
 - `terminated` → stopped by `POST /sessions/{id}/terminate`. Cannot be continued.
 
-After `completed` or `failed`, you may continue the session with `POST /sessions/{id}/prompt`. After `terminated`, you cannot.
+After `completed`, you may continue the session with `POST /sessions/{id}/prompt` — this resets the session to `pending` and resumes in the same Sprite. `failed` and `terminated` sessions cannot be continued; start a new session instead.
 
 ## Optimistic concurrency (agents and environments)
 

@@ -10,11 +10,11 @@ Python examples use the official [`aod-sdk`](../sdks/python.md) package
 ## Shape of the solution
 
 Your dashboard acts as an authenticated proxy between your users and Agent on Demand. Each
-dashboard user is mapped to a Agent on Demand API token (or a shared service token with
+dashboard user is mapped to an Agent on Demand API token (or a shared service token with
 per-user metadata). The dashboard:
 
 1. Accepts user requests through your own auth layer.
-2. Calls `POST /sessions` on the user's behalf using a Agent on Demand token.
+2. Calls `POST /sessions` on the user's behalf using an Agent on Demand token.
 3. Lists running and past sessions via `GET /sessions`.
 4. Proxies the SSE stream to the browser — either by forwarding
    `GET /sessions/{id}/stream` directly or relaying events over a WebSocket.

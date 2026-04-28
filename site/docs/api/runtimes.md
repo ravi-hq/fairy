@@ -70,9 +70,7 @@ Uses the Gemini CLI with `--output-format stream-json`. Resume is handled via `-
 
 Uses [sst/opencode](https://opencode.ai) — a multi-provider CLI that fronts Anthropic, OpenAI, and Google models through a single binary. Pass any `anthropic/*`, `openai/*`, or `google/*` model ID; opencode picks the right provider API at invocation time.
 
-opencode is **not pre-installed** on the Sprite base image. AoD runs `npm install -g opencode-ai@<pinned>` during session provisioning (before any network policy is applied, so `registry.npmjs.org` does not need to be in `allowed_hosts`). First-session provisioning takes 10–30 s longer than the pre-baked runtimes as a result.
-
-If the environment has `networking.type == "limited"`, the allowed-hosts list must include `registry.npmjs.org` for opencode provisioning to succeed.
+opencode is **not pre-installed** on the Sprite base image. AoD runs `npm install -g opencode-ai@<pinned>` during the `install_runtime` provisioning stage, which runs before any network policy is applied. `registry.npmjs.org` does **not** need to be in `allowed_hosts` for this to succeed. First-session provisioning takes 10–30 s longer than the pre-baked runtimes as a result.
 
 ## Tools
 
