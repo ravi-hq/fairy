@@ -19,7 +19,7 @@
     <dt>Runtime</dt><dd>{{ session.runtime }}</dd>
     <dt>Status</dt><dd>{{ session.status }}</dd>
     <dt>Exit code</dt><dd>{% if session.exit_code is not None %}{{ session.exit_code }}{% else %}<span class="muted">—</span>{% endif %}</dd>
-    <dt>Sprite name</dt><dd>{% if session.sprite_name %}<code>{{ session.sprite_name }}</code>{% else %}<span class="muted">—</span>{% endif %}</dd>
+    <dt>Backend handle</dt><dd>{% if session.backend_handle or session.sprite_name %}<code>{{ session.backend_handle|default:session.sprite_name }}</code>{% else %}<span class="muted">—</span>{% endif %}</dd>
     <dt>Prompt</dt><dd><pre>{{ session.prompt }}</pre></dd>
     <dt>Resources</dt>
     <dd>

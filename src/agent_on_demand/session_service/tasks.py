@@ -199,7 +199,8 @@ def _mark_provision_failed(session: AgentSession, turn_id: int, message: str) ->
     if session.status != "terminated":
         session.status = "failed"
         session.sprite_name = ""
-        session.save(update_fields=["status", "sprite_name", "updated_at"])
+        session.backend_handle = ""
+        session.save(update_fields=["status", "sprite_name", "backend_handle", "updated_at"])
 
     SessionTurn.objects.filter(pk=turn_id).update(
         status="failed",
@@ -309,7 +310,7 @@ def _execute_turn_inner(
         },
     ) as span:
         try:
-            handle = resume_session(session.user, session.sprite_name)
+            handle = resume_session(session.user, session.backend_handle or session.sprite_name)
         except SessionHandleNotFound as e:
             logger.warning("sprite not found for session %s turn %s: %s", session_id, turn_id, e)
             span.set_attribute("aod.failure_stage", "sprite_not_found")
