@@ -24,7 +24,7 @@ from django_migration_linter import IgnoreMigration
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("fairy", "0016_runtime_redesign"),
+        ("fairy", "0017_add_session_backend"),
     ]
 
     operations = [
