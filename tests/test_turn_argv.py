@@ -28,7 +28,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from agent_on_demand.session_service.turn_argv import (
+from agent_on_demand.session_service.turn.argv import (
     _ENV_SOURCE_SHIM,
     build_turn_argv,
 )

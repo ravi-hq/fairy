@@ -9,8 +9,6 @@ from __future__ import annotations
 
 from agent_on_demand.models import AgentSession, SessionTurn
 
-from .tasks import execute_turn
-
 
 def run_turn(
     session: AgentSession,
@@ -20,6 +18,10 @@ def run_turn(
     timeout: float,
 ) -> None:
     """Enqueue a task to execute this turn on the worker service."""
+    # Local import: `tasks` imports `turn.argv` / `turn.outcome`, so a
+    # top-level import here would cycle through the `turn` package init.
+    from agent_on_demand.session_service.tasks import execute_turn
+
     execute_turn.defer(
         session_id=str(session.id),
         turn_id=turn.id,

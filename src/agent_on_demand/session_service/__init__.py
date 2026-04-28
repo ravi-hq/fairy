@@ -12,9 +12,9 @@ of touching backend SDKs directly. The package layout:
 - ``client.py`` — credential lookup + `Backend.create_client` glue.
 - ``specs/`` — backend-neutral session spec types (`types.py`) and the
   ORM → spec hydration path (`factory.py`).
-- ``turn.py`` / ``tasks.py`` / ``turn_argv.py`` / ``turn_outcome.py`` —
-  per-turn execution: enqueue, Procrastinate task body, argv builder,
-  and outcome resolution.
+- ``turn/`` / ``tasks.py`` — per-turn execution: enqueue, argv builder,
+  and outcome resolution live under ``turn/``; the Procrastinate task
+  body lives in ``tasks.py``.
 """
 
 from .client import get_client

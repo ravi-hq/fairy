@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 from agent_on_demand.runtimes import Runtime
 
 if TYPE_CHECKING:
-    from .specs import SessionSpec
+    from agent_on_demand.session_service.specs import SessionSpec
 
 _ENV_SOURCE_SHIM = 'set -a; source /tmp/aod-env; set +a; exec "$@"'
 

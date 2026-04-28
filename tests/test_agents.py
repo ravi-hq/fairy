@@ -549,7 +549,7 @@ def test_list_versions(client: Client, auth_headers, agent):
 def test_create_session_with_agent(
     client: Client, auth_headers, agent, runtime_key, fake_sprites, mocker
 ):
-    defer_mock = mocker.patch("agent_on_demand.session_service.turn.execute_turn.defer")
+    defer_mock = mocker.patch("agent_on_demand.session_service.tasks.execute_turn.defer")
 
     resp = client.post(
         "/sessions",

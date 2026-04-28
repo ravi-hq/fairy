@@ -33,7 +33,6 @@ def fake_sprites(mocker):
     mocker.patch("agent_on_demand.session_service.get_client", return_value=fake)
 
     mocker.patch("agent_on_demand.session_service.tasks.execute_turn.defer")
-    mocker.patch("agent_on_demand.session_service.turn.execute_turn.defer")
 
     from agent_on_demand.session_service.tasks import (
         destroy_session_task,
