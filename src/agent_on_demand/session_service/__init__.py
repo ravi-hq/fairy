@@ -7,6 +7,7 @@ so it can later be placed behind a Protocol without touching the call sites.
 
 from .client import get_client
 from .errors import (
+    NoBackendCredentialsError,
     NoSpritesKeyError,
     ProvisionError,
     SessionHandleNotFound,
@@ -19,6 +20,7 @@ from .turn import run_turn
 
 __all__ = [
     "McpServerSpec",
+    "NoBackendCredentialsError",
     "NoSpritesKeyError",
     "ProvisionError",
     "RepoSpec",

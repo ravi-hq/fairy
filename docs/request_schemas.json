@@ -337,7 +337,7 @@
           }
         ],
         "default": null,
-        "description": "Absolute path inside the Sprite where repo is cloned. Defaults to /workspace/<repo-name>.",
+        "description": "Absolute path inside the workspace where repo is cloned. Defaults to /workspace/<repo-name>.",
         "title": "Mount Path"
       },
       "type": {
@@ -407,7 +407,7 @@
               }
             ],
             "default": null,
-            "description": "Absolute path inside the Sprite where repo is cloned. Defaults to /workspace/<repo-name>.",
+            "description": "Absolute path inside the workspace where repo is cloned. Defaults to /workspace/<repo-name>.",
             "title": "Mount Path"
           },
           "type": {

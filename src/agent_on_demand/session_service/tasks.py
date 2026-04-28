@@ -45,7 +45,7 @@ from agent_on_demand.models import (
 )
 from agent_on_demand.observability import get_tracer
 
-from .errors import NoSpritesKeyError, ProvisionError, SessionHandleNotFound
+from .errors import NoBackendCredentialsError, ProvisionError, SessionHandleNotFound
 from .provisioning import destroy_session, provision_session, resume_session
 from .spec_factory import build_spec_for_session
 from .sprites_backend import ExecError
@@ -165,8 +165,8 @@ def _provision_session_inner(
     ) as span:
         try:
             provision_session(session.user, spec, session_id=session_id)
-        except NoSpritesKeyError as e:
-            span.set_attribute("aod.failure_stage", "no_sprites_key")
+        except NoBackendCredentialsError as e:
+            span.set_attribute("aod.failure_stage", "no_backend_credentials")
             _mark_provision_failed(session, turn_id, str(e))
             return
         except ProvisionError as e:

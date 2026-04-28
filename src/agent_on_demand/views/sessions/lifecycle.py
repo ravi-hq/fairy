@@ -69,15 +69,16 @@ def send_prompt(request, session_id):
 
     try:
         session_service.resume_session(request.user, session.sprite_name)
-    except session_service.NoSpritesKeyError as e:
+    except session_service.NoBackendCredentialsError as e:
         return JsonResponse({"detail": str(e)}, status=400)
     except session_service.SessionHandleNotFound:
-        # The Sprite is gone (e.g. idle timeout on the Sprites platform). The
-        # session record still exists, so 404 would be misleading — callers
-        # cannot distinguish "session not found" from "Sprite no longer
-        # available". Return 409 with an actionable message instead.
+        # The backend handle is gone (e.g. idle timeout on the underlying
+        # platform). The session record still exists, so 404 would be
+        # misleading — callers cannot distinguish "session not found" from
+        # "backend handle no longer available". Return 409 with an actionable
+        # message instead.
         return JsonResponse(
-            {"detail": "Session sprite is no longer available; start a new session."},
+            {"detail": "Session backend is no longer available; start a new session."},
             status=409,
         )
 

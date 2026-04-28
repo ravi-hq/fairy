@@ -90,8 +90,8 @@ Safe to chain: `./example-cli.py "fix the lint" && git diff`.
 - A runtime API key configured on your user for the agent's runtime —
   without it, session creation fails with `400 "No API key configured for
   runtime: claude"`.
-- Sprites credentials configured on your user — otherwise session creation
-  fails with `400 "No Sprites API key configured"`.
+- Backend credentials configured on your user — otherwise session creation
+  fails with `400 "No backend credentials configured"`.
 
 ## Optional environment variables
 

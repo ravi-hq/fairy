@@ -4,7 +4,7 @@ from functools import cache
 from agent_on_demand.models import UserSpritesKey
 
 from .backend import Backend, BackendClient, BackendError
-from .errors import NoSpritesKeyError
+from .errors import NoBackendCredentialsError
 from .sprites_backend import SpritesBackend
 
 logger = logging.getLogger(__name__)
@@ -36,7 +36,7 @@ def get_client(user) -> BackendClient | None:
 def require_client(user) -> BackendClient:
     client = get_client(user)
     if client is None:
-        raise NoSpritesKeyError("No Sprites API key configured")
+        raise NoBackendCredentialsError("No backend credentials configured")
     return client
 
 

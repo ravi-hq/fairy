@@ -926,7 +926,7 @@ components:
         mount_path:
           type: string
           nullable: true
-          description: Absolute path inside the Sprite. Defaults to /workspace/<repo>.
+          description: Absolute path inside the workspace. Defaults to /workspace/<repo>.
 
     GitHubRepoResourceInput:
       type: object
