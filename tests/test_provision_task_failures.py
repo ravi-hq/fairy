@@ -103,6 +103,38 @@ def test_provision_task_marks_failed_when_build_spec_raises(user, mocker):
 
 
 @pytest.mark.django_db
+def test_provision_task_marks_failed_on_unexpected_error(user, mocker):
+    """Anything other than the two typed errors (Sprites SDK fault, DB
+    blip, etc.) used to propagate out and leave the session row at
+    `pending` forever — Procrastinate marked the job failed, but the
+    API client polled a row that would never complete. The catch-all
+    must mark the session+turn `failed` so the client unblocks; the
+    raise preserves the procrastinate `failed` signal for operators."""
+    session, turn = _make_session_and_turn(user)
+    mocker.patch(
+        "agent_on_demand.session_service.tasks.provision_session",
+        side_effect=RuntimeError("sdk blew up"),
+    )
+
+    with pytest.raises(RuntimeError, match="sdk blew up"):
+        _provision_session_inner(
+            session_id=str(session.id),
+            turn_id=turn.id,
+            prompt="t",
+            mode="run",
+            timeout=10.0,
+        )
+
+    session.refresh_from_db()
+    assert session.status == "failed"
+    turn.refresh_from_db()
+    assert turn.status == "failed"
+    log = AgentSessionLog.objects.filter(session=session).order_by("id").first()
+    assert log is not None
+    assert "sdk blew up" in log.data
+
+
+@pytest.mark.django_db
 def test_provision_task_marks_failed_on_no_backend_credential(user, mocker):
     """Race: backend credential revoked between session-create (which passed
     the pre-check) and provision-task pickup. The task must record
