@@ -100,7 +100,7 @@ Safe to chain: `./example-cli.py "fix the lint" && git diff`.
 
 ## What's in the agent
 
-- **Model + runtime**: `claude-sonnet-4-6` via the `claude` runtime.
+- **Model + runtime**: `anthropic/claude-sonnet-4-6` via the `claude` runtime.
 - **MCP servers**: [Context7](https://context7.com) (`https://mcp.context7.com/mcp`)
   for up-to-date library docs. Add more entries to the `mcp_servers` list in
   the `AGENT` block.
