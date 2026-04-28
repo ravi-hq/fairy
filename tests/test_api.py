@@ -807,7 +807,7 @@ def test_send_prompt_enqueues_continue_task(
     mocker.patch("agent_on_demand.session_service.client.get_client", return_value=fake)
     mocker.patch("agent_on_demand.session_service.get_client", return_value=fake)
 
-    defer_mock = mocker.patch("agent_on_demand.session_service.turn.execute_turn.defer")
+    defer_mock = mocker.patch("agent_on_demand.session_service.tasks.execute_turn.defer")
 
     resp = client.post(
         f"/sessions/{session.id}/prompt",

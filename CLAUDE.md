@@ -18,9 +18,9 @@ It manages three resources: **agents**, **environments**, and **sessions**. See
   - `runtimes/` — per-runtime `Runtime` classes (`claude.py`, `codex.py`, `gemini.py`, `opencode.py`) and the `RUNTIMES` registry
   - `models_catalog.py` — `MODELS` dict keyed by canonical `provider/model_id` strings
   - `session_service/` — Sprites orchestration
-    - `provisioning.py` — `provision_session`, per-stage helpers
+    - `provisioning/` — `provision_session`, per-stage helpers
     - `tasks.py` — `execute_turn` Procrastinate task (runs in worker process)
-    - `turn.py` — `run_turn` (enqueues the task)
+    - `turn/` — `run_turn` (enqueues the task), `build_turn_argv`, `compute_final_status`
   - `stream.py` — SSE replay endpoint (tails `AgentSessionLog`)
   - `auth.py`, `crypto.py` — Bearer-token auth and env-var encryption
 - `tests/` — Unit + integration tests (Django test client)

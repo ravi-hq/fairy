@@ -54,8 +54,8 @@ from .provisioning import (
     resume_session,
 )
 from .specs import build_spec_for_session
-from .turn_argv import build_turn_argv
-from .turn_outcome import compute_final_status
+from .turn.argv import build_turn_argv
+from .turn.outcome import compute_final_status
 
 logger = logging.getLogger(__name__)
 

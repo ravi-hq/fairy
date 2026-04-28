@@ -16,7 +16,7 @@ Tests are sync, no Django imports — required so hammett (mutmut's
 runner) can execute them.
 """
 
-from agent_on_demand.session_service.turn_outcome import compute_final_status
+from agent_on_demand.session_service.turn.outcome import compute_final_status
 
 
 def test_clean_exit_is_completed():
