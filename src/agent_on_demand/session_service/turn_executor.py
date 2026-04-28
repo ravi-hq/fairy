@@ -79,7 +79,12 @@ class TurnExecutor:
 
         emit_stage_event(str(self._session.id), STAGE_RUNTIME_START, "started")
 
-        cmd_thread = threading.Thread(target=self._run_command, daemon=True)
+        # Built before thread spawn so any raise surfaces as a task-level
+        # failure (procrastinate logging + alerting) rather than getting
+        # swallowed into result_holder as a session-level error.
+        argv = build_turn_argv(self._spec.runtime, self._spec, self._mode)
+
+        cmd_thread = threading.Thread(target=self._run_command, args=(argv,), daemon=True)
         cmd_thread.start()
 
         self._sink.drain()
@@ -119,10 +124,9 @@ class TurnExecutor:
         self._turn.started_at = now
         self._turn.save(update_fields=["status", "started_at"])
 
-    def _run_command(self) -> None:
+    def _run_command(self, argv: list[str]) -> None:
         # NOTE: if you add DB writes inside this inner thread, wrap the body
         # in close_old_connections()/finally. Today it only drives the SDK.
-        argv = build_turn_argv(self._spec.runtime, self._spec, self._mode)
         try:
             cmd = self._handle.make_command(*argv, cwd="/home/sprite", timeout=self._timeout)
             cmd.set_input(self._prompt.encode("utf-8"))

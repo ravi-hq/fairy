@@ -24,7 +24,7 @@ from agent_on_demand.models import AgentSession, AgentSessionLog, SessionTurn
 
 logger = logging.getLogger(__name__)
 
-SENTINEL = object()
+_SENTINEL = object()
 FLUSH_SIZE = 20
 BULK_CREATE_DELAYS = (0.1, 0.3, 1.0)
 QUEUE_MAXSIZE = 4096
@@ -91,7 +91,7 @@ class LogChunkSink:
 
     def put_sentinel(self) -> None:
         """Signal the drain loop that the producer is done."""
-        self._queue.put(SENTINEL)
+        self._queue.put(_SENTINEL)
 
     def drain(self) -> None:
         """Block until the sentinel arrives, batching chunks into the DB.
@@ -105,7 +105,7 @@ class LogChunkSink:
             except queue.Empty:
                 self._flush_buffer()
                 continue
-            if chunk is SENTINEL:
+            if chunk is _SENTINEL:
                 break
             self._buffer.append(
                 AgentSessionLog(
