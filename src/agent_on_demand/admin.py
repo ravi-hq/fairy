@@ -15,7 +15,6 @@ from agent_on_demand.models import (
     UserBackendCredential,
     UserCredential,
     UserQuota,
-    UserSpritesKey,
 )
 from agent_on_demand.models.auth import CREDENTIAL_ENV_VAR
 from agent_on_demand.session_service.backends import BackendClient, BackendError
@@ -32,13 +31,6 @@ class UserCredentialInline(admin.TabularInline):
     model = UserCredential
     extra = 0
     fields = ("kind", "created_at", "updated_at")
-    readonly_fields = ("created_at", "updated_at")
-
-
-class UserSpritesKeyInline(admin.TabularInline):
-    model = UserSpritesKey
-    extra = 0
-    fields = ("created_at", "updated_at")
     readonly_fields = ("created_at", "updated_at")
 
 
@@ -64,7 +56,6 @@ class UserAdmin(BaseUserAdmin):
     inlines = list(BaseUserAdmin.inlines) + [
         APIKeyInline,
         UserCredentialInline,
-        UserSpritesKeyInline,
         UserBackendCredentialInline,
         UserQuotaInline,
     ]
@@ -140,42 +131,6 @@ class UserCredentialAdmin(admin.ModelAdmin):
         if obj is None:
             return ("user", "kind", "value")
         return ("user", "kind", "value", "created_at", "updated_at")
-
-
-class UserSpritesKeyForm(forms.ModelForm):
-    api_key = forms.CharField(
-        widget=forms.PasswordInput(render_value=True),
-        help_text="The Sprites API token. Stored encrypted.",
-    )
-
-    class Meta:
-        model = UserSpritesKey
-        fields = ("user", "api_key")
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        if self.instance.pk:
-            self.fields["api_key"].initial = self.instance.get_api_key()
-
-    def save(self, commit=True):
-        instance = super().save(commit=False)
-        instance.set_api_key(self.cleaned_data["api_key"])
-        if commit:
-            instance.save()
-        return instance
-
-
-@admin.register(UserSpritesKey)
-class UserSpritesKeyAdmin(admin.ModelAdmin):
-    form = UserSpritesKeyForm
-    list_display = ("user", "created_at", "updated_at")
-    search_fields = ("user__email",)
-    readonly_fields = ("created_at", "updated_at")
-
-    def get_fields(self, request, obj=None):
-        if obj is None:
-            return ("user", "api_key")
-        return ("user", "api_key", "created_at", "updated_at")
 
 
 # Only "sprites" is wired today. ModalBackend lands in a follow-up plan and

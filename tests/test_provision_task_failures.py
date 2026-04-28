@@ -28,8 +28,8 @@ from agent_on_demand.models import (
     AgentSessionLog,
     APIKey,
     SessionTurn,
+    UserBackendCredential,
     UserCredential,
-    UserSpritesKey,
 )
 from agent_on_demand.session_service.errors import NoBackendCredentialsError
 from agent_on_demand.session_service.tasks import _provision_session_inner
@@ -46,9 +46,9 @@ def _stub_close_old_connections(mocker):
 def user(db):
     u = User.objects.create_user(username="provtest", password="x")
     APIKey.create_key(u, "k")
-    usk = UserSpritesKey(user=u)
-    usk.set_api_key("fake-sprites")
-    usk.save()
+    bcred = UserBackendCredential(user=u, backend="sprites")
+    bcred.set_token("fake-sprites")
+    bcred.save()
     cred = UserCredential(user=u, kind="provider:anthropic")
     cred.set_value("fake")
     cred.save()
@@ -103,7 +103,7 @@ def test_provision_task_marks_failed_when_build_spec_raises(user, mocker):
 
 
 @pytest.mark.django_db
-def test_provision_task_marks_failed_on_no_sprites_key(user, mocker):
+def test_provision_task_marks_failed_on_no_backend_credential(user, mocker):
     """Race: backend credential revoked between session-create (which passed
     the pre-check) and provision-task pickup. The task must record
     failed-stage='no_backend_credentials' and mark provision failed."""

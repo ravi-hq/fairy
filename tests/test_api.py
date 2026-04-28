@@ -11,9 +11,9 @@ from agent_on_demand.models import (
     AgentSession,
     AgentSessionLog,
     SessionTurn,
+    UserBackendCredential,
     UserCredential,
     UserQuota,
-    UserSpritesKey,
 )
 
 
@@ -56,11 +56,12 @@ def auth_headers(api_key):
 
 @pytest.fixture
 def sprites_key(user):
-    """Create a UserSpritesKey so session creation passes the Sprites-key check."""
-    usk = UserSpritesKey(user=user)
-    usk.set_api_key("fake-sprites-token")
-    usk.save()
-    return usk
+    """Create a UserBackendCredential so session creation passes the
+    backend-credential check."""
+    cred = UserBackendCredential(user=user, backend="sprites")
+    cred.set_token("fake-sprites-token")
+    cred.save()
+    return cred
 
 
 @pytest.fixture
@@ -78,7 +79,8 @@ def runtime_key(user, sprites_key):
 
 @pytest.fixture
 def runtime_key_without_sprites(user):
-    """Runtime credential configured, but no UserSpritesKey — for negative tests."""
+    """Runtime credential configured, but no backend credential — for negative
+    tests."""
     cred = UserCredential(user=user, kind="provider:anthropic")
     cred.set_value("fake-anthropic-key")
     cred.save()
@@ -193,8 +195,11 @@ def test_run_no_runtime_key(client: Client, auth_headers, agent):
 
 
 @pytest.mark.django_db
-def test_run_no_sprites_key(client: Client, auth_headers, runtime_key_without_sprites, agent):
-    """Runtime credential is set but no UserSpritesKey — session create must 400."""
+def test_run_no_backend_credential(
+    client: Client, auth_headers, runtime_key_without_sprites, agent
+):
+    """Runtime credential is set but no backend credential — session create
+    must 400."""
     resp = client.post(
         "/sessions",
         data=json.dumps({"agent_id": str(agent.id), "prompt": "hello"}),

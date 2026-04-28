@@ -33,8 +33,8 @@ from agent_on_demand.models import (
     AgentSession,
     APIKey,
     Environment,
+    UserBackendCredential,
     UserCredential,
-    UserSpritesKey,
 )
 
 
@@ -58,9 +58,9 @@ def auth_headers(user):
 
 @pytest.fixture
 def runtime_keys(user):
-    usk = UserSpritesKey(user=user)
-    usk.set_api_key("fake-sprites")
-    usk.save()
+    bcred = UserBackendCredential(user=user, backend="sprites")
+    bcred.set_token("fake-sprites")
+    bcred.save()
     cred = UserCredential(user=user, kind="provider:anthropic")
     cred.set_value("fake-anthropic")
     cred.save()

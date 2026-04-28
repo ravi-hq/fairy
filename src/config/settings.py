@@ -8,7 +8,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "dev-insecure-key-change-in-prod")
 
-# Dedicated KEK for encrypted model fields (UserSpritesKey, UserCredential). Split
+# Dedicated KEK for encrypted model fields (UserBackendCredential, UserCredential). Split
 # from SECRET_KEY so session-signing keys can be rotated independently of the
 # field-encryption key. Rotating this key still requires a re-encrypt migration.
 FIELD_ENCRYPTION_KEY = os.environ.get("FIELD_ENCRYPTION_KEY")

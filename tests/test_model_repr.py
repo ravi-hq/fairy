@@ -21,7 +21,6 @@ from agent_on_demand.models import (
     EnvironmentVersion,
     SessionResource,
     SessionTurn,
-    UserSpritesKey,
 )
 from agent_on_demand.models.sessions import AgentSessionLog
 
@@ -136,19 +135,11 @@ def test_api_key_str_uses_prefix_and_name(user):
     assert k.key_prefix in s
 
 
-@pytest.mark.django_db
-def test_user_sprites_key_str_includes_user(user):
-    usk = UserSpritesKey(user=user)
-    usk.set_api_key("fake-token")
-    usk.save()
-    assert str(user) in str(usk)
-
-
 # --- session_service.client.require_client raises when no key configured ---
 
 
 @pytest.mark.django_db
-def test_require_client_raises_when_no_sprites_key(user):
+def test_require_client_raises_when_no_backend_credential(user):
     """The session-creation hot path uses get_client; a few infrequent code
     paths use require_client which surfaces NoBackendCredentialsError. Pin
     the raise so a refactor that returned None-or-default can't slip past."""

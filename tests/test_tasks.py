@@ -22,8 +22,8 @@ from agent_on_demand.models import (
     AgentSessionLog,
     APIKey,
     SessionTurn,
+    UserBackendCredential,
     UserCredential,
-    UserSpritesKey,
 )
 from agent_on_demand.session_service.tasks import (
     TaggingQueueWriter,
@@ -49,9 +49,9 @@ def mock_close_old_connections(mocker):
 def user(db):
     u = User.objects.create_user(username="testuser", password="testpass")
     APIKey.create_key(u, "test-key")
-    usk = UserSpritesKey(user=u)
-    usk.set_api_key("fake-sprites-token")
-    usk.save()
+    bcred = UserBackendCredential(user=u, backend="sprites")
+    bcred.set_token("fake-sprites-token")
+    bcred.save()
     return u
 
 
@@ -334,9 +334,9 @@ def test_execute_turn_writes_log_chunks_via_tagging_writer(user, mocker):
 def provision_user(db):
     u = User.objects.create_user(username="prov", password="p")
     APIKey.create_key(u, "test-key")
-    usk = UserSpritesKey(user=u)
-    usk.set_api_key("fake-sprites-token")
-    usk.save()
+    bcred = UserBackendCredential(user=u, backend="sprites")
+    bcred.set_token("fake-sprites-token")
+    bcred.save()
     cred = UserCredential(user=u, kind="provider:anthropic")
     cred.set_value("fake-anthropic-key")
     cred.save()

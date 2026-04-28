@@ -12,7 +12,7 @@ from agent_on_demand.models import (
     AgentSessionLog,
     APIKey,
     Environment,
-    UserSpritesKey,
+    UserBackendCredential,
 )
 from agent_on_demand.ui.forms import APIKeyCreateForm, RegisterForm, SpritesKeyForm
 
@@ -30,9 +30,9 @@ def register(request):
         if form.is_valid():
             user = form.save()
 
-            usk = UserSpritesKey(user=user)
-            usk.set_api_key(form.cleaned_data["sprites_api_key"])
-            usk.save()
+            cred = UserBackendCredential(user=user, backend="sprites")
+            cred.set_token(form.cleaned_data["sprites_api_key"])
+            cred.save()
 
             _, raw_key = APIKey.create_key(user=user, name="Onboarding key")
 
@@ -66,7 +66,9 @@ def welcome(request):
 
 @login_required(login_url="/ui/login")
 def dashboard(request):
-    has_sprites_key = UserSpritesKey.objects.filter(user=request.user).exists()
+    has_sprites_key = UserBackendCredential.objects.filter(
+        user=request.user, backend="sprites"
+    ).exists()
     counts = {
         "agents": Agent.objects.filter(user=request.user, archived_at__isnull=True).count(),
         "environments": Environment.objects.filter(
@@ -84,14 +86,14 @@ def dashboard(request):
 
 @login_required(login_url="/ui/login")
 def sprites_key(request):
-    existing = UserSpritesKey.objects.filter(user=request.user).first()
+    existing = UserBackendCredential.objects.filter(user=request.user, backend="sprites").first()
 
     if request.method == "POST":
         form = SpritesKeyForm(request.POST)
         if form.is_valid():
-            usk = existing or UserSpritesKey(user=request.user)
-            usk.set_api_key(form.cleaned_data["api_key"])
-            usk.save()
+            cred = existing or UserBackendCredential(user=request.user, backend="sprites")
+            cred.set_token(form.cleaned_data["api_key"])
+            cred.save()
             messages.success(request, "Sprites token saved.")
             return redirect("ui-sprites-key")
     else:
