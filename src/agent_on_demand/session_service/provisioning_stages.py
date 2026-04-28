@@ -60,7 +60,12 @@ def install_runtime(handle: SessionHandle, spec: SessionSpec, session_id: str | 
     meta-runtimes that fetch binaries, internet access is required here."""
     with stage_timer(session_id, STAGE_INSTALL_RUNTIME):
         try:
-            spec.runtime.install(handle)
+            # Runtime methods still type their arg as `Sprite` until PR 3
+            # of the session-backend extraction. The recording fake and
+            # the production sprite both expose the legacy shape, so the
+            # call works at runtime; the `type: ignore` lifts when
+            # runtimes accept `SessionHandle`.
+            spec.runtime.install(handle)  # type: ignore[arg-type]
         except (BackendError, SpriteError) as e:
             raise ProvisionError(
                 f"Failed to install runtime: {e}", stage=STAGE_INSTALL_RUNTIME
@@ -153,7 +158,9 @@ def write_runtime_config(
     nothing to say."""
     with stage_timer(session_id, STAGE_RUNTIME_CONFIG):
         try:
-            spec.runtime.write_config(handle, spec, spec.mcp_servers)
+            # Same `type: ignore` story as `install_runtime` above —
+            # lifts in PR 3 when runtimes accept `SessionHandle`.
+            spec.runtime.write_config(handle, spec, spec.mcp_servers)  # type: ignore[arg-type]
         except (BackendError, SpriteError) as e:
             raise ProvisionError(
                 f"Failed to write runtime config: {e}", stage=STAGE_RUNTIME_CONFIG
