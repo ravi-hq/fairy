@@ -26,8 +26,8 @@ with Client(base_url="https://aod.example", token="aod_...") as client:
     )
     agent = client.agents.create(
         name="my-agent",
-        model="claude-sonnet-4-5",
-        runtime="claude-code",
+        model="anthropic/claude-sonnet-4-6",
+        runtime="claude",
         system="You are a careful software engineer.",
         environment_id=env.id,
     )
