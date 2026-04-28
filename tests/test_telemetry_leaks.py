@@ -212,7 +212,7 @@ def test_session_prompt_sent_event_excludes_prompt_text(
     # Bypass session-create flow; create a completed session that's eligible
     # for /prompt.
     session = AgentSession.objects.create(
-        user=user, runtime="claude", prompt="initial", sprite_name="aod-x", status="completed"
+        user=user, runtime="claude", prompt="initial", backend_handle="aod-x", status="completed"
     )
 
     # send_prompt resumes the session via session_service.resume_session and
@@ -246,7 +246,7 @@ def test_session_terminated_event_emits_id_only(
     client: Client, auth_headers, user, runtime_keys, fake_sprites, captured_events
 ):
     session = AgentSession.objects.create(
-        user=user, runtime="claude", prompt=SECRET_PROMPT, sprite_name="aod-t", status="completed"
+        user=user, runtime="claude", prompt=SECRET_PROMPT, backend_handle="aod-t", status="completed"
     )
     captured_events.clear()
     resp = client.post(f"/sessions/{session.id}/terminate", **auth_headers)
@@ -266,7 +266,7 @@ def test_session_deleted_event_emits_id_only(
         user=user,
         runtime="claude",
         prompt=SECRET_PROMPT,
-        sprite_name="",
+        backend_handle="",
         status="completed",
     )
     captured_events.clear()

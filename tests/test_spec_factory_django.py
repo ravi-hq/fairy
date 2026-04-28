@@ -201,7 +201,7 @@ def test_runtime_session_id_uuid_stringified(user):
 def test_pass_through_fields_match_orm_state(user):
     """Pass-through fields rehydrate against real ORM rows — drift safety
     net for the duck-typed sync tests in `test_spec_factory.py`. A real
-    `User`, `Environment`, `sprite_name`, `runtime`, and UUID
+    `User`, `Environment`, `backend_handle`, `runtime`, and UUID
     `runtime_session_id` must all flow into the spec exactly."""
     environment = Environment.objects.create(user=user, name="prod-env", version=1)
     rsid = uuid.uuid4()
@@ -211,7 +211,7 @@ def test_pass_through_fields_match_orm_state(user):
         prompt="t",
         status="pending",
         environment=environment,
-        sprite_name="aod-abc123",
+        backend_handle="aod-abc123",
         runtime_session_id=rsid,
     )
 
@@ -248,29 +248,18 @@ def test_backend_persists_and_threads_through(user):
 
 
 @pytest.mark.django_db
-def test_spec_name_prefers_backend_handle_with_sprite_name_fallback(user):
-    """`spec.name` reads `backend_handle` and only falls back to `sprite_name`
-    when the new column is empty. Step 2 will drop `sprite_name`; that PR's
-    safety relies on this preference being correct now."""
-    new_handle = AgentSession.objects.create(
+def test_spec_name_reads_backend_handle(user):
+    """`spec.name` reads `backend_handle` directly. The legacy `sprite_name`
+    fallback (PR #258 dual-write soak) was removed when migration 0020
+    dropped the column."""
+    session = AgentSession.objects.create(
         user=user,
         runtime="claude",
         prompt="t",
         status="pending",
-        sprite_name="legacy",
         backend_handle="new-handle",
     )
-    assert build_spec_for_session(new_handle).name == "new-handle"
-
-    legacy_only = AgentSession.objects.create(
-        user=user,
-        runtime="claude",
-        prompt="t",
-        status="pending",
-        sprite_name="legacy-only",
-        backend_handle="",
-    )
-    assert build_spec_for_session(legacy_only).name == "legacy-only"
+    assert build_spec_for_session(session).name == "new-handle"
 
 
 @pytest.mark.django_db

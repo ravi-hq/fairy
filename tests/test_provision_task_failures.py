@@ -67,7 +67,7 @@ def _make_session_and_turn(user):
         user=user,
         runtime="claude",
         prompt="t",
-        sprite_name="aod-prov-x",
+        backend_handle="aod-prov-x",
         agent=agent,
         status="pending",
     )

@@ -20,7 +20,7 @@ ORM-row → SessionSpec rehydration:
   - ``runtime_session_id`` is stringified when truthy and preserved as
     ``None`` when falsy — ``str(None)`` would yield ``"None"``, the wrong
     answer.
-  - ``session.user``, ``session.environment``, ``session.sprite_name``
+  - ``session.user``, ``session.environment``, ``session.backend_handle``
     flow through unchanged.
   - The ``session.runtime`` string is looked up in ``RUNTIMES`` and the
     looked-up Runtime instance is what lands on the spec.
@@ -66,8 +66,7 @@ def _session(
     user=_UNSET,
     runtime="claude",
     runtime_session_id=None,
-    sprite_name="sprite-1",
-    backend_handle=_UNSET,
+    backend_handle="sprite-1",
     environment=_UNSET,
     resources=None,
     backend="sprites",
@@ -78,17 +77,11 @@ def _session(
         user = SimpleNamespace()
     if environment is _UNSET:
         environment = None
-    # Default backend_handle to mirror sprite_name to match production's
-    # dual-write semantics. Tests that exercise the fallback-read path can
-    # pass `backend_handle=""` explicitly.
-    if backend_handle is _UNSET:
-        backend_handle = sprite_name
     return SimpleNamespace(
         agent=agent,
         user=user,
         runtime=runtime,
         runtime_session_id=runtime_session_id,
-        sprite_name=sprite_name,
         backend_handle=backend_handle,
         environment=environment,
         resources=_resources(resources),
@@ -478,24 +471,19 @@ def test_runtime_session_id_uuid_is_stringified():
 # ---------- pass-through fields ----------
 
 
-def test_sprite_name_passes_through():
-    spec = build_spec_for_session(_session(sprite_name="aod-abc123"))
+def test_backend_handle_passes_through():
+    """``session.backend_handle`` lands on ``spec.name`` verbatim. Pin so a
+    mutant that drops the assignment is caught."""
+    spec = build_spec_for_session(_session(backend_handle="aod-abc123"))
     assert spec.name == "aod-abc123"
 
 
-def test_backend_handle_overrides_sprite_name():
-    """When both columns are populated, ``backend_handle`` wins. Pin so an
-    ``or`` → ``and`` mutant (which would yield ``sprite_name``) is killed."""
-    spec = build_spec_for_session(_session(sprite_name="legacy", backend_handle="new-handle"))
-    assert spec.name == "new-handle"
-
-
-def test_sprite_name_used_when_backend_handle_empty():
-    """In-flight sessions provisioned before dual-write have
-    ``backend_handle=""``. ``spec.name`` must fall back to ``sprite_name``
-    or those sessions get stranded."""
-    spec = build_spec_for_session(_session(sprite_name="legacy-only", backend_handle=""))
-    assert spec.name == "legacy-only"
+def test_backend_handle_empty_yields_empty_name():
+    """An empty ``backend_handle`` lands on ``spec.name`` as the empty
+    string — there is no fallback after the dual-write column was dropped
+    in migration 0020."""
+    spec = build_spec_for_session(_session(backend_handle=""))
+    assert spec.name == ""
 
 
 def test_user_passes_through_unchanged():

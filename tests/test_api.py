@@ -552,7 +552,7 @@ def test_terminate_session(client: Client, auth_headers, sprites_key, user, fake
     without blocking on the Sprites API call.
     """
     session = AgentSession.objects.create(
-        user=user, runtime="claude", prompt="test", sprite_name="aod-abc123", status="completed"
+        user=user, runtime="claude", prompt="test", backend_handle="aod-abc123", status="completed"
     )
     resp = client.post(f"/sessions/{session.id}/terminate", **auth_headers)
     assert resp.status_code == 200
@@ -561,7 +561,7 @@ def test_terminate_session(client: Client, auth_headers, sprites_key, user, fake
 
     session.refresh_from_db()
     assert session.status == "terminated"
-    assert session.sprite_name == ""
+    assert session.backend_handle == ""
 
     assert fake_sprites.deleted == ["aod-abc123"]
 
@@ -569,7 +569,7 @@ def test_terminate_session(client: Client, auth_headers, sprites_key, user, fake
 @pytest.mark.django_db
 def test_terminate_already_terminated(client: Client, auth_headers, user):
     session = AgentSession.objects.create(
-        user=user, runtime="claude", prompt="test", sprite_name="", status="terminated"
+        user=user, runtime="claude", prompt="test", backend_handle="", status="terminated"
     )
     resp = client.post(f"/sessions/{session.id}/terminate", **auth_headers)
     assert resp.status_code == 409
@@ -588,13 +588,13 @@ def test_delete_session_terminal_states_succeed(
     client: Client, auth_headers, user, fake_sprites, status
 ):
     """Terminal states (completed, failed, terminated) are deletable; the
-    pre_delete signal should still enqueue Sprite cleanup whenever sprite_name
-    is set."""
+    pre_delete signal should still enqueue Sprite cleanup whenever
+    backend_handle is set."""
     session = AgentSession.objects.create(
         user=user,
         runtime="claude",
         prompt="x",
-        sprite_name="aod-del-1",
+        backend_handle="aod-del-1",
         status=status,
     )
     resp = client.delete(f"/sessions/{session.id}/delete", **auth_headers)
@@ -610,7 +610,7 @@ def test_delete_session_active_states_rejected(client: Client, auth_headers, use
     """pending/running sessions must not be deletable: pending has a
     provision_session_task in flight and running would orphan a Sprite."""
     session = AgentSession.objects.create(
-        user=user, runtime="claude", prompt="x", sprite_name="aod-keep", status=status
+        user=user, runtime="claude", prompt="x", backend_handle="aod-keep", status=status
     )
     resp = client.delete(f"/sessions/{session.id}/delete", **auth_headers)
     assert resp.status_code == 409
@@ -619,13 +619,14 @@ def test_delete_session_active_states_rejected(client: Client, auth_headers, use
 
 
 @pytest.mark.django_db
-def test_delete_session_no_sprite_name_does_not_enqueue_cleanup(
+def test_delete_session_no_backend_handle_does_not_enqueue_cleanup(
     client: Client, auth_headers, user, fake_sprites
 ):
-    """An empty sprite_name (e.g. terminate already cleared it) must not fire
-    the destroy task — otherwise we'd queue cleanup for a non-existent Sprite."""
+    """An empty backend_handle (e.g. terminate already cleared it) must not
+    fire the destroy task — otherwise we'd queue cleanup for a non-existent
+    Sprite."""
     session = AgentSession.objects.create(
-        user=user, runtime="claude", prompt="x", sprite_name="", status="terminated"
+        user=user, runtime="claude", prompt="x", backend_handle="", status="terminated"
     )
     resp = client.delete(f"/sessions/{session.id}/delete", **auth_headers)
     assert resp.status_code == 200
@@ -645,7 +646,7 @@ def test_delete_session_other_user_returns_404(client: Client, auth_headers, use
     don't leak existence of another user's session via the status code."""
     other = User.objects.create_user(username="other-deleter", password="x")
     session = AgentSession.objects.create(
-        user=other, runtime="claude", prompt="x", sprite_name="", status="completed"
+        user=other, runtime="claude", prompt="x", backend_handle="", status="completed"
     )
     resp = client.delete(f"/sessions/{session.id}/delete", **auth_headers)
     assert resp.status_code == 404
@@ -656,7 +657,7 @@ def test_delete_session_other_user_returns_404(client: Client, auth_headers, use
 @pytest.mark.django_db
 def test_delete_session_wrong_method_returns_405(client: Client, auth_headers, user):
     session = AgentSession.objects.create(
-        user=user, runtime="claude", prompt="x", sprite_name="", status="completed"
+        user=user, runtime="claude", prompt="x", backend_handle="", status="completed"
     )
     resp = client.post(f"/sessions/{session.id}/delete", **auth_headers)
     assert resp.status_code == 405
@@ -667,7 +668,7 @@ def test_delete_session_wrong_method_returns_405(client: Client, auth_headers, u
 @pytest.mark.django_db
 def test_delete_session_requires_auth(client: Client, user):
     session = AgentSession.objects.create(
-        user=user, runtime="claude", prompt="x", sprite_name="", status="completed"
+        user=user, runtime="claude", prompt="x", backend_handle="", status="completed"
     )
     resp = client.delete(f"/sessions/{session.id}/delete")
     assert resp.status_code == 401
@@ -751,7 +752,7 @@ def test_send_prompt_appends_turn(
         agent=agent,
         runtime="claude",
         prompt="first",
-        sprite_name="sprite-xyz",
+        backend_handle="sprite-xyz",
         status="completed",
     )
     SessionTurn.objects.create(
@@ -790,7 +791,7 @@ def test_send_prompt_enqueues_continue_task(
         agent=agent,
         runtime="claude",
         prompt="first",
-        sprite_name="sprite-xyz",
+        backend_handle="sprite-xyz",
         status="completed",
     )
     SessionTurn.objects.create(
@@ -889,7 +890,7 @@ async def test_stream_emits_turn_start_boundaries(async_client: AsyncClient):
 @pytest.mark.django_db
 def test_send_prompt_to_terminated_session(client: Client, auth_headers, user):
     session = AgentSession.objects.create(
-        user=user, runtime="claude", prompt="test", sprite_name="", status="terminated"
+        user=user, runtime="claude", prompt="test", backend_handle="", status="terminated"
     )
     resp = client.post(
         f"/sessions/{session.id}/prompt",
@@ -910,7 +911,7 @@ def test_send_prompt_to_failed_session_rejected(client: Client, auth_headers, us
         user=user,
         runtime="claude",
         prompt="test",
-        sprite_name="sprite-xyz",
+        backend_handle="sprite-xyz",
         status="failed",
         exit_code=1,
     )

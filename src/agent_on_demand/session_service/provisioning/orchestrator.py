@@ -106,25 +106,25 @@ def provision_session(user, spec: SessionSpec, session_id: str | None = None) ->
         return handle
 
 
-def resume_session(user, sprite_name: str) -> SessionHandle:
+def resume_session(user, handle: str) -> SessionHandle:
     """Look up the backend handle backing an existing session."""
     from agent_on_demand.session_service.errors import SessionHandleNotFound
 
     client = require_client(user)
     try:
-        return client.get(sprite_name)
+        return client.get(handle)
     except BackendError as e:
         raise SessionHandleNotFound(f"Sprite not found: {e}") from e
 
 
-def destroy_session(user, sprite_name: str) -> None:
+def destroy_session(user, handle: str) -> None:
     """Destroy the backend session. Best-effort — logs on failure but never raises."""
-    if not sprite_name:
+    if not handle:
         return
     from agent_on_demand.session_service.client import get_client
 
     client = get_client(user)
     if client is None:
-        logger.warning("Cannot delete Sprite %s: no Sprites key for user %s", sprite_name, user)
+        logger.warning("Cannot delete handle %s: no backend credentials for user %s", handle, user)
         return
-    best_effort_delete(client, sprite_name)
+    best_effort_delete(client, handle)

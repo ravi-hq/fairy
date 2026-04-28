@@ -60,7 +60,7 @@ def _make_session_and_turn(user):
         user=user,
         runtime="claude",
         prompt="test",
-        sprite_name="sprite-abc",
+        backend_handle="sprite-abc",
         status="pending",
     )
     turn = SessionTurn.objects.create(
@@ -352,7 +352,7 @@ def _make_pending_session(user):
         agent=agent,
         runtime="claude",
         prompt="hi",
-        sprite_name="sprite-prov",
+        backend_handle="sprite-prov",
         runtime_session_id="11111111-2222-3333-4444-555555555555",
         status="pending",
     )
@@ -403,9 +403,9 @@ def test_provision_task_marks_failed_on_sprite_error(provision_user, fake_sprite
     session.refresh_from_db()
     turn.refresh_from_db()
     assert session.status == "failed"
-    # sprite_name is cleared so DELETE /sessions doesn't try to delete a
-    # Sprite that was never created.
-    assert session.sprite_name == ""
+    # backend_handle is cleared so DELETE /sessions doesn't try to delete a
+    # backend resource that was never created.
+    assert session.backend_handle == ""
     assert turn.status == "failed"
     assert turn.ended_at is not None
     assert defer_spy.call_count == 0
@@ -552,7 +552,7 @@ def test_provision_task_runs_with_no_runtime_credential(provision_user, fake_spr
 
 @pytest.mark.django_db
 def test_destroy_task_deletes_sprite(provision_user, fake_sprites):
-    destroy_session_task(user_id=provision_user.id, sprite_name="aod-xyz")
+    destroy_session_task(user_id=provision_user.id, handle="aod-xyz")
     assert fake_sprites.deleted == ["aod-xyz"]
 
 
@@ -560,7 +560,7 @@ def test_destroy_task_deletes_sprite(provision_user, fake_sprites):
 def test_destroy_task_noop_when_user_gone(fake_sprites):
     """If the user row is gone by the time the worker picks up, skip
     cleanup rather than raise. The Sprite will time out server-side."""
-    destroy_session_task(user_id=999_999, sprite_name="aod-xyz")
+    destroy_session_task(user_id=999_999, handle="aod-xyz")
     assert fake_sprites.deleted == []
 
 
@@ -570,7 +570,7 @@ def test_destroy_task_swallows_sprite_errors(provision_user, fake_sprites, mocke
     logged, not raised. Re-raising would let Procrastinate keep retrying a
     call that might never succeed."""
     mocker.patch.object(fake_sprites, "delete_sprite", side_effect=SpriteError("transient"))
-    destroy_session_task(user_id=provision_user.id, sprite_name="aod-xyz")
+    destroy_session_task(user_id=provision_user.id, handle="aod-xyz")
     # Assertion is "no exception raised".
 
 
@@ -827,7 +827,7 @@ def test_fail_pending_turn_preserves_terminated_status(user):
     from agent_on_demand.session_service.tasks import _fail_pending_turn
 
     session = AgentSession.objects.create(
-        user=user, runtime="claude", prompt="t", sprite_name="s", status="terminated"
+        user=user, runtime="claude", prompt="t", backend_handle="s", status="terminated"
     )
     turn = SessionTurn.objects.create(session=session, turn_number=1, prompt="t", status="pending")
 
