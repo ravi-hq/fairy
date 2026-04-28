@@ -5,12 +5,32 @@ service over WebSockets. For unit tests we don't care about the transport; we
 care that `provision_session` invoked the right sequence of commands and wrote
 the right files. These fakes capture every call and expose lists the tests can
 assert against.
+
+After PR 2 of the session-backend extraction, callers in `session_service/`
+go through the `BackendClient` / `SessionHandle` Protocols instead of the
+sprites SDK directly. To keep existing tests asserting on
+`fake_sprites.last_sprite().write_map()` / `command_strings()` working,
+`RecordingSpritesClient` and `RecordingSprite` also implement the Protocol
+surface — `provision`/`get`/`destroy`/`close` on the client,
+`workspace`/`make_command`/`apply_network_policy` on the sprite — and
+translate `SpriteError` to `BackendError` so production exception handling
+(which expects `BackendError`) catches recorded test failures.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, BinaryIO
+
+from sprites import SpriteError
+
+from agent_on_demand.session_service.backend import (
+    BackendError,
+    Command,
+    NetworkPolicy,
+    SessionHandle,
+    WorkspaceFS,
+)
 
 
 @dataclass
@@ -77,8 +97,65 @@ class _CommandHandle:
         self._recorder._maybe_raise(self._argv, stderr_buf=self.stderr)
 
 
+class _BackendCommandAdapter:
+    """`Command` Protocol adapter over `_CommandHandle`.
+
+    Translates `SpriteError` from `_CommandHandle.run()` to `BackendError`
+    so production code (which catches `BackendError`) can drive the
+    recording fake unchanged.
+    """
+
+    def __init__(self, handle: _CommandHandle) -> None:
+        self._handle = handle
+
+    def set_input(self, data: bytes) -> None:
+        # Not asserted on by any current test; recorded form is the argv.
+        pass
+
+    def set_output(self, stdout: BinaryIO, stderr: BinaryIO) -> None:
+        self._handle.stderr = stderr
+
+    def run(self) -> int:
+        try:
+            self._handle.run()
+        except SpriteError as e:
+            raise BackendError(str(e)) from e
+        return 0
+
+
+class _BackendWorkspaceAdapter:
+    """`WorkspaceFS` Protocol adapter over `_Filesystem`.
+
+    `write_text(path, content)` is translated into the existing
+    `(fs / path).write_text(content)` call so `raise_on_write` predicates
+    fire the same way they did in PR 1.
+    """
+
+    def __init__(self, fs: _Filesystem) -> None:
+        self._fs = fs
+
+    def write_text(self, path: str, content: str) -> None:
+        try:
+            (self._fs / path.lstrip("/")).write_text(content)
+        except SpriteError as e:
+            raise BackendError(str(e)) from e
+
+    def chmod(self, path: str, mode: int) -> None:
+        # No-op — current tests don't observe chmod calls; the real
+        # provisioning script does its chmods inside the bash script.
+        pass
+
+
 class RecordingSprite:
-    """Drop-in replacement for sprites.Sprite in unit tests."""
+    """Drop-in replacement for sprites.Sprite in unit tests.
+
+    Implements both the legacy sprites SDK shape (`filesystem()`,
+    `command()`, `update_network_policy()`) and the `SessionHandle`
+    Protocol shape (`workspace()`, `make_command()`,
+    `apply_network_policy()`). The two surfaces share underlying
+    recording state so tests can assert on `writes` / `commands` /
+    `policies` regardless of which surface drove the call.
+    """
 
     def __init__(self, name: str):
         self.name = name
@@ -86,6 +163,9 @@ class RecordingSprite:
         self.commands: list[RecordedCommand] = []
         self.policies: list[Any] = []
         self._raise_on_predicates: list[tuple] = []
+
+    # Legacy sprites SDK shape — runtimes still call these in PR 2;
+    # PR 3 will switch them to the SessionHandle methods below.
 
     def filesystem(self) -> _Filesystem:
         return self._fs
@@ -96,6 +176,25 @@ class RecordingSprite:
     def update_network_policy(self, policy: Any) -> None:
         self.policies.append(policy)
         self._maybe_raise(("update_network_policy",))
+
+    # SessionHandle Protocol shape.
+
+    def workspace(self) -> WorkspaceFS:
+        return _BackendWorkspaceAdapter(self._fs)
+
+    def make_command(
+        self,
+        *args: str,
+        cwd: str | None = None,
+        timeout: float | None = None,
+    ) -> Command:
+        return _BackendCommandAdapter(_CommandHandle(self, tuple(args)))
+
+    def apply_network_policy(self, policy: NetworkPolicy) -> None:
+        try:
+            self.update_network_policy(policy)
+        except SpriteError as e:
+            raise BackendError(str(e)) from e
 
     @property
     def writes(self) -> list[RecordedWrite]:
@@ -153,13 +252,22 @@ class RecordingSprite:
 
 
 class RecordingSpritesClient:
-    """Drop-in replacement for sprites.SpritesClient."""
+    """Drop-in replacement for sprites.SpritesClient.
+
+    Implements both the legacy sprites SDK shape (`create_sprite`,
+    `get_sprite`, `delete_sprite`) and the `BackendClient` Protocol shape
+    (`provision`, `get`, `destroy`, `close`). Protocol methods translate
+    `SpriteError` to `BackendError` to match production exception handling.
+    """
 
     def __init__(self):
         self.sprites: dict[str, RecordingSprite] = {}
         self.created: list[str] = []
         self.deleted: list[str] = []
         self._create_error: Exception | None = None
+
+    # Legacy sprites SDK shape — used by tests that arrange test doubles via
+    # `mocker.patch.object(fake_sprites, "delete_sprite", ...)`.
 
     def create_sprite(self, name: str) -> RecordingSprite:
         self.created.append(name)
@@ -178,6 +286,29 @@ class RecordingSpritesClient:
 
     def delete_sprite(self, name: str) -> None:
         self.deleted.append(name)
+
+    # BackendClient Protocol shape.
+
+    def provision(self, name: str) -> SessionHandle:
+        try:
+            return self.create_sprite(name)
+        except SpriteError as e:
+            raise BackendError(str(e)) from e
+
+    def get(self, name: str) -> SessionHandle:
+        try:
+            return self.get_sprite(name)
+        except SpriteError as e:
+            raise BackendError(str(e)) from e
+
+    def destroy(self, name: str) -> None:
+        try:
+            self.delete_sprite(name)
+        except SpriteError as e:
+            raise BackendError(str(e)) from e
+
+    def close(self) -> None:
+        pass
 
     def raise_on_create(self, exc: Exception) -> None:
         self._create_error = exc

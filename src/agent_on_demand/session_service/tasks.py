@@ -37,7 +37,6 @@ from django.contrib.auth import get_user_model
 from django.db import close_old_connections
 from django.utils import timezone
 from procrastinate.contrib.django import app as procrastinate_app
-from sprites import ExecError
 
 from agent_on_demand.models import (
     AgentSession,
@@ -49,6 +48,7 @@ from agent_on_demand.observability import get_tracer
 from .errors import NoSpritesKeyError, ProvisionError, SessionHandleNotFound
 from .provisioning import destroy_session, provision_session, resume_session
 from .spec_factory import build_spec_for_session
+from .sprites_backend import ExecError
 from .stage_events import STAGE_RUNTIME_START, emit_stage_event
 from .turn_argv import build_turn_argv
 from .turn_outcome import compute_final_status

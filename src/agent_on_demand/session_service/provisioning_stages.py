@@ -1,7 +1,7 @@
 """Per-stage helpers invoked by `provision_session`.
 
 Each function corresponds to one provisioning stage and is responsible
-for emitting its `stage_timer` event and wrapping any `SpriteError` as a
+for emitting its `stage_timer` event and wrapping any `BackendError` as a
 `ProvisionError` tagged with the stage name. The orchestrator in
 `provisioning.py` owns sequencing and cleanup; everything I/O lives here.
 """
@@ -10,14 +10,20 @@ from __future__ import annotations
 
 import io
 
-from sprites import Sprite, SpriteError
-
 from agent_on_demand.models import Environment
 
+from .backend import BackendError, SessionHandle
 from .env_file import build_env_file_body
 from .errors import ProvisionError
 from .git_credentials import build_git_credentials_lines
 from .network_policy import build_network_policy
+
+# Transitional: runtime methods (`install`, `write_config`) still raise
+# native `SpriteError` because runtimes haven't ported to the Protocol
+# yet (PR 3 of the session-backend extraction). This catches that path
+# alongside `BackendError`; once runtimes are ported, the SpriteError
+# catches in `install_runtime` / `write_runtime_config` go away.
+from .sprites_backend import SpriteError
 from .provision_script import (
     ENV_FILE_PATH,
     GIT_CREDS_PATH,
@@ -48,33 +54,35 @@ __all__ = [
 ]
 
 
-def install_runtime(sprite: Sprite, spec: SessionSpec, session_id: str | None) -> None:
+def install_runtime(handle: SessionHandle, spec: SessionSpec, session_id: str | None) -> None:
     """Run per-runtime `install` hook before the network policy locks things
     down. For pre-baked runtimes (claude/codex/gemini) this is a no-op; for
     meta-runtimes that fetch binaries, internet access is required here."""
     with stage_timer(session_id, STAGE_INSTALL_RUNTIME):
         try:
-            spec.runtime.install(sprite)
-        except SpriteError as e:
+            spec.runtime.install(handle)
+        except (BackendError, SpriteError) as e:
             raise ProvisionError(
                 f"Failed to install runtime: {e}", stage=STAGE_INSTALL_RUNTIME
             ) from e
 
 
-def apply_network_policy(sprite: Sprite, env: Environment | None, session_id: str | None) -> None:
+def apply_network_policy(
+    handle: SessionHandle, env: Environment | None, session_id: str | None
+) -> None:
     policy = build_network_policy(env)
     if policy is None:
         return
     with stage_timer(session_id, STAGE_NETWORK_POLICY):
         try:
-            sprite.update_network_policy(policy)
-        except SpriteError as e:
+            handle.apply_network_policy(policy)
+        except BackendError as e:
             raise ProvisionError(
                 f"Failed to prepare Sprite: {e}", stage=STAGE_NETWORK_POLICY
             ) from e
 
 
-def write_env_file(sprite: Sprite, spec: SessionSpec, session_id: str | None) -> None:
+def write_env_file(handle: SessionHandle, spec: SessionSpec, session_id: str | None) -> None:
     """Write /tmp/aod-env (fs.write only — chmod happens in the provision
     script). The file is sourced (with `set -a`) by the per-turn dispatcher,
     so every line must be a valid KEY=value shell assignment.
@@ -92,13 +100,14 @@ def write_env_file(sprite: Sprite, spec: SessionSpec, session_id: str | None) ->
     body = build_env_file_body(spec, credentials)
     with stage_timer(session_id, STAGE_ENV_FILE):
         try:
-            fs = sprite.filesystem()
-            (fs / ENV_FILE_PATH.lstrip("/")).write_text(body)
-        except SpriteError as e:
+            handle.workspace().write_text(ENV_FILE_PATH, body)
+        except BackendError as e:
             raise ProvisionError(f"Failed to prepare Sprite: {e}", stage=STAGE_ENV_FILE) from e
 
 
-def write_git_credentials(sprite: Sprite, repos: list[RepoSpec], session_id: str | None) -> None:
+def write_git_credentials(
+    handle: SessionHandle, repos: list[RepoSpec], session_id: str | None
+) -> None:
     """Write /tmp/.git-credentials if any repo has a token (fs.write only;
     chmod + `git config credential.helper` live in the provision script)."""
     cred_lines = build_git_credentials_lines(repos)
@@ -106,35 +115,26 @@ def write_git_credentials(sprite: Sprite, repos: list[RepoSpec], session_id: str
         return
     with stage_timer(session_id, STAGE_GIT_CREDENTIALS):
         try:
-            fs = sprite.filesystem()
-            (fs / GIT_CREDS_PATH.lstrip("/")).write_text("\n".join(cred_lines) + "\n")
-        except SpriteError as e:
+            handle.workspace().write_text(GIT_CREDS_PATH, "\n".join(cred_lines) + "\n")
+        except BackendError as e:
             raise ProvisionError(
                 f"Failed to prepare Sprite: {e}", stage=STAGE_GIT_CREDENTIALS
             ) from e
 
 
-def run_provision_setup(sprite: Sprite, spec: SessionSpec, session_id: str | None) -> None:
-    """Write /tmp/aod-provision.sh and invoke it as one `sprite.command`. This
+def run_provision_setup(handle: SessionHandle, spec: SessionSpec, session_id: str | None) -> None:
+    """Write /tmp/aod-provision.sh and invoke it as one backend command. This
     is the single expensive round trip — everything shell-flavoured
     (chmod, package install, git clone, user setup) runs inside it."""
     script = build_provision_script(spec)
     with stage_timer(session_id, STAGE_PROVISION_SETUP):
+        err_buf = io.BytesIO()
         try:
-            fs = sprite.filesystem()
-            (fs / PROVISION_SCRIPT_PATH.lstrip("/")).write_text(script)
-            err_buf = io.BytesIO()
-            cmd = sprite.command("bash", "-l", PROVISION_SCRIPT_PATH)
-            # Capture stderr so a failure message carries useful context
-            # (apt errors, git errors, user-setup stderr). Best-effort: if
-            # the Sprite SDK doesn't support the assignment, the attribute
-            # is silently ignored and err_buf stays empty.
-            try:
-                cmd.stderr = err_buf
-            except AttributeError:
-                pass
+            handle.workspace().write_text(PROVISION_SCRIPT_PATH, script)
+            cmd = handle.make_command("bash", "-l", PROVISION_SCRIPT_PATH)
+            cmd.set_output(stdout=io.BytesIO(), stderr=err_buf)
             cmd.run()
-        except SpriteError as e:
+        except BackendError as e:
             stderr_tail = err_buf.getvalue().decode("utf-8", errors="replace")[-2000:]
             detail = f"Provisioning script failed: {e}"
             if stderr_tail.strip():
@@ -143,7 +143,7 @@ def run_provision_setup(sprite: Sprite, spec: SessionSpec, session_id: str | Non
 
 
 def write_runtime_config(
-    sprite: Sprite,
+    handle: SessionHandle,
     spec: SessionSpec,
     session_id: str | None,
 ) -> None:
@@ -153,24 +153,24 @@ def write_runtime_config(
     nothing to say."""
     with stage_timer(session_id, STAGE_RUNTIME_CONFIG):
         try:
-            spec.runtime.write_config(sprite, spec, spec.mcp_servers)
-        except SpriteError as e:
+            spec.runtime.write_config(handle, spec, spec.mcp_servers)
+        except (BackendError, SpriteError) as e:
             raise ProvisionError(
                 f"Failed to write runtime config: {e}", stage=STAGE_RUNTIME_CONFIG
             ) from e
 
 
 def write_skills(
-    sprite: Sprite,
+    handle: SessionHandle,
     spec: SessionSpec,
     session_id: str | None,
 ) -> None:
-    """Materialize skills onto the Sprite.
+    """Materialize skills onto the backend session.
 
-    Inline skills are written directly with ``sprite.filesystem()``.
+    Inline skills are written directly with ``handle.workspace()``.
     Github-source skills are installed via the
     `skills.sh <https://skills.sh>`_ CLI (``npx -y skills@latest add ...``)
-    which the Sprite has network access for at this point in provisioning.
+    which the session has network access for at this point in provisioning.
 
     Runtimes whose ``skills_root`` is ``None`` skip inline writes; runtimes
     without a ``skills_sh_agent`` skip github installs.
@@ -184,18 +184,18 @@ def write_skills(
         try:
             root = spec.runtime.skills_root
             if inline and root is not None:
-                fs = sprite.filesystem()
+                fs = handle.workspace()
                 for s in inline:
                     # Inline skills must have a name (validated upstream).
                     assert s.name is not None
                     assert s.content is not None
                     dir_path = f"{root}/{s.name}"
-                    (fs / f"{dir_path.lstrip('/')}/SKILL.md").write_text(s.content)
+                    fs.write_text(f"{dir_path}/SKILL.md", s.content)
             agent_id = spec.runtime.skills_sh_agent
             if github and agent_id is not None:
                 for s in github:
                     assert s.source is not None
                     cmd = build_skills_install_command(s.source, agent_id, s.name)
-                    sprite.command("bash", "-lc", cmd).run()
-        except SpriteError as e:
+                    handle.make_command("bash", "-lc", cmd).run()
+        except BackendError as e:
             raise ProvisionError(f"Failed to write skills: {e}", stage=STAGE_SKILLS) from e

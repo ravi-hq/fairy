@@ -31,6 +31,15 @@ from .backend import (
     WorkspaceFS,
 )
 
+# Re-exported for callers that still need to catch sprites-native
+# exceptions during the PR 2 → PR 4 transition. `tasks.py` catches
+# `ExecError` from the threading core (PR 4 scope); `provisioning_stages.py`
+# catches `SpriteError` from `runtime.install` / `runtime.write_config`
+# until those runtimes port to the Protocol (PR 3). Removed once those
+# call paths are on the Protocol.
+ExecError = sprites.ExecError
+SpriteError = sprites.SpriteError
+
 
 _PATCH_MARKER = "_aod_close_timeout_patched"
 
