@@ -25,6 +25,15 @@ from agent_on_demand.session_service.specs import SessionSpec
 
 from .events import STAGE_CREATE_SPRITE, stage_timer
 
+# Defensive catch in the `provision_session` `except` below: stages now route
+# all backend I/O through the `SessionHandle` Protocol (which translates
+# `SpriteError` → `BackendError` at the adapter boundary), so a `SpriteError`
+# should never leak this far. The catch is kept because a test patches one of
+# the stage helpers to raise `SpriteError` directly and asserts that the
+# orchestrator still tags the failure as `ProvisionError(stage="unknown")`
+# *and* triggers `best_effort_delete` — without that, an unwrapped helper
+# leak would orphan a Sprite.
+
 # Re-exported so call-sites in `provision_session` resolve through this
 # module's namespace — that lets tests patch e.g. `orchestrator.install_runtime`
 # to inject failures without reaching into `stages` directly.
