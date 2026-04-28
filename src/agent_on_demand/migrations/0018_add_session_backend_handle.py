@@ -18,8 +18,16 @@ column add itself is genuinely safe (nullable, defaulted); review-gate
 this migration manually per CLAUDE.md's danger-zone policy.
 """
 
+import importlib.util
+
 from django.db import migrations, models
-from django_migration_linter import IgnoreMigration
+
+
+_extra_operations = []
+if importlib.util.find_spec("django_migration_linter") is not None:
+    from django_migration_linter import IgnoreMigration
+
+    _extra_operations.append(IgnoreMigration())
 
 
 class Migration(migrations.Migration):
@@ -28,7 +36,7 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        IgnoreMigration(),
+        *_extra_operations,
         migrations.AddField(
             model_name="agentsession",
             name="backend_handle",
