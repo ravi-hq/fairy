@@ -15,7 +15,6 @@ class AgentOnDemandConfig(AppConfig):
 
     def ready(self):
         import agent_on_demand.signals  # noqa: F401 — register signal handlers
-        import agent_on_demand.sprites_patch  # noqa: F401 — sprites-py ws close_timeout fix
 
         from agent_on_demand.observability import init_otel
 

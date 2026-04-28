@@ -229,16 +229,16 @@ def test_send_prompt_to_failed_session_rejected(client, auth_headers, user):
 @pytest.mark.django_db
 def test_send_prompt_without_sprites_key_returns_400(client, auth_headers, user):
     """A user with a `completed` session but no UserSpritesKey hits the
-    `NoSpritesKeyError` branch synchronously: `resume_session` →
+    `NoBackendCredentialsError` branch synchronously: `resume_session` →
     `require_client` (session_service/client.py) raises before the view
     ever returns, so the 400 path runs entirely in the request thread —
     there is no worker dispatch involved. Without this branch, the SDK
-    sees an opaque 5xx instead of an actionable "configure a Sprites
-    key" message.
+    sees an opaque 5xx instead of an actionable "configure backend
+    credentials" message.
 
-    Pin the exact `detail` so a rename of `NoSpritesKeyError`'s message
-    string in client.py breaks this test loudly, rather than silently
-    drifting away from the API contract SDK clients parse against."""
+    Pin the exact `detail` so a rename of the error message string in
+    client.py breaks this test loudly, rather than silently drifting away
+    from the API contract SDK clients parse against."""
     session = AgentSession.objects.create(
         user=user, runtime="claude", prompt="x", status="completed", sprite_name="s"
     )
@@ -249,7 +249,7 @@ def test_send_prompt_without_sprites_key_returns_400(client, auth_headers, user)
         **auth_headers,
     )
     assert resp.status_code == 400
-    assert resp.json()["detail"] == "No Sprites API key configured"
+    assert resp.json()["detail"] == "No backend credentials configured"
 
 
 @pytest.mark.django_db
@@ -279,7 +279,7 @@ def test_send_prompt_when_sprite_is_gone_returns_409(
         **auth_headers,
     )
     assert resp.status_code == 409
-    assert "Session sprite is no longer available" in resp.json()["detail"]
+    assert "Session backend is no longer available" in resp.json()["detail"]
     assert "start a new session" in resp.json()["detail"]
 
 

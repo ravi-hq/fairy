@@ -15,7 +15,7 @@ class GitHubRepoResource(BaseModel):
     url: str = Field(description="HTTPS GitHub repo URL, e.g. https://github.com/org/repo")
     mount_path: str | None = Field(
         default=None,
-        description="Absolute path inside the Sprite where repo is cloned. "
+        description="Absolute path inside the workspace where repo is cloned. "
         "Defaults to /workspace/<repo-name>.",
     )
     authorization_token: str | None = Field(

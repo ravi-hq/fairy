@@ -121,10 +121,10 @@ def _create_session(request):
             status=422,
         )
 
-    # Sync pre-check so missing Sprites creds return 400 immediately rather
+    # Sync pre-check so missing backend creds return 400 immediately rather
     # than surfacing as a failed session the client has to poll for.
     if session_service.get_client(request.user) is None:
-        return JsonResponse({"detail": "No Sprites API key configured"}, status=400)
+        return JsonResponse({"detail": "No backend credentials configured"}, status=400)
 
     name = f"{settings.SPRITE_NAME_PREFIX}-{uuid.uuid4().hex[:12]}"
     runtime_session_id = str(uuid.uuid4())

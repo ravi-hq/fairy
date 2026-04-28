@@ -9,9 +9,9 @@ tests fill the two adjacent paths:
     pickup. Must mark provision failed with the error in the log,
     not crash the worker.
 
-  - `NoSpritesKeyError` (line 193-195): a Sprites key revoked between
-    session create and provision-task pickup. Must surface as
-    failed-stage="no_sprites_key" telemetry.
+  - `NoBackendCredentialsError` (line 193-195): a backend credential
+    revoked between session create and provision-task pickup. Must
+    surface as failed-stage="no_backend_credentials" telemetry.
 
 A new file (not modifying tests/test_tasks.py) so this PR can land
 independently of #152.
@@ -31,7 +31,7 @@ from agent_on_demand.models import (
     UserCredential,
     UserSpritesKey,
 )
-from agent_on_demand.session_service.errors import NoSpritesKeyError
+from agent_on_demand.session_service.errors import NoBackendCredentialsError
 from agent_on_demand.session_service.tasks import _provision_session_inner
 
 
@@ -104,15 +104,15 @@ def test_provision_task_marks_failed_when_build_spec_raises(user, mocker):
 
 @pytest.mark.django_db
 def test_provision_task_marks_failed_on_no_sprites_key(user, mocker):
-    """Race: Sprites key revoked between session-create (which passed the
-    pre-check) and provision-task pickup. The task must record
-    failed-stage='no_sprites_key' and mark provision failed."""
+    """Race: backend credential revoked between session-create (which passed
+    the pre-check) and provision-task pickup. The task must record
+    failed-stage='no_backend_credentials' and mark provision failed."""
     session, turn = _make_session_and_turn(user)
     # provision_session is the call inside the spanned try-block. Force it
-    # to raise NoSpritesKeyError.
+    # to raise NoBackendCredentialsError.
     mocker.patch(
         "agent_on_demand.session_service.tasks.provision_session",
-        side_effect=NoSpritesKeyError("revoked"),
+        side_effect=NoBackendCredentialsError("revoked"),
     )
 
     _provision_session_inner(

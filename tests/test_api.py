@@ -202,7 +202,7 @@ def test_run_no_sprites_key(client: Client, auth_headers, runtime_key_without_sp
         **auth_headers,
     )
     assert resp.status_code == 400
-    assert "No Sprites API key configured" in resp.json()["detail"]
+    assert "No backend credentials configured" in resp.json()["detail"]
 
 
 @pytest.mark.django_db

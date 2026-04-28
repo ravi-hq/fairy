@@ -3,8 +3,7 @@ from django.contrib import admin, messages
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth.models import User
 
-from sprites import SpritesClient, SpriteError
-
+from agent_on_demand import session_service
 from agent_on_demand.models import (
     Agent,
     AgentVersion,
@@ -18,6 +17,7 @@ from agent_on_demand.models import (
     UserSpritesKey,
 )
 from agent_on_demand.models.auth import CREDENTIAL_ENV_VAR
+from agent_on_demand.session_service.backend import BackendClient, BackendError
 
 
 class APIKeyInline(admin.TabularInline):
@@ -230,21 +230,14 @@ class AgentSessionAdmin(admin.ModelAdmin):
     def has_add_permission(self, request):
         return False
 
-    @admin.action(description="Terminate selected sessions (destroy Sprites, keep records)")
+    @admin.action(description="Terminate selected sessions (destroy backend handles, keep records)")
     def terminate_sessions(self, request, queryset):
-        from django.conf import settings
+        clients: dict[int, BackendClient | None] = {}
 
-        clients: dict[int, SpritesClient | None] = {}
-
-        def client_for(user) -> SpritesClient | None:
+        def client_for(user) -> BackendClient | None:
             if user.pk in clients:
                 return clients[user.pk]
-            try:
-                token = user.sprites_key.get_api_key()
-            except UserSpritesKey.DoesNotExist:
-                clients[user.pk] = None
-                return None
-            client = SpritesClient(token=token, base_url=settings.SPRITES_BASE_URL)
+            client = session_service.get_client(user)
             clients[user.pk] = client
             return client
 
@@ -257,8 +250,8 @@ class AgentSessionAdmin(admin.ModelAdmin):
                     missing_key_users.add(str(session.user))
                 else:
                     try:
-                        client.delete_sprite(session.sprite_name)
-                    except SpriteError:
+                        client.destroy(session.sprite_name)
+                    except BackendError:
                         pass
             session.status = "terminated"
             session.sprite_name = ""
@@ -270,8 +263,8 @@ class AgentSessionAdmin(admin.ModelAdmin):
             msg += f" Skipped {skipped} already terminated."
         if missing_key_users:
             msg += (
-                f" Sprite cleanup skipped for {len(missing_key_users)} user(s) "
-                f"with no Sprites key: {', '.join(sorted(missing_key_users))}."
+                f" Backend cleanup skipped for {len(missing_key_users)} user(s) "
+                f"with no backend credentials: {', '.join(sorted(missing_key_users))}."
             )
             messages.warning(request, msg)
         else:
