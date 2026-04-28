@@ -80,7 +80,7 @@ try {
 
 | Status | Class            | When                                                     |
 | ------ | ---------------- | -------------------------------------------------------- |
-| 401/3  | `AuthError`      | Missing or invalid token                                 |
+| 401    | `AuthError`      | Missing or invalid token                                 |
 | 404    | `NotFoundError`  | Resource missing                                         |
 | 409    | `ConflictError`  | Archived row, terminal session, or stale `version`       |
 | 422    | `ValidationError`| Server-side validation failure                           |
