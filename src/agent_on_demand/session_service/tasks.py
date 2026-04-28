@@ -48,7 +48,6 @@ from agent_on_demand.observability import get_tracer
 from .errors import NoBackendCredentialsError, ProvisionError, SessionHandleNotFound
 from .provisioning import destroy_session, provision_session, resume_session
 from .spec_factory import build_spec_for_session
-from .sprites_backend import ExecError
 from .stage_events import STAGE_RUNTIME_START, emit_stage_event
 from .turn_argv import build_turn_argv
 from .turn_outcome import compute_final_status
@@ -310,16 +309,16 @@ def _execute_turn_inner(
         },
     ) as span:
         try:
-            sprite = resume_session(session.user, session.sprite_name)
+            handle = resume_session(session.user, session.sprite_name)
         except SessionHandleNotFound as e:
             logger.warning("sprite not found for session %s turn %s: %s", session_id, turn_id, e)
             span.set_attribute("aod.failure_stage", "sprite_not_found")
             _fail_pending_turn(session, turn, str(e))
             return
-        _execute_turn_body(session, turn, spec, sprite, prompt, mode, timeout, span)
+        _execute_turn_body(session, turn, spec, handle, prompt, mode, timeout, span)
 
 
-def _execute_turn_body(session, turn, spec, sprite, prompt, mode, timeout, span) -> None:
+def _execute_turn_body(session, turn, spec, handle, prompt, mode, timeout, span) -> None:
     output_q: queue.Queue = queue.Queue(maxsize=4096)
     db_buffer: list[AgentSessionLog] = []
     result_holder: list = []
@@ -358,18 +357,11 @@ def _execute_turn_body(session, turn, spec, sprite, prompt, mode, timeout, span)
         # NOTE: if you add DB writes inside this inner thread, wrap the body
         # in close_old_connections()/finally. Today it only drives the SDK.
         try:
-            cmd = sprite.command(
-                *argv,
-                cwd="/home/sprite",
-                timeout=timeout,
-            )
-            cmd.stdin = io.BytesIO(prompt.encode("utf-8"))
-            cmd.stdout = stdout_writer
-            cmd.stderr = stderr_writer
-            cmd.run()
-            result_holder.append(("exit", 0))
-        except ExecError as e:
-            result_holder.append(("exit", e.exit_code()))
+            cmd = handle.make_command(*argv, cwd="/home/sprite", timeout=timeout)
+            cmd.set_input(prompt.encode("utf-8"))
+            cmd.set_output(stdout=stdout_writer, stderr=stderr_writer)
+            exit_code = cmd.run()
+            result_holder.append(("exit", exit_code))
         except Exception as e:
             logger.exception("session %s turn %s task raised", session.id, turn.turn_number)
             result_holder.append(("error", str(e)))

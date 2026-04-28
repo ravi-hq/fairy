@@ -8,12 +8,13 @@ contract without spinning up a worker or needing Postgres locally.
 
 from __future__ import annotations
 
+import io
 import queue
 import threading
 
 import pytest
 from django.contrib.auth.models import User
-from sprites import ExecError, SpriteError
+from sprites import SpriteError
 
 from agent_on_demand.models import (
     Agent,
@@ -69,22 +70,39 @@ def _make_session_and_turn(user):
 
 
 def _patch_sprite(mocker, exit_behavior):
-    """Return (mock_sprite, mock_cmd). `exit_behavior` controls what
-    `cmd.run()` does: "success", ExecError, or a generic Exception."""
+    """Return (mock_handle, mock_cmd). `exit_behavior` controls what
+    `cmd.run()` does: "success" (exit 0), an int exit code, or a raised
+    Exception. The handle exposes the post-PR-4 Protocol shape:
+    `make_command(...)` returns a command with `set_input`, `set_output`,
+    and `run() -> int`. For test ergonomics, `set_input(data)` stores a
+    `BytesIO` on `mock_cmd.stdin` and `set_output(stdout=, stderr=)`
+    stores both on `mock_cmd.stdout` / `mock_cmd.stderr` so existing
+    assertions and writer-capturing patterns keep working."""
     mock_cmd = mocker.MagicMock()
     if exit_behavior == "success":
-        mock_cmd.run.return_value = None
-    elif isinstance(exit_behavior, ExecError):
-        mock_cmd.run.side_effect = exit_behavior
+        mock_cmd.run.return_value = 0
+    elif isinstance(exit_behavior, int):
+        mock_cmd.run.return_value = exit_behavior
     else:
         mock_cmd.run.side_effect = exit_behavior
-    mock_sprite = mocker.MagicMock()
-    mock_sprite.command.return_value = mock_cmd
+
+    def _set_input(data):
+        mock_cmd.stdin = io.BytesIO(data)
+
+    def _set_output(stdout, stderr):
+        mock_cmd.stdout = stdout
+        mock_cmd.stderr = stderr
+
+    mock_cmd.set_input.side_effect = _set_input
+    mock_cmd.set_output.side_effect = _set_output
+
+    mock_handle = mocker.MagicMock()
+    mock_handle.make_command.return_value = mock_cmd
     mocker.patch(
         "agent_on_demand.session_service.tasks.resume_session",
-        return_value=mock_sprite,
+        return_value=mock_handle,
     )
-    return mock_sprite, mock_cmd
+    return mock_handle, mock_cmd
 
 
 @pytest.mark.django_db
@@ -111,12 +129,13 @@ def test_execute_turn_marks_completed_on_success(user, mocker):
 
 
 @pytest.mark.django_db
-def test_execute_turn_marks_failed_on_exec_error(user, mocker):
-    """Regression: ExecError.exit_code is a method, not a property. The
-    task body must call it before storing on session.exit_code, otherwise
-    Django's IntegerField raises TypeError at save time."""
+def test_execute_turn_marks_failed_on_nonzero_exit(user, mocker):
+    """A non-zero exit code from the backend command surfaces as a failed
+    session. Post-PR-4 the backend's `cmd.run()` returns the exit code as
+    an int (it absorbs the SDK's `ExecError` internally), so the task body
+    sees `("exit", 1)` and stores it directly on session.exit_code."""
     session, turn = _make_session_and_turn(user)
-    _, mock_cmd = _patch_sprite(mocker, ExecError("exit status 1", exit_code=1))
+    _, mock_cmd = _patch_sprite(mocker, 1)
 
     execute_turn(
         session_id=str(session.id),
@@ -142,7 +161,7 @@ def test_execute_turn_marks_failed_on_exec_error(user, mocker):
 @pytest.mark.django_db
 def test_execute_turn_builds_expected_argv(user, mocker):
     session, turn = _make_session_and_turn(user)
-    mock_sprite, _ = _patch_sprite(mocker, "success")
+    mock_handle, _ = _patch_sprite(mocker, "success")
 
     execute_turn(
         session_id=str(session.id),
@@ -152,7 +171,7 @@ def test_execute_turn_builds_expected_argv(user, mocker):
         timeout=10.0,
     )
 
-    argv = mock_sprite.command.call_args.args
+    argv = mock_handle.make_command.call_args.args
     # Thin shim: bash -lc sourcing /tmp/aod-env, then exec "$@" ... argv.
     assert argv[0] == "bash"
     assert argv[1] == "-lc"
