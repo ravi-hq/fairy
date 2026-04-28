@@ -66,12 +66,14 @@ Authentication is via `Authorization: Bearer <token>`.
 Supported runtimes (selected by `runtime` on an agent) and their models.
 Model strings follow the canonical `provider/model_id` form:
 
-| Runtime    | Providers                       | Example models                                                                   |
-| ---------- | ------------------------------- | -------------------------------------------------------------------------------- |
+| Runtime    | Providers                       | Example model strings                                                              |
+| ---------- | ------------------------------- | ---------------------------------------------------------------------------------- |
 | `claude`   | `anthropic`                     | `anthropic/claude-opus-4-6`, `anthropic/claude-sonnet-4-6`, `anthropic/claude-haiku-4-5` |
-| `codex`    | `openai`                        | `openai/gpt-4.1`, `openai/o3`, `openai/o4-mini`                                  |
-| `gemini`   | `google`                        | `google/gemini-2.5-pro`, `google/gemini-2.5-flash`                               |
-| `opencode` | `anthropic`, `openai`, `google` | any `anthropic/*`, `openai/*`, or `google/*` in the model catalog                |
+| `codex`    | `openai`                        | `openai/gpt-4.1`, `openai/o3`, `openai/o4-mini`                                    |
+| `gemini`   | `google`                        | `google/gemini-2.5-pro`, `google/gemini-2.5-flash`                                 |
+| `opencode` | `anthropic`, `openai`, `google` | any `anthropic/*`, `openai/*`, or `google/*` in the model catalog                  |
+
+Model strings are always in canonical `provider/model_id` form. The full list is in `src/agent_on_demand/models_catalog.py`.
 
 A model is servable by a runtime whose `providers` set contains the model's
 `provider`. The Claude runtime authenticates via an Anthropic API key by

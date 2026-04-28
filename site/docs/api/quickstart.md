@@ -37,7 +37,7 @@ An agent is a reusable template. The minimum required fields are `name`, `model`
       -H "Content-Type: application/json" \
       -d '{
         "name": "hello",
-        "model": "claude-sonnet-4-6",
+        "model": "anthropic/claude-sonnet-4-6",
         "runtime": "claude"
       }'
     ```
@@ -50,7 +50,7 @@ An agent is a reusable template. The minimum required fields are `name`, `model`
     client = Client()  # reads AOD_API_URL + AOD_API_TOKEN
     agent = client.agents.create(
         name="hello",
-        model="claude-sonnet-4-6",
+        model="anthropic/claude-sonnet-4-6",
         runtime="claude",
     )
     print(agent.id)
@@ -63,7 +63,7 @@ Response (`201 Created`):
   "id": "<agent-uuid>",
   "type": "agent",
   "name": "hello",
-  "model": "claude-sonnet-4-6",
+  "model": "anthropic/claude-sonnet-4-6",
   "runtime": "claude",
   "system": null,
   "description": null,
@@ -169,7 +169,7 @@ The stream closes after the terminal event (`exit`, `error`, or `terminated`). R
 
     # Create agent
     AGENT_ID=$(curl -s -X POST "$BASE/agents" -H "$AUTH" -H "$JSON" \
-      -d '{"name":"demo","model":"claude-sonnet-4-6","runtime":"claude"}' \
+      -d '{"name":"demo","model":"anthropic/claude-sonnet-4-6","runtime":"claude"}' \
       | jq -r .id)
 
     # Create session
@@ -191,7 +191,7 @@ The stream closes after the terminal event (`exit`, `error`, or `terminated`). R
 
     with Client() as client:
         agent = client.agents.create(
-            name="demo", model="claude-sonnet-4-6", runtime="claude"
+            name="demo", model="anthropic/claude-sonnet-4-6", runtime="claude"
         )
         ack = client.sessions.create(
             agent_id=agent.id, prompt="Say hello.", timeout=120

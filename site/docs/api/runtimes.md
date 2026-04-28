@@ -2,15 +2,16 @@
 
 A **runtime** is the CLI that Agent on Demand invokes inside the Sprite to drive the model. It's a required field on an agent and determines how the session process is launched, which API key env var is read, and how multi-turn conversations are resumed.
 
-Three runtimes are supported today:
+Four runtimes are supported:
 
-| Runtime  | Vendor CLI       | Models                                                       | API key env var       |
-| -------- | ---------------- | ------------------------------------------------------------ | --------------------- |
-| `claude` | Claude Code      | `claude-opus-4-6`, `claude-sonnet-4-6`, `claude-haiku-4-5` (+ older `claude-opus-4-0-20250514`, `claude-sonnet-4-0-20250514`, `claude-sonnet-4-5-20250514`, `claude-3-5-haiku-20241022`) | `ANTHROPIC_API_KEY`   |
-| `codex`  | OpenAI Codex CLI | `gpt-4.1`, `o3`, `o4-mini`                                   | `CODEX_API_KEY`       |
-| `gemini` | Gemini CLI       | `gemini-2.5-pro`, `gemini-2.5-flash`                         | `GEMINI_API_KEY`      |
+| Runtime    | Vendor CLI         | Models (canonical `provider/model_id`)                                                                                                  | API key env var                        |
+| ---------- | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| `claude`   | Claude Code        | `anthropic/claude-opus-4-6`, `anthropic/claude-sonnet-4-6`, `anthropic/claude-haiku-4-5` (+ older dated variants)                       | `ANTHROPIC_API_KEY`                    |
+| `codex`    | OpenAI Codex CLI   | `openai/gpt-4.1`, `openai/o3`, `openai/o4-mini`                                                                                         | `OPENAI_API_KEY`                       |
+| `gemini`   | Gemini CLI         | `google/gemini-2.5-pro`, `google/gemini-2.5-flash`                                                                                      | `GEMINI_API_KEY`                       |
+| `opencode` | opencode (sst/opencode) | Any `anthropic/*`, `openai/*`, or `google/*` model in the catalog                                                                 | `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GEMINI_API_KEY` |
 
-The canonical list lives in [`src/agent_on_demand/runtimes.py`](https://github.com/ravi-hq/agent-on-demand/blob/main/src/agent_on_demand/runtimes.py) (`RUNTIMES` for the runtime table, `AgentModel` for the model enum).
+Model strings are in canonical `provider/model_id` form — e.g. `anthropic/claude-sonnet-4-6`, not `claude-sonnet-4-6`. The full list lives in [`src/agent_on_demand/models_catalog.py`](https://github.com/ravi-hq/agent-on-demand/blob/main/src/agent_on_demand/models_catalog.py); the runtime registry is in [`src/agent_on_demand/runtimes/__init__.py`](https://github.com/ravi-hq/agent-on-demand/blob/main/src/agent_on_demand/runtimes/__init__.py).
 
 ## Setting the runtime on an agent
 
@@ -23,11 +24,11 @@ curl -X POST https://aod.example.com/agents \
   -d '{
     "name": "hello",
     "runtime": "claude",
-    "model": "claude-sonnet-4-6"
+    "model": "anthropic/claude-sonnet-4-6"
   }'
 ```
 
-`runtime` must be one of the values above (400 otherwise). `model` must match a known `AgentModel` value. The two fields are validated independently — there's no server-side enforcement that a given `model` "belongs to" a given `runtime`, so it's on you to pair them sensibly.
+`runtime` must be one of the four values above (400 otherwise). `model` must be a known canonical model ID. The server validates them independently — pairing a mismatched runtime and model (e.g. an OpenAI model with the `claude` runtime) will pass validation but fail at session execution when the CLI rejects the model name.
 
 ## Supplying API keys
 
@@ -51,13 +52,11 @@ If no environment is attached to a session, or the environment doesn't set the r
 
 ### `claude`
 
-Uses the Claude Code CLI in `--print` + `stream-json` mode. AoD pre-generates a UUID at session create and passes it as `--session-id` on the first turn, then `--resume <uuid>` on every subsequent turn — more reliable than `--continue` in non-interactive mode, which has been observed to silently fork new sessions.
+Uses the Claude Code CLI in `--print` + `stream-json` mode. AoD pre-generates a UUID at session create and passes it as `--session-id` on the first turn, then `--resume <uuid>` on every subsequent turn — more reliable than `--continue` in non-interactive mode.
 
-#### `claude-oauth` (auth variant)
+#### OAuth auth variant
 
-`claude-oauth` is the same `claude` CLI with the same command flags, but it authenticates with a Claude Pro/Max OAuth token (`CLAUDE_CODE_OAUTH_TOKEN`) instead of an API key (`ANTHROPIC_API_KEY`). Use it when you want to run sessions against a subscription seat rather than pay-per-token API billing.
-
-Everything else — supported models, resume semantics, output format — is identical to `claude`.
+The `claude` runtime also supports Claude Pro/Max OAuth tokens. Register a `runtime_token:claude-oauth` credential for a user and AoD will export `CLAUDE_CODE_OAUTH_TOKEN` instead of `ANTHROPIC_API_KEY`. Everything else — models, resume semantics, output format — is identical. The runtime string on the agent remains `"claude"`.
 
 ### `codex`
 
@@ -66,6 +65,14 @@ Uses `codex exec` with `--dangerously-bypass-approvals-and-sandbox --json`. The 
 ### `gemini`
 
 Uses the Gemini CLI with `--output-format stream-json`. Resume is handled via `--resume`.
+
+### `opencode`
+
+Uses [sst/opencode](https://opencode.ai) — a multi-provider CLI that fronts Anthropic, OpenAI, and Google models through a single binary. Pass any `anthropic/*`, `openai/*`, or `google/*` model ID; opencode picks the right provider API at invocation time.
+
+opencode is **not pre-installed** on the Sprite base image. AoD runs `npm install -g opencode-ai@<pinned>` during session provisioning (before any network policy is applied, so `registry.npmjs.org` does not need to be in `allowed_hosts`). First-session provisioning takes 10–30 s longer than the pre-baked runtimes as a result.
+
+If the environment has `networking.type == "limited"`, the allowed-hosts list must include `registry.npmjs.org` for opencode provisioning to succeed.
 
 ## Tools
 
