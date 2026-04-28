@@ -52,7 +52,7 @@ def build_spec_for_session(session: AgentSession) -> SessionSpec:
     ]
 
     return SessionSpec(
-        name=session.sprite_name,
+        name=session.backend_handle or session.sprite_name,
         runtime=RUNTIMES[session.runtime],
         model=model,
         user=session.user,

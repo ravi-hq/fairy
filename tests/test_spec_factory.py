@@ -67,6 +67,7 @@ def _session(
     runtime="claude",
     runtime_session_id=None,
     sprite_name="sprite-1",
+    backend_handle=_UNSET,
     environment=_UNSET,
     resources=None,
     backend="sprites",
@@ -77,12 +78,18 @@ def _session(
         user = SimpleNamespace()
     if environment is _UNSET:
         environment = None
+    # Default backend_handle to mirror sprite_name to match production's
+    # dual-write semantics. Tests that exercise the fallback-read path can
+    # pass `backend_handle=""` explicitly.
+    if backend_handle is _UNSET:
+        backend_handle = sprite_name
     return SimpleNamespace(
         agent=agent,
         user=user,
         runtime=runtime,
         runtime_session_id=runtime_session_id,
         sprite_name=sprite_name,
+        backend_handle=backend_handle,
         environment=environment,
         resources=_resources(resources),
         backend=backend,
@@ -474,6 +481,21 @@ def test_runtime_session_id_uuid_is_stringified():
 def test_sprite_name_passes_through():
     spec = build_spec_for_session(_session(sprite_name="aod-abc123"))
     assert spec.name == "aod-abc123"
+
+
+def test_backend_handle_overrides_sprite_name():
+    """When both columns are populated, ``backend_handle`` wins. Pin so an
+    ``or`` → ``and`` mutant (which would yield ``sprite_name``) is killed."""
+    spec = build_spec_for_session(_session(sprite_name="legacy", backend_handle="new-handle"))
+    assert spec.name == "new-handle"
+
+
+def test_sprite_name_used_when_backend_handle_empty():
+    """In-flight sessions provisioned before dual-write have
+    ``backend_handle=""``. ``spec.name`` must fall back to ``sprite_name``
+    or those sessions get stranded."""
+    spec = build_spec_for_session(_session(sprite_name="legacy-only", backend_handle=""))
+    assert spec.name == "legacy-only"
 
 
 def test_user_passes_through_unchanged():

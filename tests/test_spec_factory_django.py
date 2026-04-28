@@ -248,6 +248,32 @@ def test_backend_persists_and_threads_through(user):
 
 
 @pytest.mark.django_db
+def test_spec_name_prefers_backend_handle_with_sprite_name_fallback(user):
+    """`spec.name` reads `backend_handle` and only falls back to `sprite_name`
+    when the new column is empty. Step 2 will drop `sprite_name`; that PR's
+    safety relies on this preference being correct now."""
+    new_handle = AgentSession.objects.create(
+        user=user,
+        runtime="claude",
+        prompt="t",
+        status="pending",
+        sprite_name="legacy",
+        backend_handle="new-handle",
+    )
+    assert build_spec_for_session(new_handle).name == "new-handle"
+
+    legacy_only = AgentSession.objects.create(
+        user=user,
+        runtime="claude",
+        prompt="t",
+        status="pending",
+        sprite_name="legacy-only",
+        backend_handle="",
+    )
+    assert build_spec_for_session(legacy_only).name == "legacy-only"
+
+
+@pytest.mark.django_db
 def test_no_agent_with_resources(user):
     """The no-agent guard does not short-circuit resource iteration —
     real `SessionResource` rows must still rehydrate into `RepoSpec`
