@@ -101,51 +101,55 @@ uvicorn config.wsgi:application --host 0.0.0.0 --port 8000
 
 ## Sprites credentials
 
-Agent on Demand authenticates to the Sprites platform using a **per-user** token stored
-encrypted at rest in the `UserSpritesKey` table. Each user brings their own
-Sprites token; there is no shared/service-level fallback. At session creation
-time, Agent on Demand:
+Agent on Demand authenticates to the Sprites platform using **per-user** tokens stored
+encrypted at rest. Each user brings their own Sprites token and their own model API keys;
+there are no shared/service-level credentials. At session creation time, Agent on Demand:
 
-1. Looks up the caller's `UserSpritesKey` and decrypts the token.
-2. Calls `SpritesClient(token=..., base_url=SPRITES_BASE_URL)` to obtain a
-   client.
+1. Looks up the caller's `UserBackendCredential(backend="sprites")` and decrypts the token.
+2. Calls `SpritesClient(token=..., base_url=SPRITES_BASE_URL)` to obtain a client.
 3. Creates a Sprite via `client.create_sprite(name)`, where the name is
    `{SPRITE_NAME_PREFIX}-{12-char-hex-id}`.
-4. Writes a `run-agent.sh` wrapper script onto the Sprite's filesystem. The
-   script exports the **per-user runtime API key** (e.g. the user's Anthropic
-   key) and runs the agent binary.
-5. The runtime API key is stored encrypted at rest in the `UserRuntimeKey`
-   table and is never present in Sprites API calls — only inside the agent's
-   execution environment.
+4. Writes a `run-agent.sh` wrapper script onto the Sprite's filesystem. The script
+   exports the **per-user model API key** (e.g. the user's Anthropic key) and runs the
+   agent CLI.
+5. Model API keys are stored encrypted at rest in `UserCredential` rows and are never
+   present in Sprites API calls — only inside the agent's execution environment.
 
-If a user has no `UserSpritesKey` configured, session create, multi-turn
-prompt, and session termination endpoints return `400 No Sprites API key
-configured`.
+If a user has no Sprites credential configured, session create, multi-turn prompt, and
+session termination endpoints return `400 No backend credentials configured`.
 
-To set a user's Sprites key (required before they can run sessions):
+To set a user's Sprites token (required before they can run sessions):
 
 ```python
-from agent_on_demand.models import UserSpritesKey
+from agent_on_demand.models import UserBackendCredential
 from django.contrib.auth.models import User
 
 user = User.objects.get(username="alice")
-usk, _ = UserSpritesKey.objects.get_or_create(user=user)
-usk.set_api_key("your-sprites-api-token")
-usk.save()
+cred, _ = UserBackendCredential.objects.get_or_create(user=user, backend="sprites")
+cred.set_token("your-sprites-api-token")
+cred.save()
 ```
 
-To set a user's runtime key (required before they can run sessions on a given
-runtime):
+To set a user's model API key (required before they can run sessions on a given runtime):
 
 ```python
-from agent_on_demand.models import UserRuntimeKey
+from agent_on_demand.models import UserCredential
 from django.contrib.auth.models import User
 
 user = User.objects.get(username="alice")
-urk, _ = UserRuntimeKey.objects.get_or_create(user=user, runtime="claude")
-urk.set_api_key("your-anthropic-api-key")
-urk.save()
+cred, _ = UserCredential.objects.get_or_create(user=user, kind="provider:anthropic")
+cred.set_value("your-anthropic-api-key")
+cred.save()
 ```
+
+The `kind` field maps to the env var written into the session:
+
+| `kind` | Env var written | Used by |
+|--------|----------------|---------|
+| `provider:anthropic` | `ANTHROPIC_API_KEY` | `claude`, `opencode` |
+| `provider:openai` | `OPENAI_API_KEY` | `codex`, `opencode` |
+| `provider:google` | `GEMINI_API_KEY` | `gemini`, `opencode` |
+| `runtime_token:claude-oauth` | `CLAUDE_CODE_OAUTH_TOKEN` | `claude` (OAuth variant) |
 
 ## Health check
 
