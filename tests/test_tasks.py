@@ -25,8 +25,8 @@ from agent_on_demand.models import (
     UserBackendCredential,
     UserCredential,
 )
+from agent_on_demand.session_service.log_sink import TaggingQueueWriter
 from agent_on_demand.session_service.tasks import (
-    TaggingQueueWriter,
     destroy_session_task,
     execute_turn,
     provision_session_task,
@@ -37,12 +37,14 @@ from agent_on_demand.session_service.tasks import (
 def mock_close_old_connections(mocker):
     """Prevent close_old_connections() from closing the test DB connection.
 
-    Tasks call close_old_connections() in entry/exit wrappers and inside
-    _flush_buffer's retry loop. In production that's correct; in tests the
-    call kills the pytest-django test transaction, breaking every subsequent
-    DB query in the same test. Stub it out so test isolation is preserved.
+    Tasks call close_old_connections() in entry/exit wrappers; LogChunkSink
+    calls it inside the bulk_create retry loop. In production that's correct;
+    in tests the call kills the pytest-django test transaction, breaking every
+    subsequent DB query in the same test. Stub it out in both modules so test
+    isolation is preserved.
     """
     mocker.patch("agent_on_demand.session_service.tasks.close_old_connections")
+    mocker.patch("agent_on_demand.session_service.log_sink.close_old_connections")
 
 
 @pytest.fixture
@@ -595,7 +597,7 @@ def test_bulk_create_retries_on_transient_failure(user, mocker):
         return original_bulk_create(objs, **kwargs)
 
     mocker.patch.object(AgentSessionLog.objects, "bulk_create", side_effect=flaky_bulk_create)
-    mocker.patch("agent_on_demand.session_service.tasks.time.sleep")
+    mocker.patch("agent_on_demand.session_service.log_sink.time.sleep")
     mock_posthog = mocker.patch("posthog.capture")
 
     def drive_output(*_, **__):
@@ -638,7 +640,7 @@ def test_bulk_create_exhausts_retries_and_raises(user, mocker):
         "bulk_create",
         side_effect=Exception("persistent DB error"),
     )
-    mocker.patch("agent_on_demand.session_service.tasks.time.sleep")
+    mocker.patch("agent_on_demand.session_service.log_sink.time.sleep")
     mock_posthog = mocker.patch("posthog.capture")
 
     def drive_output(*_, **__):
