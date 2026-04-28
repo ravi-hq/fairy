@@ -246,7 +246,11 @@ def test_session_terminated_event_emits_id_only(
     client: Client, auth_headers, user, runtime_keys, fake_sprites, captured_events
 ):
     session = AgentSession.objects.create(
-        user=user, runtime="claude", prompt=SECRET_PROMPT, backend_handle="aod-t", status="completed"
+        user=user,
+        runtime="claude",
+        prompt=SECRET_PROMPT,
+        backend_handle="aod-t",
+        status="completed",
     )
     captured_events.clear()
     resp = client.post(f"/sessions/{session.id}/terminate", **auth_headers)
