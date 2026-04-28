@@ -3,12 +3,11 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Literal
 
-from sprites import Sprite
-
 from agent_on_demand.runtimes.claude_command import build_claude_command
 from agent_on_demand.runtimes.claude_config import render_claude_mcp_config
 
 if TYPE_CHECKING:
+    from agent_on_demand.session_service.backend import SessionHandle
     from agent_on_demand.session_service.specs import McpServerSpec, SessionSpec
 
 
@@ -25,7 +24,7 @@ class ClaudeRuntime:
     skills_root: str | None = "/home/sprite/.claude/skills"
     skills_sh_agent: str | None = "claude-code"
 
-    def install(self, sprite: Sprite) -> None:
+    def install(self, handle: "SessionHandle") -> None:
         return None
 
     def build_command(self, spec: "SessionSpec", mode: Literal["run", "continue"]) -> list[str]:
@@ -33,12 +32,14 @@ class ClaudeRuntime:
 
     def write_config(
         self,
-        sprite: Sprite,
+        handle: "SessionHandle",
         spec: "SessionSpec",
         mcp_servers: list["McpServerSpec"],
     ) -> None:
         config = render_claude_mcp_config(mcp_servers)
         if config is None:
             return
-        fs = sprite.filesystem()
-        (fs / "home/sprite/.claude.json").write_text(json.dumps({"mcpServers": config}, indent=2))
+        handle.workspace().write_text(
+            "/home/sprite/.claude.json",
+            json.dumps({"mcpServers": config}, indent=2),
+        )

@@ -2,12 +2,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Literal
 
-from sprites import Sprite
-
 from agent_on_demand.runtimes.codex_command import build_codex_command
 from agent_on_demand.runtimes.codex_config import render_codex_mcp_config
 
 if TYPE_CHECKING:
+    from agent_on_demand.session_service.backend import SessionHandle
     from agent_on_demand.session_service.specs import McpServerSpec, SessionSpec
 
 
@@ -19,7 +18,7 @@ class CodexRuntime:
     skills_root: str | None = "/home/sprite/.codex/skills"
     skills_sh_agent: str | None = "codex"
 
-    def install(self, sprite: Sprite) -> None:
+    def install(self, handle: "SessionHandle") -> None:
         return None
 
     def build_command(self, spec: "SessionSpec", mode: Literal["run", "continue"]) -> list[str]:
@@ -27,7 +26,7 @@ class CodexRuntime:
 
     def write_config(
         self,
-        sprite: Sprite,
+        handle: "SessionHandle",
         spec: "SessionSpec",
         mcp_servers: list["McpServerSpec"],
     ) -> None:
@@ -39,5 +38,4 @@ class CodexRuntime:
         if not mcp_servers:
             return
         body = render_codex_mcp_config(mcp_servers)
-        fs = sprite.filesystem()
-        (fs / "home/sprite/.codex/config.toml").write_text(body)
+        handle.workspace().write_text("/home/sprite/.codex/config.toml", body)

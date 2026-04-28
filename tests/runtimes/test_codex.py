@@ -108,7 +108,7 @@ def test_write_config_empty_mcp_servers_writes_nothing(user):
 def test_install_is_a_no_op():
     """The Codex CLI is preinstalled in the runtime image, so .install() must
     do nothing — adding work here would silently slow every session start."""
-    assert CodexRuntime().install(sprite=None) is None
+    assert CodexRuntime().install(handle=None) is None
 
 
 @pytest.mark.django_db
