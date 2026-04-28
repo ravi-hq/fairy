@@ -6,17 +6,18 @@ which API key env var is read, and how multi-turn conversations are resumed.
 
 Four runtimes are supported:
 
-| Runtime    | Vendor CLI       | Providers                       | API key env var(s)                                   |
-| ---------- | ---------------- | ------------------------------- | ----------------------------------------------------- |
-| `claude`   | Claude Code      | `anthropic`                     | `ANTHROPIC_API_KEY` (or `CLAUDE_CODE_OAUTH_TOKEN` — see below) |
-| `codex`    | OpenAI Codex CLI | `openai`                        | `OPENAI_API_KEY`                                     |
-| `gemini`   | Gemini CLI       | `google`                        | `GEMINI_API_KEY`                                     |
-| `opencode` | opencode         | `anthropic`, `openai`, `google` | `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY` |
+| Runtime    | Vendor CLI              | Models (canonical `provider/model_id`)                                                                             | API key env var                                           |
+| ---------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------- |
+| `claude`   | Claude Code             | `anthropic/claude-opus-4-6`, `anthropic/claude-sonnet-4-6`, `anthropic/claude-haiku-4-5` (+ older dated variants) | `ANTHROPIC_API_KEY`                                       |
+| `codex`    | OpenAI Codex CLI        | `openai/gpt-4.1`, `openai/o3`, `openai/o4-mini`                                                                   | `OPENAI_API_KEY`                                         |
+| `gemini`   | Gemini CLI              | `google/gemini-2.5-pro`, `google/gemini-2.5-flash`                                                                | `GEMINI_API_KEY`                                          |
+| `opencode` | opencode (sst/opencode) | Any `anthropic/*`, `openai/*`, or `google/*` model in the catalog                                                 | `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GEMINI_API_KEY` |
 
-Model strings use the canonical `provider/model_id` form. The full model catalog lives in
-[`src/agent_on_demand/models_catalog.py`](https://github.com/ravi-hq/agent-on-demand/blob/main/src/agent_on_demand/models_catalog.py).
-
-Runtime source: [`src/agent_on_demand/runtimes/`](https://github.com/ravi-hq/agent-on-demand/blob/main/src/agent_on_demand/runtimes/).
+Model strings are in canonical `provider/model_id` form — e.g. `anthropic/claude-sonnet-4-6`,
+not `claude-sonnet-4-6`. The full list lives in
+[`src/agent_on_demand/models_catalog.py`](https://github.com/ravi-hq/agent-on-demand/blob/main/src/agent_on_demand/models_catalog.py);
+the runtime registry is in
+[`src/agent_on_demand/runtimes/__init__.py`](https://github.com/ravi-hq/agent-on-demand/blob/main/src/agent_on_demand/runtimes/__init__.py).
 
 ## Setting the runtime on an agent
 
@@ -33,9 +34,10 @@ curl -X POST https://aod.ravi.id/agents \
   }'
 ```
 
-`runtime` must be one of the values in the table above (400 otherwise). `model` must be a
-key in the model catalog. On create and update, the server validates that the runtime's
-`providers` set includes the model's provider — mismatches return 422.
+`runtime` must be one of the four values above (400 otherwise). `model` must be a known
+canonical model ID. The server validates that the runtime's `providers` set includes the
+model's provider — mismatched pairs (e.g. an OpenAI model with the `claude` runtime) return
+422 on create or update.
 
 ## Supplying API keys
 
@@ -67,14 +69,15 @@ expected env var, the CLI will fail on startup and the session will transition t
 
 Uses the Claude Code CLI in `--print` + `stream-json` mode. AoD pre-generates a UUID at
 session create and passes it as `--session-id` on the first turn, then `--resume <uuid>`
-on every subsequent turn — more reliable than `--continue` in non-interactive mode, which
-has been observed to silently fork new sessions.
+on every subsequent turn — more reliable than `--continue` in non-interactive mode.
 
-**OAuth auth variant:** if you register a `runtime_token:claude-oauth` credential (a Claude
-Pro/Max OAuth token), it is written as `CLAUDE_CODE_OAUTH_TOKEN` to the session Sprite
-instead of `ANTHROPIC_API_KEY`. The CLI picks it up automatically. Everything else —
-supported models, resume semantics, output format — is identical. Use it when you want to
-run sessions against a subscription seat rather than pay-per-token API billing.
+#### OAuth auth variant
+
+The `claude` runtime also supports Claude Pro/Max OAuth tokens. Register a
+`runtime_token:claude-oauth` credential for a user and AoD will export
+`CLAUDE_CODE_OAUTH_TOKEN` instead of `ANTHROPIC_API_KEY`. Everything else — models,
+resume semantics, output format — is identical. The runtime string on the agent remains
+`"claude"`.
 
 ### `codex`
 
@@ -88,13 +91,14 @@ Uses the Gemini CLI with `--output-format stream-json`. Resume is handled via `-
 
 ### `opencode`
 
-A multi-provider meta-runtime: one `opencode` CLI fronts `anthropic`, `openai`, and
-`google` providers, selecting provider and model per invocation via `--model provider/model_id`.
+Uses [sst/opencode](https://opencode.ai) — a multi-provider CLI that fronts Anthropic,
+OpenAI, and Google models through a single binary. Pass any `anthropic/*`, `openai/*`, or
+`google/*` model ID; opencode picks the right provider API at invocation time.
 
-**Installation:** opencode is not pre-installed on the Sprite base image. Sessions install
-it via `npm i -g opencode-ai` during the `provision_setup` stage (before any network
-policy is applied, so `registry.npmjs.org` does not need to be in `allowed_hosts`).
-First-session provisioning takes ~10–30 s longer than the pre-baked runtimes.
+opencode is **not pre-installed** on the Sprite base image. AoD runs
+`npm install -g opencode-ai` during the `provision_setup` stage, which runs before any
+network policy is applied. `registry.npmjs.org` does not need to be in `allowed_hosts`.
+First-session provisioning takes 10–30 s longer than the pre-baked runtimes as a result.
 
 ## Tools
 

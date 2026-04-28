@@ -30,8 +30,8 @@ const env = await client.environments.create({
 
 const agent = await client.agents.create({
   name: "my-agent",
-  model: "claude-sonnet-4-5",
-  runtime: "claude-code",
+  model: "anthropic/claude-sonnet-4-6",
+  runtime: "claude",
   system: "You are a careful software engineer.",
   environment_id: env.id,
 });

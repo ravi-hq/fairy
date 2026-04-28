@@ -1,6 +1,6 @@
 # Agent on Demand
 
-Agent on Demand is a REST API for running AI coding agents on [Sprites](https://fly.io/docs/machines/). It manages three resources:
+Agent on Demand is a REST API for running AI coding agents on [Sprites](https://sprites.dev). It manages three resources:
 
 - **Agents** — reusable templates that define the model, runtime, system prompt, MCP servers, and skills for an AI coding agent.
 - **Environments** — Sprite sandbox configurations: packages to install, environment variables to export, a setup script, and a network policy.
@@ -68,6 +68,7 @@ Three calls to go from zero to a running agent:
 | [Overview](api/product.md) | What problems Agent on Demand solves |
 | [API Reference](api/reference.md) | Interactive Stoplight Elements explorer |
 | [Python SDK](sdks/python.md) | `aod-sdk` — typed sync + async client on PyPI |
+| [TypeScript SDK](sdks/typescript.md) | `@ravi-hq/aod-sdk` — typed async client on npm, browser-compatible |
 | [Authentication](api/authentication.md) | Bearer tokens, 401 shapes |
 | [Streaming](api/streaming.md) | SSE event types, reconnect, replay |
 | [Errors](api/errors.md) | Every status code and when it fires |

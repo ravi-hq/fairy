@@ -13,7 +13,7 @@ Agent on Demand streams session output as [Server-Sent Events](https://developer
 - `Cache-Control: no-cache`
 - `X-Accel-Buffering: no`
 
-Each event is a line of the form `data: <json>\n\n`, preceded by an `id: <int>\n` line for every event except `start`.
+Each event is a line of the form `data: <json>\n\n`. All events except `start` and `turn_start` are preceded by an `id: <int>\n` line. `turn_start` is a synthetic event derived from the same log row as the `output` event that follows it; advancing the SSE cursor on `turn_start` would cause the subsequent `output` event (same id) to be skipped on reconnect, so it deliberately has no `id:` line.
 
 ## Event types
 
@@ -21,7 +21,7 @@ Each event is a line of the form `data: <json>\n\n`, preceded by an `id: <int>\n
 |------|---------|-------|
 | `start` | `{"type":"start","runtime":"claude","session_id":"<uuid>"}` | Always the first event, before any replayed output. No `id` field. |
 | `stage` | `{"type":"stage","id":3,"stage":"create_sprite","state":"started"\|"done"\|"failed","duration_ms":15200,"message":"..."}` | Emitted during provisioning and just before the runtime starts. `duration_ms` is present on `done` and `failed`; `message` is present on `failed` only. Non-terminal — clients should keep reading. See [Provisioning stages](#provisioning-stages) below. |
-| `turn_start` | `{"type":"turn_start","id":42,"turn":1}` | Emitted before the first `output` event of each turn. Turn numbers start at 1. Does not advance the SSE cursor (`id:` line is omitted); use the `id` from the `output` event that follows for `Last-Event-ID`. |
+| `turn_start` | `{"type":"turn_start","id":42,"turn":1}` | Emitted before the first `output` event of each turn. Turn numbers start at 1. No SSE `id:` line — use the `id` from the `output` event that follows for `Last-Event-ID`. |
 | `output` | `{"type":"output","id":42,"stream":"stdout"\|"stderr","data":"...","turn":1}` | One chunk of agent output; may contain multiple lines |
 | `exit` | `{"type":"exit","id":42,"code":0}` | Terminal. Emitted when the runtime exits (code 0 = success, non-zero = failure) |
 | `error` | `{"type":"error","id":42,"message":"..."}` | Terminal. Emitted on unhandled exception — no exit code available |
