@@ -34,6 +34,7 @@ from django.db import close_old_connections
 from django.utils import timezone
 from procrastinate.contrib.django import app as procrastinate_app
 
+from agent_on_demand.analytics import capture as posthog_capture
 from agent_on_demand.models import (
     AgentSession,
     AgentSessionLog,
@@ -164,16 +165,15 @@ def _mark_provision_failed(session: AgentSession, turn_id: int, message: str) ->
         ended_at=now,
     )
 
-    with posthog.new_context():
-        posthog.identify_context(str(session.user_id))
-        posthog.capture(
-            "session.provision_failed",
-            properties={
-                "session_id": str(session.id),
-                "runtime": session.runtime,
-                "message": message,
-            },
-        )
+    posthog_capture(
+        session.user,
+        "session.provision_failed",
+        properties={
+            "session_id": str(session.id),
+            "runtime": session.runtime,
+            "message": message,
+        },
+    )
 
 
 def _fail_pending_turn(session: AgentSession, turn: SessionTurn, message: str) -> None:
