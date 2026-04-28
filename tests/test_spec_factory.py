@@ -69,6 +69,7 @@ def _session(
     sprite_name="sprite-1",
     environment=_UNSET,
     resources=None,
+    backend="sprites",
 ):
     if agent is _UNSET:
         agent = None
@@ -84,6 +85,7 @@ def _session(
         sprite_name=sprite_name,
         environment=environment,
         resources=_resources(resources),
+        backend=backend,
     )
 
 
@@ -505,3 +507,23 @@ def test_runtime_string_is_looked_up_in_registry():
     the lookup."""
     spec = build_spec_for_session(_session(runtime="claude"))
     assert spec.runtime is RUNTIMES["claude"]
+
+
+# ---------- backend discriminator ----------
+
+
+def test_backend_passes_through_unchanged():
+    """``session.backend`` is the registry key that selects the Backend
+    implementation. It must thread through to ``spec.backend`` verbatim —
+    a mutant that hard-codes ``"sprites"`` or drops the assignment is
+    caught by passing a non-default value."""
+    spec = build_spec_for_session(_session(backend="modal"))
+    assert spec.backend == "modal"
+
+
+def test_backend_default_sprites_threads_through():
+    """The "sprites" backend (current default for existing sessions) must
+    also land on the spec — pin so a mutant that swaps the assignment for
+    a constant of the wrong arity still fails."""
+    spec = build_spec_for_session(_session(backend="sprites"))
+    assert spec.backend == "sprites"

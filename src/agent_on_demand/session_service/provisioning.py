@@ -64,7 +64,7 @@ def provision_session(user, spec: SessionSpec, session_id: str | None = None) ->
             "aod.has_setup_script": bool((env.setup_script or "").strip()) if env else False,
         },
     ) as span:
-        client = require_client(user)
+        client = require_client(user, spec.backend)
         try:
             with stage_timer(session_id, STAGE_CREATE_SPRITE):
                 try:

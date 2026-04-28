@@ -61,4 +61,5 @@ def build_spec_for_session(session: AgentSession) -> SessionSpec:
         repos=repos,
         mcp_servers=mcp_servers,
         skills=skills,
+        backend=session.backend,
     )

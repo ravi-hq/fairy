@@ -224,6 +224,30 @@ def test_pass_through_fields_match_orm_state(user):
 
 
 @pytest.mark.django_db
+def test_backend_defaults_to_sprites_on_new_session(user):
+    """Existing rows and new sessions created without an explicit backend
+    pick up the model default — `"sprites"` — and that value threads
+    through to the spec."""
+    session = AgentSession.objects.create(user=user, runtime="claude", prompt="t", status="pending")
+    assert session.backend == "sprites"
+    spec = build_spec_for_session(session)
+    assert spec.backend == "sprites"
+
+
+@pytest.mark.django_db
+def test_backend_persists_and_threads_through(user):
+    """A non-default backend value persists across save/refresh and lands
+    on the spec via `build_spec_for_session`."""
+    session = AgentSession.objects.create(
+        user=user, runtime="claude", prompt="t", status="pending", backend="modal"
+    )
+    session.refresh_from_db()
+    assert session.backend == "modal"
+    spec = build_spec_for_session(session)
+    assert spec.backend == "modal"
+
+
+@pytest.mark.django_db
 def test_no_agent_with_resources(user):
     """The no-agent guard does not short-circuit resource iteration —
     real `SessionResource` rows must still rehydrate into `RepoSpec`
