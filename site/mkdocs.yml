@@ -42,6 +42,7 @@ nav:
     - Pagination: api/pagination.md
   - SDKs:
     - Python: sdks/python.md
+    - TypeScript: sdks/typescript.md
   - Patterns:
     - CLI Wrapper: patterns/cli-wrapper.md
     - Chat Bot: patterns/chat-bot.md

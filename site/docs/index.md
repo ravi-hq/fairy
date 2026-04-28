@@ -68,6 +68,7 @@ Three calls to go from zero to a running agent:
 | [Overview](api/product.md) | What problems Agent on Demand solves |
 | [API Reference](api/reference.md) | Interactive Stoplight Elements explorer |
 | [Python SDK](sdks/python.md) | `aod-sdk` — typed sync + async client on PyPI |
+| [TypeScript SDK](sdks/typescript.md) | `@ravi-hq/aod-sdk` — typed async client on npm, browser-compatible |
 | [Authentication](api/authentication.md) | Bearer tokens, 401 shapes |
 | [Streaming](api/streaming.md) | SSE event types, reconnect, replay |
 | [Errors](api/errors.md) | Every status code and when it fires |
