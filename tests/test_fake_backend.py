@@ -11,7 +11,7 @@ import io
 
 import pytest
 
-from agent_on_demand.session_service.backend import (
+from agent_on_demand.session_service.backends.base import (
     BackendError,
     NetworkPolicy,
     PolicyRule,

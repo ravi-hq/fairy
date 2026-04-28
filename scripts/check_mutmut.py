@@ -38,8 +38,8 @@ KNOWN_EQUIVALENT: set[str] = {
     # distinguish would be to remove the `if not pkgs` guard, which
     # would make `package_commands` raise on a missing manager key.
     # Keeping the guard.
-    "agent_on_demand.session_service.provision_script.x_build_provision_script__mutmut_29",
-    "agent_on_demand.session_service.provision_script.x_build_provision_script__mutmut_31",
+    "agent_on_demand.session_service.provisioning.script.x_build_provision_script__mutmut_29",
+    "agent_on_demand.session_service.provisioning.script.x_build_provision_script__mutmut_31",
 }
 
 

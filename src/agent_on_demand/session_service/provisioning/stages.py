@@ -3,7 +3,7 @@
 Each function corresponds to one provisioning stage and is responsible
 for emitting its `stage_timer` event and wrapping any `BackendError` as a
 `ProvisionError` tagged with the stage name. The orchestrator in
-`provisioning.py` owns sequencing and cleanup; everything I/O lives here.
+`orchestrator.py` owns sequencing and cleanup; everything I/O lives here.
 """
 
 from __future__ import annotations
@@ -12,27 +12,16 @@ import io
 
 from agent_on_demand.models import Environment
 
-from .backend import BackendError, SessionHandle
-from .env_file import build_env_file_body
-from .errors import ProvisionError
-from .git_credentials import build_git_credentials_lines
-from .network_policy import build_network_policy
-
-# Defensive: runtime methods now route through the `SessionHandle` Protocol,
-# which translates `SpriteError` to `BackendError` at the adapter boundary.
-# The `SpriteError` catch is retained as a safety net — tests assert that
-# a `SpriteError` raised directly by a mocked runtime impl is still tagged
-# with the correct provisioning stage.
-from .sprites_backend import SpriteError
-from .provision_script import (
-    ENV_FILE_PATH,
-    GIT_CREDS_PATH,
-    PROVISION_SCRIPT_PATH,
-    build_provision_script,
+from agent_on_demand.session_service.backends import (
+    BackendError,
+    SessionHandle,
+    SpriteError,
 )
-from .skills_install import build_skills_install_command
-from .specs import RepoSpec, SessionSpec
-from .stage_events import (
+from agent_on_demand.session_service.errors import ProvisionError
+from agent_on_demand.session_service.specs import RepoSpec, SessionSpec
+
+from .env_file import build_env_file_body
+from .events import (
     STAGE_ENV_FILE,
     STAGE_GIT_CREDENTIALS,
     STAGE_INSTALL_RUNTIME,
@@ -42,6 +31,21 @@ from .stage_events import (
     STAGE_SKILLS,
     stage_timer,
 )
+from .git_credentials import build_git_credentials_lines
+from .network_policy import build_network_policy
+from .script import (
+    ENV_FILE_PATH,
+    GIT_CREDS_PATH,
+    PROVISION_SCRIPT_PATH,
+    build_provision_script,
+)
+from .skills_install import build_skills_install_command
+
+# `SpriteError` is retained as a defensive catch alongside `BackendError` —
+# runtime methods now route through the `SessionHandle` Protocol (which
+# translates `SpriteError` → `BackendError` at the adapter boundary), but
+# tests assert that a `SpriteError` raised directly by a mocked runtime
+# impl is still tagged with the correct provisioning stage.
 
 __all__ = [
     "apply_network_policy",

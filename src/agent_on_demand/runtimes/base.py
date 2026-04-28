@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Literal, Protocol
 
 if TYPE_CHECKING:
-    from agent_on_demand.session_service.backend import SessionHandle
+    from agent_on_demand.session_service.backends import SessionHandle
     from agent_on_demand.session_service.specs import McpServerSpec, SessionSpec
 
 

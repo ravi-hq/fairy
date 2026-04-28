@@ -1,11 +1,11 @@
 """Session provisioning — orchestrator that creates a backend handle and dispatches
-to the per-stage helpers in `provisioning_stages.py`.
+to the per-stage helpers in `stages.py`.
 
 Each backend `make_command()` round trip costs ~5s of WebSocket-layer overhead
 regardless of what it runs, so the provisioning flow is shaped to minimize
-the number of commands. See `provisioning_stages.py` for the per-stage I/O
-and `provision_script.py` for the combined bash script that folds the
-expensive shell work into a single round trip.
+the number of commands. See `stages.py` for the per-stage I/O and `script.py`
+for the combined bash script that folds the expensive shell work into a
+single round trip.
 """
 
 from __future__ import annotations
@@ -14,19 +14,21 @@ import logging
 
 from agent_on_demand.observability import get_tracer
 
-from .backend import BackendError, SessionHandle
-from .client import best_effort_delete, require_client
-from .errors import ProvisionError
+from agent_on_demand.session_service.backends import (
+    BackendError,
+    SessionHandle,
+    SpriteError,
+)
+from agent_on_demand.session_service.client import best_effort_delete, require_client
+from agent_on_demand.session_service.errors import ProvisionError
+from agent_on_demand.session_service.specs import SessionSpec
 
-# Transitional: catches a `SpriteError` that leaked from a stage helper
-# whose internal `try/except` did not yet wrap it. Removed once
-# runtimes (PR 3) and the threading core (PR 4) are on the Protocol.
-from .sprites_backend import SpriteError
+from .events import STAGE_CREATE_SPRITE, stage_timer
 
 # Re-exported so call-sites in `provision_session` resolve through this
-# module's namespace — that lets tests patch e.g. `provisioning.install_runtime`
-# to inject failures without reaching into `provisioning_stages` directly.
-from .provisioning_stages import (
+# module's namespace — that lets tests patch e.g. `orchestrator.install_runtime`
+# to inject failures without reaching into `stages` directly.
+from .stages import (
     apply_network_policy,
     install_runtime,
     run_provision_setup,
@@ -35,8 +37,6 @@ from .provisioning_stages import (
     write_runtime_config,
     write_skills,
 )
-from .specs import SessionSpec
-from .stage_events import STAGE_CREATE_SPRITE, stage_timer
 
 logger = logging.getLogger(__name__)
 
@@ -99,7 +99,7 @@ def provision_session(user, spec: SessionSpec, session_id: str | None = None) ->
 
 def resume_session(user, sprite_name: str) -> SessionHandle:
     """Look up the backend handle backing an existing session."""
-    from .errors import SessionHandleNotFound
+    from agent_on_demand.session_service.errors import SessionHandleNotFound
 
     client = require_client(user)
     try:
@@ -112,7 +112,7 @@ def destroy_session(user, sprite_name: str) -> None:
     """Destroy the backend session. Best-effort — logs on failure but never raises."""
     if not sprite_name:
         return
-    from .client import get_client
+    from agent_on_demand.session_service.client import get_client
 
     client = get_client(user)
     if client is None:

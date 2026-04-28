@@ -46,9 +46,14 @@ from agent_on_demand.models import (
 from agent_on_demand.observability import get_tracer
 
 from .errors import NoBackendCredentialsError, ProvisionError, SessionHandleNotFound
-from .provisioning import destroy_session, provision_session, resume_session
+from .provisioning import (
+    STAGE_RUNTIME_START,
+    destroy_session,
+    emit_stage_event,
+    provision_session,
+    resume_session,
+)
 from .spec_factory import build_spec_for_session
-from .stage_events import STAGE_RUNTIME_START, emit_stage_event
 from .turn_argv import build_turn_argv
 from .turn_outcome import compute_final_status
 

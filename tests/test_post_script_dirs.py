@@ -18,7 +18,7 @@ duck-typed via ``SimpleNamespace``.
 
 from types import SimpleNamespace
 
-from agent_on_demand.session_service.post_script_dirs import (
+from agent_on_demand.session_service.provisioning.post_script_dirs import (
     directories_for_post_script_writes,
 )
 

@@ -1,8 +1,20 @@
-"""Owns the Sprites client lifecycle and session orchestration.
+"""Session execution orchestration over a swappable backend.
 
-Views, signals, and other callers should go through this package instead of
-calling `sprites.*` primitives directly. All coupling to Sprites lives here,
-so it can later be placed behind a Protocol without touching the call sites.
+Views, signals, and other callers should go through this package instead
+of touching backend SDKs directly. The package layout:
+
+- ``backends/`` — the `Backend` Protocol and concrete adapters (Sprites
+  today; Modal/Fly Machines in future PRs). All coupling to backend SDKs
+  is confined here.
+- ``provisioning/`` — the orchestrator (`provision_session`, `resume_session`,
+  `destroy_session`), per-stage helpers, and the pure script-building
+  functions that compose the bash payload run on the backend.
+- ``client.py`` — credential lookup + `Backend.create_client` glue.
+- ``specs.py`` / ``spec_factory.py`` — backend-neutral session spec types
+  and the ORM → spec hydration path.
+- ``turn.py`` / ``tasks.py`` / ``turn_argv.py`` / ``turn_outcome.py`` —
+  per-turn execution: enqueue, Procrastinate task body, argv builder,
+  and outcome resolution.
 """
 
 from .client import get_client

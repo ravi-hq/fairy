@@ -7,7 +7,7 @@ from agent_on_demand.runtimes.opencode_command import build_opencode_command
 from agent_on_demand.runtimes.opencode_config import render_opencode_mcp_config
 
 if TYPE_CHECKING:
-    from agent_on_demand.session_service.backend import SessionHandle
+    from agent_on_demand.session_service.backends import SessionHandle
     from agent_on_demand.session_service.specs import McpServerSpec, SessionSpec
 
 

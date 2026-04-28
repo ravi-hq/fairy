@@ -24,7 +24,7 @@ from typing import Any, BinaryIO
 
 from sprites import SpriteError
 
-from agent_on_demand.session_service.backend import (
+from agent_on_demand.session_service.backends.base import (
     BackendError,
     Command,
     NetworkPolicy,

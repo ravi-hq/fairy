@@ -2,9 +2,8 @@ import logging
 
 from agent_on_demand.models import UserBackendCredential, UserSpritesKey
 
-from .backend import BackendClient, BackendError
+from .backends import BackendClient, BackendError, get_backend
 from .errors import NoBackendCredentialsError
-from .registry import get_backend
 
 logger = logging.getLogger(__name__)
 

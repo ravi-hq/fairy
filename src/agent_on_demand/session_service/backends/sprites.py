@@ -21,7 +21,7 @@ from typing import Any, BinaryIO
 import sprites
 from django.conf import settings
 
-from .backend import (
+from .base import (
     BackendClient,
     BackendError,
     Command,

@@ -1,7 +1,7 @@
 """Recording fakes for the Backend Protocol, for use in unit tests.
 
 Mirrors the recording style of `tests/fakes/sprite.py` but conforms to
-the Protocol in `agent_on_demand.session_service.backend`. Tests assert
+the Protocol in `agent_on_demand.session_service.backends.base`. Tests assert
 on `.writes`, `.commands`, and `.network_policies` lists.
 """
 
@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, BinaryIO, Callable
 
-from agent_on_demand.session_service.backend import (
+from agent_on_demand.session_service.backends.base import (
     BackendClient,
     Command,
     NetworkPolicy,
