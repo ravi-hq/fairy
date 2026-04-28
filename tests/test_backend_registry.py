@@ -87,28 +87,13 @@ def test_get_client_default_backend_is_sprites(mocker):
     from agent_on_demand.session_service import client as client_module
 
     user = mocker.MagicMock()
-    user.sprites_key.get_api_key.return_value = "tok"
     fake = mocker.MagicMock()
     get_backend_mock = mocker.patch.object(client_module, "get_backend", return_value=fake)
+    # PR 8 introduced `_lookup_token` which hits the ORM. Stub it so this
+    # test stays focused on the dispatch — the credential paths are
+    # exercised in `tests/test_user_backend_credential.py`.
+    mocker.patch.object(client_module, "_lookup_token", return_value=None)
 
     client_module.get_client(user)
 
     get_backend_mock.assert_called_once_with("sprites")
-
-
-def test_get_client_rejects_non_sprites_backends_until_pr8(mocker):
-    """Until PR 8 generalizes `UserSpritesKey` → `UserBackendCredential`,
-    only the sprites backend has a credential model. `get_client(user,
-    backend!="sprites")` must fail fast with a clear `NoBackendCredentials`
-    error rather than silently pass a Sprites token to a foreign backend
-    and produce a confusing downstream auth failure."""
-    from agent_on_demand.session_service.client import get_client
-    from agent_on_demand.session_service.errors import NoBackendCredentialsError
-
-    user = mocker.MagicMock()
-    with pytest.raises(NoBackendCredentialsError) as exc:
-        get_client(user, backend="modal")
-    msg = str(exc.value)
-    assert "modal" in msg
-    # No credential lookup should happen for unknown backends.
-    user.sprites_key.get_api_key.assert_not_called()
