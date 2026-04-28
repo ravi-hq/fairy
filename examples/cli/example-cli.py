@@ -29,8 +29,8 @@ from aod.pretty.claude import ClaudeFormatter
 
 AGENT: dict[str, Any] = {
     "name": "example-cli",
-    "model": "claude-sonnet-4-6",
-    "runtime": "claude-oauth",
+    "model": "anthropic/claude-sonnet-4-6",
+    "runtime": "claude",
     "system": (
         "You are a senior engineer working inside a Sprite sandbox. "
         "Investigate thoroughly before editing. Keep changes minimal and "
