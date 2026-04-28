@@ -131,6 +131,16 @@ def _provision_session_inner(
             logger.warning("provision failed at stage=%s: %s", e.stage, e)
             _mark_provision_failed(session, turn_id, str(e))
             return
+        except Exception as e:
+            # Without this, an unexpected error (Sprites SDK fault, DB
+            # blip, anything other than the two typed errors above)
+            # propagates out and Procrastinate marks the job failed —
+            # but the session row stays `pending` forever. The API
+            # client polls a session that will never complete.
+            span.set_attribute("aod.failure_stage", "unexpected")
+            logger.exception("unexpected provision failure for session %s", session_id)
+            _mark_provision_failed(session, turn_id, f"unexpected error: {e}")
+            raise
 
     execute_turn.defer(
         session_id=session_id,
