@@ -85,18 +85,22 @@
 
     <section class="landing-container landing-code">
       <div class="section-head">
-        <h2>Five lines. One session.</h2>
-        <p class="muted">The whole API fits on a postcard. Create it, prompt it, stream it.</p>
+        <h2>Three calls. One session.</h2>
+        <p class="muted">The whole API fits on a napkin. Create it, prompt it, stream it.</p>
       </div>
 <pre class="code-block"><span class="c-mute"># 1. Create an agent (runtime + model)</span>
 <span class="c-cmd">curl -X POST https://aod.ravi.id/agents</span> \
   -H <span class="c-str">"Authorization: Bearer $AOD_KEY"</span> \
   -d <span class="c-str">'{"name":"refactor-bot","model":"anthropic/claude-sonnet-4-6","runtime":"claude"}'</span>
 
-<span class="c-mute"># 2. Start a session and stream the output</span>
-<span class="c-cmd">curl -N https://aod.ravi.id/sessions</span> \
+<span class="c-mute"># 2. Start a session</span>
+<span class="c-cmd">curl -X POST https://aod.ravi.id/sessions</span> \
   -H <span class="c-str">"Authorization: Bearer $AOD_KEY"</span> \
-  -d <span class="c-str">'{"agent_id":"…","environment_id":"…","prompt":"refactor payments.py"}'</span>
+  -d <span class="c-str">'{"agent_id":"&lt;id&gt;","prompt":"refactor payments.py"}'</span>
+
+<span class="c-mute"># 3. Stream the output (SSE)</span>
+<span class="c-cmd">curl -N https://aod.ravi.id/sessions/&lt;id&gt;/stream</span> \
+  -H <span class="c-str">"Authorization: Bearer $AOD_KEY"</span>
 </pre>
     </section>
 
