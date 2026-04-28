@@ -1,10 +1,5 @@
-"""Tests for UserBackendCredential model, the migration backfill, and the
-backend-aware `get_client` lookup.
-
-The credential migration is a cryptographic operation — we move ciphertext
-between tables without touching `FIELD_ENCRYPTION_KEY`. The round-trip test
-proves the copy preserves the bytes Fernet expects.
-"""
+"""Tests for UserBackendCredential model and the backend-aware `get_client`
+lookup."""
 
 from __future__ import annotations
 
@@ -13,7 +8,7 @@ from django.contrib.auth.models import User
 from django.db import IntegrityError
 from django.test import Client
 
-from agent_on_demand.models import UserBackendCredential, UserSpritesKey
+from agent_on_demand.models import UserBackendCredential
 from agent_on_demand.session_service.client import get_client, require_client
 from agent_on_demand.session_service.errors import NoBackendCredentialsError
 
@@ -57,52 +52,6 @@ def test_user_backend_credential_str_includes_user_and_backend(user):
     assert "sprites" in s
 
 
-# --- Migration backfill: every UserSpritesKey becomes a sprites-backend
-# UserBackendCredential, with ciphertext preserved bit-for-bit. We exercise
-# the data migration's RunPython directly against historical models so the
-# test doesn't depend on whether the migration has already been applied to
-# the per-test schema. ---
-
-
-def _backfill_function():
-    from importlib import import_module
-
-    module = import_module("agent_on_demand.migrations.0019_user_backend_credential")
-    return module.backfill_sprites_credentials
-
-
-@pytest.mark.django_db
-def test_migration_backfill_copies_every_sprites_key():
-    users = [User.objects.create_user(username=f"backfill{i}", password="p") for i in range(3)]
-    raw_tokens = ["alpha-token", "beta-token", "gamma-token"]
-    for u, raw in zip(users, raw_tokens, strict=True):
-        usk = UserSpritesKey(user=u)
-        usk.set_api_key(raw)
-        usk.save()
-
-    UserBackendCredential.objects.all().delete()
-
-    class _Apps:
-        @staticmethod
-        def get_model(app_label, model_name):
-            assert app_label == "fairy"
-            return {
-                "UserSpritesKey": UserSpritesKey,
-                "UserBackendCredential": UserBackendCredential,
-            }[model_name]
-
-    _backfill_function()(_Apps(), schema_editor=None)
-
-    assert UserBackendCredential.objects.count() == len(users)
-    for u, raw in zip(users, raw_tokens, strict=True):
-        cred = UserBackendCredential.objects.get(user=u, backend="sprites")
-        # Ciphertext is identical to the source row — same Fernet key, no
-        # re-encryption.
-        assert bytes(cred.encrypted_token) == bytes(u.sprites_key.encrypted_key)
-        # And it round-trips to the original plaintext.
-        assert cred.get_token() == raw
-
-
 # --- get_client(user, backend) ---
 
 
@@ -127,24 +76,6 @@ def test_get_client_uses_user_backend_credential(user, mocker):
 
     assert result == "dummy-client"
     create.assert_called_once_with("from-new-table")
-
-
-def test_get_client_falls_back_to_user_sprites_key(user, mocker):
-    """Pre-backfill window: a UserSpritesKey row exists but no
-    UserBackendCredential row does. The client must fall back so users don't
-    lose access between deploy and migration completion."""
-    usk = UserSpritesKey(user=user)
-    usk.set_api_key("from-legacy-table")
-    usk.save()
-
-    create = mocker.patch(
-        "agent_on_demand.session_service.backends.sprites.SpritesBackend.create_client",
-        return_value="dummy-client",
-    )
-    result = get_client(user)
-
-    assert result == "dummy-client"
-    create.assert_called_once_with("from-legacy-table")
 
 
 def test_get_client_unknown_backend_raises(user):

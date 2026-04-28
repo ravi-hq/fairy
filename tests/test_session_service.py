@@ -15,8 +15,8 @@ from agent_on_demand.models import (
     AgentSession,
     AgentSessionLog,
     Environment,
+    UserBackendCredential,
     UserCredential,
-    UserSpritesKey,
 )
 from agent_on_demand.runtimes import RUNTIMES
 from agent_on_demand.session_service import (
@@ -30,9 +30,9 @@ from agent_on_demand.session_service.specs import SkillSpec
 @pytest.fixture
 def user(db):
     u = User.objects.create_user(username="svc", password="p")
-    usk = UserSpritesKey(user=u)
-    usk.set_api_key("fake-sprites-token")
-    usk.save()
+    bcred = UserBackendCredential(user=u, backend="sprites")
+    bcred.set_token("fake-sprites-token")
+    bcred.save()
     cred = UserCredential(user=u, kind="provider:anthropic")
     cred.set_value("sk-xxx")
     cred.save()

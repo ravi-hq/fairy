@@ -1,6 +1,6 @@
 import logging
 
-from agent_on_demand.models import UserBackendCredential, UserSpritesKey
+from agent_on_demand.models import UserBackendCredential
 
 from .backends import BackendClient, BackendError, get_backend
 from .errors import NoBackendCredentialsError
@@ -12,18 +12,8 @@ def _lookup_token(user, backend: str) -> str | None:
     try:
         cred = UserBackendCredential.objects.get(user=user, backend=backend)
     except UserBackendCredential.DoesNotExist:
-        cred = None
-    if cred is not None:
-        return cred.get_token()
-    # Fallback covers the deploy window between this PR landing and the
-    # backfill RunPython completing, plus any new `UserSpritesKey` rows
-    # written through the legacy admin/UI before the follow-up PR drops them.
-    if backend == "sprites":
-        try:
-            return user.sprites_key.get_api_key()
-        except UserSpritesKey.DoesNotExist:
-            return None
-    return None
+        return None
+    return cred.get_token()
 
 
 def get_client(user, backend: str = "sprites") -> BackendClient | None:

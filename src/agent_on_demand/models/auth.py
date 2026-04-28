@@ -88,27 +88,6 @@ class UserCredential(models.Model):
             return None
 
 
-class UserSpritesKey(models.Model):
-    user = models.OneToOneField(
-        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="sprites_key"
-    )
-    encrypted_key = models.BinaryField()
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        db_table = "user_sprites_keys"
-
-    def __str__(self):
-        return f"{self.user} — sprites"
-
-    def set_api_key(self, raw_key: str):
-        self.encrypted_key = encrypt(raw_key)
-
-    def get_api_key(self) -> str:
-        return decrypt(bytes(self.encrypted_key))
-
-
 class UserBackendCredential(models.Model):
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,

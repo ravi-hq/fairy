@@ -7,7 +7,7 @@ from agent_on_demand.models import (
     AgentSession,
     APIKey,
     Environment,
-    UserSpritesKey,
+    UserBackendCredential,
 )
 
 
@@ -70,7 +70,8 @@ def test_register_provisions_sprites_key_and_api_key(client: Client):
     assert resp.url == "/ui/welcome"
 
     charlie = User.objects.get(username="charlie")
-    assert UserSpritesKey.objects.get(user=charlie).get_api_key() == "sprites-token-xyz"
+    cred = UserBackendCredential.objects.get(user=charlie, backend="sprites")
+    assert cred.get_token() == "sprites-token-xyz"
     assert APIKey.objects.filter(user=charlie, is_active=True).count() == 1
 
 
@@ -164,9 +165,9 @@ def test_dashboard_flags_missing_sprites_key(logged_in_client):
 
 @pytest.mark.django_db
 def test_dashboard_hides_warning_when_key_set(logged_in_client, user):
-    usk = UserSpritesKey(user=user)
-    usk.set_api_key("some-token")
-    usk.save()
+    cred = UserBackendCredential(user=user, backend="sprites")
+    cred.set_token("some-token")
+    cred.save()
     resp = logged_in_client.get("/ui/")
     assert resp.status_code == 200
     assert b"don't have a Sprites API token" not in resp.content
@@ -176,14 +177,14 @@ def test_dashboard_hides_warning_when_key_set(logged_in_client, user):
 def test_sprites_key_create_and_rotate(logged_in_client, user):
     resp = logged_in_client.post("/ui/sprites-key", data={"api_key": "first-token"})
     assert resp.status_code == 302
-    usk = UserSpritesKey.objects.get(user=user)
-    assert usk.get_api_key() == "first-token"
+    cred = UserBackendCredential.objects.get(user=user, backend="sprites")
+    assert cred.get_token() == "first-token"
 
     resp = logged_in_client.post("/ui/sprites-key", data={"api_key": "rotated-token"})
     assert resp.status_code == 302
-    usk.refresh_from_db()
-    assert usk.get_api_key() == "rotated-token"
-    assert UserSpritesKey.objects.filter(user=user).count() == 1
+    cred.refresh_from_db()
+    assert cred.get_token() == "rotated-token"
+    assert UserBackendCredential.objects.filter(user=user, backend="sprites").count() == 1
 
 
 @pytest.mark.django_db

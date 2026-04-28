@@ -20,8 +20,8 @@ from agent_on_demand.models import (
     AgentSession,
     APIKey,
     SessionTurn,
+    UserBackendCredential,
     UserCredential,
-    UserSpritesKey,
 )
 
 
@@ -38,10 +38,10 @@ def auth_headers(user):
 
 @pytest.fixture
 def sprites_key(user):
-    usk = UserSpritesKey(user=user)
-    usk.set_api_key("fake-sprites")
-    usk.save()
-    return usk
+    cred = UserBackendCredential(user=user, backend="sprites")
+    cred.set_token("fake-sprites")
+    cred.save()
+    return cred
 
 
 @pytest.fixture
@@ -227,9 +227,9 @@ def test_send_prompt_to_failed_session_rejected(client, auth_headers, user):
 
 
 @pytest.mark.django_db
-def test_send_prompt_without_sprites_key_returns_400(client, auth_headers, user):
-    """A user with a `completed` session but no UserSpritesKey hits the
-    `NoBackendCredentialsError` branch synchronously: `resume_session` →
+def test_send_prompt_without_backend_credential_returns_400(client, auth_headers, user):
+    """A user with a `completed` session but no UserBackendCredential hits
+    the `NoBackendCredentialsError` branch synchronously: `resume_session` →
     `require_client` (session_service/client.py) raises before the view
     ever returns, so the 400 path runs entirely in the request thread —
     there is no worker dispatch involved. Without this branch, the SDK

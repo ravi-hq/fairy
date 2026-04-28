@@ -195,13 +195,13 @@ def test_destroy_session_round_trip_through_fake_backend(fake_backend):
     Protocol that PR 2 already drives end-to-end."""
     from django.contrib.auth.models import User
 
-    from agent_on_demand.models import UserSpritesKey
+    from agent_on_demand.models import UserBackendCredential
     from agent_on_demand.session_service.provisioning import destroy_session
 
     user = User.objects.create_user(username="bk-rt", password="p")
-    usk = UserSpritesKey(user=user)
-    usk.set_api_key("token")
-    usk.save()
+    cred = UserBackendCredential(user=user, backend="sprites")
+    cred.set_token("token")
+    cred.save()
 
     destroy_session(user, "session-xyz")
     assert fake_backend.deleted == ["session-xyz"]

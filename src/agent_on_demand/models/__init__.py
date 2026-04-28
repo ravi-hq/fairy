@@ -3,7 +3,6 @@ from agent_on_demand.models.auth import (
     APIKey,
     UserBackendCredential,
     UserCredential,
-    UserSpritesKey,
 )
 from agent_on_demand.models.environments import Environment, EnvironmentVersion
 from agent_on_demand.models.quota import UserQuota
@@ -27,5 +26,4 @@ __all__ = [
     "UserBackendCredential",
     "UserQuota",
     "UserCredential",
-    "UserSpritesKey",
 ]

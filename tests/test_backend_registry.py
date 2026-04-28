@@ -61,13 +61,13 @@ def test_get_client_routes_through_registry(mocker):
     `SpritesBackend()` is caught."""
     from django.contrib.auth.models import User
 
-    from agent_on_demand.models import UserSpritesKey
+    from agent_on_demand.models import UserBackendCredential
     from agent_on_demand.session_service.client import get_client
 
     user = User.objects.create_user(username="be-sel", password="x")
-    UserSpritesKey.objects.create(user=user)
-    user.sprites_key.set_api_key("fake-token")
-    user.sprites_key.save()
+    cred = UserBackendCredential(user=user, backend="sprites")
+    cred.set_token("fake-token")
+    cred.save()
 
     fake_backend = mocker.MagicMock()
     fake_backend.create_client.return_value = mocker.sentinel.client
