@@ -10,8 +10,8 @@ of touching backend SDKs directly. The package layout:
   `destroy_session`), per-stage helpers, and the pure script-building
   functions that compose the bash payload run on the backend.
 - ``client.py`` — credential lookup + `Backend.create_client` glue.
-- ``specs.py`` / ``spec_factory.py`` — backend-neutral session spec types
-  and the ORM → spec hydration path.
+- ``specs/`` — backend-neutral session spec types (`types.py`) and the
+  ORM → spec hydration path (`factory.py`).
 - ``turn.py`` / ``tasks.py`` / ``turn_argv.py`` / ``turn_outcome.py`` —
   per-turn execution: enqueue, Procrastinate task body, argv builder,
   and outcome resolution.

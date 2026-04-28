@@ -27,7 +27,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .specs import RepoSpec
+    from agent_on_demand.session_service.specs import RepoSpec
 
 
 def build_git_credentials_lines(repos: list["RepoSpec"]) -> list[str]:
