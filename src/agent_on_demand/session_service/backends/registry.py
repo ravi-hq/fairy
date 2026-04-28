@@ -15,8 +15,8 @@ from __future__ import annotations
 
 from functools import cache
 
-from .backend import Backend
-from .sprites_backend import SpritesBackend
+from .base import Backend
+from .sprites import SpritesBackend
 
 
 @cache

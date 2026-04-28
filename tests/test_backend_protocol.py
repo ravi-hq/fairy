@@ -9,13 +9,13 @@ from unittest.mock import MagicMock
 import pytest
 import sprites
 
-from agent_on_demand.session_service.backend import (
+from agent_on_demand.session_service.backends.base import (
     BackendError,
     NetworkPolicy,
     PolicyRule,
     SessionNotFoundError,
 )
-from agent_on_demand.session_service.sprites_backend import (
+from agent_on_demand.session_service.backends.sprites import (
     SpritesBackend,
     _SpritesBackendClient,
     _SpritesCommand,
@@ -229,7 +229,7 @@ def test_apply_network_policy_translates_other_sprite_errors():
 def test_sprites_backend_create_client_uses_settings_base_url(mocker, settings):
     settings.SPRITES_BASE_URL = "https://api.example.test"
     constructor = mocker.patch(
-        "agent_on_demand.session_service.sprites_backend.sprites.SpritesClient"
+        "agent_on_demand.session_service.backends.sprites.sprites.SpritesClient"
     )
     SpritesBackend().create_client("token-abc")
     constructor.assert_called_once_with(token="token-abc", base_url="https://api.example.test")

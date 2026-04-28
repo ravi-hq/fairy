@@ -25,7 +25,7 @@ runner) can execute them. ``RepoSpec`` is duck-typed via
 
 from types import SimpleNamespace
 
-from agent_on_demand.session_service.git_credentials import build_git_credentials_lines
+from agent_on_demand.session_service.provisioning.git_credentials import build_git_credentials_lines
 
 
 def _repo(token):

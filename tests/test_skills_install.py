@@ -19,7 +19,7 @@ Tests are sync, no Django imports — required so hammett (mutmut's
 runner) can execute them.
 """
 
-from agent_on_demand.session_service.skills_install import build_skills_install_command
+from agent_on_demand.session_service.provisioning.skills_install import build_skills_install_command
 
 
 # ---------- exact full-string equality (anchor tests) ----------

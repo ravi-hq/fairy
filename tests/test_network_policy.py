@@ -19,8 +19,8 @@ runner) can execute them. ``Environment`` is duck-typed via
 
 from types import SimpleNamespace
 
-from agent_on_demand.session_service.backend import NetworkPolicy, PolicyRule
-from agent_on_demand.session_service.network_policy import build_network_policy
+from agent_on_demand.session_service.backends.base import NetworkPolicy, PolicyRule
+from agent_on_demand.session_service.provisioning.network_policy import build_network_policy
 
 
 def _env(networking_type="limited", networking_config=None):

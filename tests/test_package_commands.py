@@ -17,7 +17,7 @@ hammett (mutmut's runner) can execute them.
 
 import pytest
 
-from agent_on_demand.session_service.package_commands import (
+from agent_on_demand.session_service.provisioning.package_commands import (
     PACKAGE_MANAGER_ORDER,
     package_commands,
 )

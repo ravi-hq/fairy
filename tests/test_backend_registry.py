@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import pytest
 
-from agent_on_demand.session_service.registry import _build_backends, get_backend
-from agent_on_demand.session_service.sprites_backend import SpritesBackend
+from agent_on_demand.session_service.backends.registry import _build_backends, get_backend
+from agent_on_demand.session_service.backends.sprites import SpritesBackend
 
 
 def test_sprites_is_registered():

@@ -7,7 +7,7 @@ from agent_on_demand.runtimes.gemini_command import build_gemini_command
 from agent_on_demand.runtimes.gemini_config import render_gemini_mcp_config
 
 if TYPE_CHECKING:
-    from agent_on_demand.session_service.backend import SessionHandle
+    from agent_on_demand.session_service.backends import SessionHandle
     from agent_on_demand.session_service.specs import McpServerSpec, SessionSpec
 
 

@@ -23,7 +23,7 @@ duck-typed via ``SimpleNamespace``.
 
 from types import SimpleNamespace
 
-from agent_on_demand.session_service.env_file import build_env_file_body
+from agent_on_demand.session_service.provisioning.env_file import build_env_file_body
 
 
 def _spec(runtime_session_id=None, model="", environment=None):

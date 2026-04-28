@@ -18,7 +18,7 @@ from agent_on_demand.models import (
     UserSpritesKey,
 )
 from agent_on_demand.models.auth import CREDENTIAL_ENV_VAR
-from agent_on_demand.session_service.backend import BackendClient, BackendError
+from agent_on_demand.session_service.backends import BackendClient, BackendError
 
 
 class APIKeyInline(admin.TabularInline):

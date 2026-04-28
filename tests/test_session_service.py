@@ -280,9 +280,9 @@ class TestProvisionSessionFailureHandling:
 
         Reaches the branch by patching one of the helpers (`install_runtime`)
         to raise SpriteError directly, bypassing its own wrapper."""
-        from agent_on_demand.session_service import provisioning
+        from agent_on_demand.session_service.provisioning import orchestrator
 
-        mocker.patch.object(provisioning, "install_runtime", side_effect=SpriteError("unwrapped"))
+        mocker.patch.object(orchestrator, "install_runtime", side_effect=SpriteError("unwrapped"))
 
         with pytest.raises(ProvisionError) as ei:
             provision_session(user, _spec(user))
@@ -561,7 +561,7 @@ class TestProvisionSkills:
         # write_skills only reads `runtime.skills_sh_agent` and the skill
         # source; no credentials or env setup are needed, so call it directly
         # instead of running full provision_session.
-        from agent_on_demand.session_service.provisioning_stages import write_skills
+        from agent_on_demand.session_service.provisioning.stages import write_skills
         from tests.fakes.sprite import RecordingSprite
 
         sprite = RecordingSprite("s")

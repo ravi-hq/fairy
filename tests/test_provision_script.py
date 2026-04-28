@@ -19,7 +19,7 @@ duck-typed via ``SimpleNamespace``.
 
 from types import SimpleNamespace
 
-from agent_on_demand.session_service.provision_script import (
+from agent_on_demand.session_service.provisioning.script import (
     ENV_FILE_PATH,
     GIT_CREDS_PATH,
     PROVISION_SCRIPT_PATH,

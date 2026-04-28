@@ -5,7 +5,7 @@ from django.contrib.auth.models import User
 from django.test import Client
 from sprites import SpriteError
 
-from agent_on_demand.session_service.backend import NetworkPolicy, PolicyRule
+from agent_on_demand.session_service.backends.base import NetworkPolicy, PolicyRule
 
 from agent_on_demand.models import (
     Agent,

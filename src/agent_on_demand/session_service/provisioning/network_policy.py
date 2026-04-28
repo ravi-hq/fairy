@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from .backend import NetworkPolicy, PolicyRule
+from agent_on_demand.session_service.backends import NetworkPolicy, PolicyRule
 
 if TYPE_CHECKING:
     from agent_on_demand.models import Environment

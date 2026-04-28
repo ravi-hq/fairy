@@ -108,7 +108,7 @@ def test_migration_backfill_copies_every_sprites_key():
 
 def test_get_client_returns_none_when_no_credential(user, mocker):
     mocker.patch(
-        "agent_on_demand.session_service.sprites_backend.SpritesBackend.create_client",
+        "agent_on_demand.session_service.backends.sprites.SpritesBackend.create_client",
         return_value="dummy-client",
     )
     assert get_client(user) is None
@@ -120,7 +120,7 @@ def test_get_client_uses_user_backend_credential(user, mocker):
     cred.save()
 
     create = mocker.patch(
-        "agent_on_demand.session_service.sprites_backend.SpritesBackend.create_client",
+        "agent_on_demand.session_service.backends.sprites.SpritesBackend.create_client",
         return_value="dummy-client",
     )
     result = get_client(user)
@@ -138,7 +138,7 @@ def test_get_client_falls_back_to_user_sprites_key(user, mocker):
     usk.save()
 
     create = mocker.patch(
-        "agent_on_demand.session_service.sprites_backend.SpritesBackend.create_client",
+        "agent_on_demand.session_service.backends.sprites.SpritesBackend.create_client",
         return_value="dummy-client",
     )
     result = get_client(user)
