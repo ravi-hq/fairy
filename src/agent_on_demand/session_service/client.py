@@ -1,14 +1,24 @@
 import logging
+from functools import cache
 
 from agent_on_demand.models import UserSpritesKey
 
-from .backend import BackendClient, BackendError
+from .backend import Backend, BackendClient, BackendError
 from .errors import NoSpritesKeyError
 from .sprites_backend import SpritesBackend
 
 logger = logging.getLogger(__name__)
 
-_BACKEND = SpritesBackend()
+
+@cache
+def _backend() -> Backend:
+    """Lazily construct the backend singleton.
+
+    `SpritesBackend.__init__` applies a websocket close-timeout monkeypatch
+    on first instantiation, so we defer construction until the first
+    `get_client` call rather than running at import time.
+    """
+    return SpritesBackend()
 
 
 def get_client(user) -> BackendClient | None:
@@ -20,7 +30,7 @@ def get_client(user) -> BackendClient | None:
         token = user.sprites_key.get_api_key()
     except UserSpritesKey.DoesNotExist:
         return None
-    return _BACKEND.create_client(token)
+    return _backend().create_client(token)
 
 
 def require_client(user) -> BackendClient:

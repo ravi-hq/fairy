@@ -113,6 +113,11 @@ class _BackendCommandAdapter:
         pass
 
     def set_output(self, stdout: BinaryIO, stderr: BinaryIO) -> None:
+        # The legacy `_CommandHandle` only models stderr capture (the only
+        # field the existing `raise_on(..., stderr=...)` predicate writes
+        # to). stdout is recorded as argv via `RecordedCommand.argv` in
+        # the recorder; passing a real stdout buffer here is harmless but
+        # nothing populates it. Production always passes `io.BytesIO()`.
         self._handle.stderr = stderr
 
     def run(self) -> int:
