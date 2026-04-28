@@ -15,7 +15,7 @@ from __future__ import annotations
 from agent_on_demand.models import AgentSession
 from agent_on_demand.runtimes import RUNTIMES
 
-from .specs import McpServerSpec, RepoSpec, SessionSpec, SkillSpec
+from .types import McpServerSpec, RepoSpec, SessionSpec, SkillSpec
 
 
 def build_spec_for_session(session: AgentSession) -> SessionSpec:

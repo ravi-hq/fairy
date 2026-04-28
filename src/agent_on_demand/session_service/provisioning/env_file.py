@@ -14,7 +14,7 @@ import shlex
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .specs import SessionSpec
+    from agent_on_demand.session_service.specs import SessionSpec
 
 
 def build_env_file_body(spec: "SessionSpec", credentials: list[tuple[str, str]]) -> str:

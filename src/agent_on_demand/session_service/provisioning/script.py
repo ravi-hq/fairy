@@ -41,7 +41,7 @@ from .package_commands import PACKAGE_MANAGER_ORDER, package_commands
 from .post_script_dirs import directories_for_post_script_writes
 
 if TYPE_CHECKING:
-    from .specs import SessionSpec
+    from agent_on_demand.session_service.specs import SessionSpec
 
 
 # Paths inside the single-tenant Sprite VM, not the host — B108 doesn't apply.

@@ -53,7 +53,7 @@ from .provisioning import (
     provision_session,
     resume_session,
 )
-from .spec_factory import build_spec_for_session
+from .specs import build_spec_for_session
 from .turn_argv import build_turn_argv
 from .turn_outcome import compute_final_status
 

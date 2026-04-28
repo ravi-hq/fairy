@@ -21,7 +21,7 @@ from django.contrib.auth.models import User
 
 from agent_on_demand.models import Agent, AgentSession, Environment, SessionResource
 from agent_on_demand.runtimes import RUNTIMES
-from agent_on_demand.session_service.spec_factory import build_spec_for_session
+from agent_on_demand.session_service.specs import build_spec_for_session
 
 
 @pytest.fixture
