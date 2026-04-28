@@ -1,6 +1,6 @@
 import logging
 
-from agent_on_demand.models import UserSpritesKey
+from agent_on_demand.models import UserBackendCredential, UserSpritesKey
 
 from .backend import BackendClient, BackendError
 from .errors import NoBackendCredentialsError
@@ -9,29 +9,39 @@ from .registry import get_backend
 logger = logging.getLogger(__name__)
 
 
+def _lookup_token(user, backend: str) -> str | None:
+    try:
+        cred = UserBackendCredential.objects.get(user=user, backend=backend)
+    except UserBackendCredential.DoesNotExist:
+        cred = None
+    if cred is not None:
+        return cred.get_token()
+    # Fallback covers the deploy window between this PR landing and the
+    # backfill RunPython completing, plus any new `UserSpritesKey` rows
+    # written through the legacy admin/UI before the follow-up PR drops them.
+    if backend == "sprites":
+        try:
+            return user.sprites_key.get_api_key()
+        except UserSpritesKey.DoesNotExist:
+            return None
+    return None
+
+
 def get_client(user, backend: str = "sprites") -> BackendClient | None:
     """Build a backend client from the caller's stored token.
 
-    Returns None when the user has no token configured. The backend
-    discriminator selects which `Backend` implementation in the registry
-    creates the per-user client.
+    Returns None when the user has no token configured for `backend`.
+    Raises `NoBackendCredentialsError` if `backend` is not a registered
+    backend — that's a programmer error, not a credential gap.
     """
-    # Until PR 8 generalizes `UserSpritesKey` → `UserBackendCredential`
-    # keyed on (user, backend), only the sprites backend has a stored
-    # credential model. Reject other backends explicitly so the boundary
-    # fails fast at the credential layer instead of silently passing a
-    # Sprites token to (e.g.) a Modal client and producing a confusing
-    # downstream auth error.
-    if backend != "sprites":
-        raise NoBackendCredentialsError(
-            f"Backend {backend!r} has no credential model yet "
-            "(blocked until PR 8 generalizes UserSpritesKey → UserBackendCredential)"
-        )
     try:
-        token = user.sprites_key.get_api_key()
-    except UserSpritesKey.DoesNotExist:
+        impl = get_backend(backend)
+    except KeyError as e:
+        raise NoBackendCredentialsError(str(e)) from e
+    token = _lookup_token(user, backend)
+    if token is None:
         return None
-    return get_backend(backend).create_client(token)
+    return impl.create_client(token)
 
 
 def require_client(user, backend: str = "sprites") -> BackendClient:

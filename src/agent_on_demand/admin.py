@@ -12,6 +12,7 @@ from agent_on_demand.models import (
     AgentSessionLog,
     Environment,
     EnvironmentVersion,
+    UserBackendCredential,
     UserCredential,
     UserQuota,
     UserSpritesKey,
@@ -41,6 +42,13 @@ class UserSpritesKeyInline(admin.TabularInline):
     readonly_fields = ("created_at", "updated_at")
 
 
+class UserBackendCredentialInline(admin.TabularInline):
+    model = UserBackendCredential
+    extra = 0
+    fields = ("backend", "created_at")
+    readonly_fields = ("created_at",)
+
+
 class UserQuotaInline(admin.StackedInline):
     model = UserQuota
     extra = 0
@@ -57,6 +65,7 @@ class UserAdmin(BaseUserAdmin):
         APIKeyInline,
         UserCredentialInline,
         UserSpritesKeyInline,
+        UserBackendCredentialInline,
         UserQuotaInline,
     ]
 
@@ -167,6 +176,52 @@ class UserSpritesKeyAdmin(admin.ModelAdmin):
         if obj is None:
             return ("user", "api_key")
         return ("user", "api_key", "created_at", "updated_at")
+
+
+# Only "sprites" is wired today. ModalBackend lands in a follow-up plan and
+# adds itself here when it does.
+BACKEND_CHOICES = [("sprites", "sprites")]
+
+
+class UserBackendCredentialForm(forms.ModelForm):
+    backend = forms.ChoiceField(
+        choices=BACKEND_CHOICES,
+        help_text="Which session backend this credential targets.",
+    )
+    token = forms.CharField(
+        widget=forms.PasswordInput(render_value=True),
+        help_text="The backend API token. Stored encrypted.",
+    )
+
+    class Meta:
+        model = UserBackendCredential
+        fields = ("user", "backend", "token")
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.instance.pk:
+            self.fields["token"].initial = self.instance.get_token()
+
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        instance.set_token(self.cleaned_data["token"])
+        if commit:
+            instance.save()
+        return instance
+
+
+@admin.register(UserBackendCredential)
+class UserBackendCredentialAdmin(admin.ModelAdmin):
+    form = UserBackendCredentialForm
+    list_display = ("user", "backend", "created_at")
+    list_filter = ("backend",)
+    search_fields = ("user__email", "backend")
+    readonly_fields = ("created_at",)
+
+    def get_fields(self, request, obj=None):
+        if obj is None:
+            return ("user", "backend", "token")
+        return ("user", "backend", "token", "created_at")
 
 
 class EnvironmentVersionInline(admin.TabularInline):
