@@ -17,9 +17,9 @@ import logging
 import queue
 import time
 
-import posthog
 from django.db import close_old_connections
 
+from agent_on_demand.analytics import capture as posthog_capture
 from agent_on_demand.models import AgentSession, AgentSessionLog, SessionTurn
 
 logger = logging.getLogger(__name__)
@@ -130,17 +130,16 @@ class LogChunkSink:
             except Exception:
                 if attempt == len(BULK_CREATE_DELAYS):
                     logger.exception("bulk_create exhausted retries")
-                    with posthog.new_context():
-                        posthog.identify_context(str(self._session.user_id))
-                        posthog.capture(
-                            "session.log_write_retry_exhausted",
-                            properties={
-                                "session_id": str(self._session.id),
-                                "turn_number": self._turn.turn_number,
-                                "runtime": self._session.runtime,
-                                "dropped_chunks": len(self._buffer),
-                            },
-                        )
+                    posthog_capture(
+                        self._session.user,
+                        "session.log_write_retry_exhausted",
+                        properties={
+                            "session_id": str(self._session.id),
+                            "turn_number": self._turn.turn_number,
+                            "runtime": self._session.runtime,
+                            "dropped_chunks": len(self._buffer),
+                        },
+                    )
                     raise
                 close_old_connections()
                 time.sleep(delay)
@@ -154,14 +153,13 @@ class LogChunkSink:
         total = self.total_drop_count
         if total <= 0:
             return
-        with posthog.new_context():
-            posthog.identify_context(str(self._session.user_id))
-            posthog.capture(
-                "session.output_chunks_dropped",
-                properties={
-                    "session_id": str(self._session.id),
-                    "turn_number": self._turn.turn_number,
-                    "runtime": self._session.runtime,
-                    "dropped_count": total,
-                },
-            )
+        posthog_capture(
+            self._session.user,
+            "session.output_chunks_dropped",
+            properties={
+                "session_id": str(self._session.id),
+                "turn_number": self._turn.turn_number,
+                "runtime": self._session.runtime,
+                "dropped_count": total,
+            },
+        )

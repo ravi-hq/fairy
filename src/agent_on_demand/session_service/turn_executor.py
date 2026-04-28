@@ -14,9 +14,9 @@ from __future__ import annotations
 import logging
 import threading
 
-import posthog
 from django.utils import timezone
 
+from agent_on_demand.analytics import capture as posthog_capture
 from agent_on_demand.models import AgentSession, AgentSessionLog
 
 from .log_sink import LogChunkSink
@@ -147,16 +147,15 @@ class TurnExecutor:
             self._session.id,
             self._turn.turn_number,
         )
-        with posthog.new_context():
-            posthog.identify_context(str(self._session.user_id))
-            posthog.capture(
-                "session.cmd_thread_leaked",
-                properties={
-                    "session_id": str(self._session.id),
-                    "turn_number": self._turn.turn_number,
-                    "runtime": self._session.runtime,
-                },
-            )
+        posthog_capture(
+            self._session.user,
+            "session.cmd_thread_leaked",
+            properties={
+                "session_id": str(self._session.id),
+                "turn_number": self._turn.turn_number,
+                "runtime": self._session.runtime,
+            },
+        )
 
     def _finalize(self, started_at) -> None:
         final_status, exit_code = compute_final_status(self._result_holder)
@@ -187,16 +186,15 @@ class TurnExecutor:
             self._span.set_attribute("aod.exit_code", exit_code)
         self._span.set_attribute("aod.duration_seconds", duration_seconds)
 
-        with posthog.new_context():
-            posthog.identify_context(str(self._session.user_id))
-            posthog.capture(
-                f"session.{final_status}",
-                properties={
-                    "session_id": str(self._session.id),
-                    "turn_number": self._turn.turn_number,
-                    "runtime": self._session.runtime,
-                    "exit_code": exit_code,
-                    "duration_seconds": duration_seconds,
-                    "mode": self._mode,
-                },
-            )
+        posthog_capture(
+            self._session.user,
+            f"session.{final_status}",
+            properties={
+                "session_id": str(self._session.id),
+                "turn_number": self._turn.turn_number,
+                "runtime": self._session.runtime,
+                "exit_code": exit_code,
+                "duration_seconds": duration_seconds,
+                "mode": self._mode,
+            },
+        )
