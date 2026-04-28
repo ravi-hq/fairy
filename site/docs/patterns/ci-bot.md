@@ -61,10 +61,12 @@ jobs:
           done
 
           # Collect output and post as PR comment
+          # SSE events: keep only "output" type, extract the .data field
           OUTPUT=$(curl -sS "$AOD_URL/sessions/$SESSION_ID/stream" \
             -H "Authorization: Bearer $AOD_TOKEN" \
             -H "Accept: text/event-stream" \
-            | grep '^data: ' | sed 's/^data: //' | jq -r '.text // .' | tr -d '\0')
+            | grep '^data: ' | sed 's/^data: //' \
+            | jq -r 'select(.type == "output") | .data' | tr -d '\0')
 
           gh pr comment ${{ github.event.pull_request.number }} --body "$OUTPUT"
 ```
