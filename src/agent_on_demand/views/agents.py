@@ -1,14 +1,12 @@
-import json
-
-import posthog
 from django.db import transaction
 from django.http import JsonResponse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST
 
-from pydantic import BaseModel, Field, ValidationError, field_validator
+from pydantic import BaseModel, Field, field_validator
 
+from agent_on_demand.analytics import capture as posthog_capture
 from agent_on_demand.auth import require_api_key
 from agent_on_demand.models import Agent, AgentVersion, Environment
 from agent_on_demand.models_catalog import MODELS
@@ -20,6 +18,7 @@ from agent_on_demand.validation.metadata_merge import merge_metadata
 from agent_on_demand.validation.runtime_model_compat import check_runtime_model_compat
 from agent_on_demand.validation.skill_validation import validate_skills as _validate_skills
 from agent_on_demand.versioning import check_version_match
+from agent_on_demand.views._helpers import parse_request_body
 
 
 AGENT_VERSIONED_FIELDS = (
@@ -158,15 +157,9 @@ def _snapshot_version(agent: Agent):
 def agents_list_create(request):
     """POST: create agent. GET: list agents."""
     if request.method == "POST":
-        try:
-            body = json.loads(request.body)
-        except (json.JSONDecodeError, ValueError):
-            return JsonResponse({"detail": "Invalid JSON"}, status=400)
-
-        try:
-            req = CreateAgentRequest(**body)
-        except ValidationError as e:
-            return JsonResponse({"detail": e.errors(include_context=False)}, status=422)
+        req, err = parse_request_body(request, CreateAgentRequest)
+        if err is not None:
+            return err
 
         if req.runtime not in RUNTIMES:
             return JsonResponse(
@@ -204,22 +197,21 @@ def agents_list_create(request):
             )
             _snapshot_version(agent)
 
-        with posthog.new_context():
-            posthog.identify_context(str(request.user.id))
-            posthog.capture(
-                "agent.created",
-                properties={
-                    "agent_id": str(agent.id),
-                    "runtime": agent.runtime,
-                    "model": agent.model,
-                    "has_environment": agent.environment_id is not None,
-                    "system_length": len(agent.system or ""),
-                    "description_length": len(agent.description or ""),
-                    "skill_count": len(agent.skills or []),
-                    "mcp_server_count": len(agent.mcp_servers or []),
-                    "metadata_key_count": len(agent.metadata or {}),
-                },
-            )
+        posthog_capture(
+            request.user,
+            "agent.created",
+            properties={
+                "agent_id": str(agent.id),
+                "runtime": agent.runtime,
+                "model": agent.model,
+                "has_environment": agent.environment_id is not None,
+                "system_length": len(agent.system or ""),
+                "description_length": len(agent.description or ""),
+                "skill_count": len(agent.skills or []),
+                "mcp_server_count": len(agent.mcp_servers or []),
+                "metadata_key_count": len(agent.metadata or {}),
+            },
+        )
 
         return JsonResponse(_serialize_agent(agent), status=201)
 
@@ -244,15 +236,9 @@ def agent_detail(request, agent_id):
         return JsonResponse(_serialize_agent(agent))
 
     if request.method == "PUT":
-        try:
-            body = json.loads(request.body)
-        except (json.JSONDecodeError, ValueError):
-            return JsonResponse({"detail": "Invalid JSON"}, status=400)
-
-        try:
-            req = UpdateAgentRequest(**body)
-        except ValidationError as e:
-            return JsonResponse({"detail": e.errors(include_context=False)}, status=422)
+        req, err = parse_request_body(request, UpdateAgentRequest)
+        if err is not None:
+            return err
 
         if req.runtime is not None and req.runtime not in RUNTIMES:
             return JsonResponse(
@@ -353,17 +339,16 @@ def agent_detail(request, agent_id):
                 _snapshot_version(agent)
 
         if changed:
-            with posthog.new_context():
-                posthog.identify_context(str(request.user.id))
-                posthog.capture(
-                    "agent.updated",
-                    properties={
-                        "agent_id": str(agent.id),
-                        "version": agent.version,
-                        "runtime": agent.runtime,
-                        "model": agent.model,
-                    },
-                )
+            posthog_capture(
+                request.user,
+                "agent.updated",
+                properties={
+                    "agent_id": str(agent.id),
+                    "version": agent.version,
+                    "runtime": agent.runtime,
+                    "model": agent.model,
+                },
+            )
 
         return JsonResponse(_serialize_agent(agent))
 
@@ -386,9 +371,7 @@ def agent_archive(request, agent_id):
     agent.archived_at = timezone.now()
     agent.save(update_fields=["archived_at", "updated_at"])
 
-    with posthog.new_context():
-        posthog.identify_context(str(request.user.id))
-        posthog.capture("agent.archived", properties={"agent_id": str(agent.id)})
+    posthog_capture(request.user, "agent.archived", properties={"agent_id": str(agent.id)})
 
     return JsonResponse(_serialize_agent(agent))
 

@@ -1,14 +1,12 @@
-import json
-
-import posthog
 from django.db import IntegrityError, transaction
 from django.http import JsonResponse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST
 
-from pydantic import BaseModel, Field, ValidationError, field_validator
+from pydantic import BaseModel, Field, field_validator
 
+from agent_on_demand.analytics import capture as posthog_capture
 from agent_on_demand.auth import require_api_key
 from agent_on_demand.validation.environment_validation import (
     validate_env_vars,
@@ -17,6 +15,7 @@ from agent_on_demand.validation.environment_validation import (
 )
 from agent_on_demand.models import Environment, EnvironmentVersion
 from agent_on_demand.versioning import check_version_match
+from agent_on_demand.views._helpers import parse_request_body
 
 
 def _env_safe_props(env: Environment) -> dict:
@@ -133,15 +132,9 @@ def _snapshot_environment_version(env: Environment):
 def environments_list_create(request):
     """POST: create environment. GET: list environments."""
     if request.method == "POST":
-        try:
-            body = json.loads(request.body)
-        except (json.JSONDecodeError, ValueError):
-            return JsonResponse({"detail": "Invalid JSON"}, status=400)
-
-        try:
-            req = CreateEnvironmentRequest(**body)
-        except ValidationError as e:
-            return JsonResponse({"detail": e.errors(include_context=False)}, status=422)
+        req, err = parse_request_body(request, CreateEnvironmentRequest)
+        if err is not None:
+            return err
 
         networking_type = req.networking.get("type", "unrestricted")
         networking_config = {k: v for k, v in req.networking.items() if k != "type"}
@@ -165,9 +158,7 @@ def environments_list_create(request):
                 status=409,
             )
 
-        with posthog.new_context():
-            posthog.identify_context(str(request.user.id))
-            posthog.capture("environment.created", properties=_env_safe_props(env))
+        posthog_capture(request.user, "environment.created", properties=_env_safe_props(env))
 
         return JsonResponse(_serialize_environment(env), status=201)
 
@@ -192,15 +183,9 @@ def environment_detail(request, environment_id):
         return JsonResponse(_serialize_environment(env))
 
     if request.method == "PUT":
-        try:
-            body = json.loads(request.body)
-        except (json.JSONDecodeError, ValueError):
-            return JsonResponse({"detail": "Invalid JSON"}, status=400)
-
-        try:
-            req = UpdateEnvironmentRequest(**body)
-        except ValidationError as e:
-            return JsonResponse({"detail": e.errors(include_context=False)}, status=422)
+        req, err = parse_request_body(request, UpdateEnvironmentRequest)
+        if err is not None:
+            return err
 
         changed = False
         try:
@@ -267,12 +252,11 @@ def environment_detail(request, environment_id):
             )
 
         if changed:
-            with posthog.new_context():
-                posthog.identify_context(str(request.user.id))
-                posthog.capture(
-                    "environment.updated",
-                    properties={**_env_safe_props(env), "version": env.version},
-                )
+            posthog_capture(
+                request.user,
+                "environment.updated",
+                properties={**_env_safe_props(env), "version": env.version},
+            )
 
         return JsonResponse(_serialize_environment(env))
 
@@ -295,12 +279,11 @@ def environment_archive(request, environment_id):
     env.archived_at = timezone.now()
     env.save(update_fields=["archived_at", "updated_at"])
 
-    with posthog.new_context():
-        posthog.identify_context(str(request.user.id))
-        posthog.capture(
-            "environment.archived",
-            properties={"environment_id": str(env.id)},
-        )
+    posthog_capture(
+        request.user,
+        "environment.archived",
+        properties={"environment_id": str(env.id)},
+    )
 
     return JsonResponse(_serialize_environment(env))
 
@@ -329,9 +312,7 @@ def environment_delete(request, environment_id):
     except Environment.DoesNotExist:
         return JsonResponse({"detail": "Environment not found"}, status=404)
 
-    with posthog.new_context():
-        posthog.identify_context(str(request.user.id))
-        posthog.capture("environment.deleted", properties={"environment_id": env_id_str})
+    posthog_capture(request.user, "environment.deleted", properties={"environment_id": env_id_str})
 
     return JsonResponse({"detail": "Environment deleted"}, status=200)
 

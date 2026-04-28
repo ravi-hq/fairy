@@ -1,14 +1,12 @@
-import json
 import uuid
 
-import posthog
 from django.conf import settings
 from django.db import transaction
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
-from pydantic import ValidationError
 
 from agent_on_demand import session_service
+from agent_on_demand.analytics import capture as posthog_capture
 from agent_on_demand.auth import require_api_key
 from agent_on_demand.models import (
     Agent,
@@ -21,6 +19,7 @@ from agent_on_demand.models import (
 from agent_on_demand.models.auth import CREDENTIAL_ENV_VAR, UserCredential
 from agent_on_demand.models_catalog import MODELS
 from agent_on_demand.runtimes import RUNTIMES
+from agent_on_demand.views._helpers import parse_request_body
 
 from .schemas import RunRequest
 from .serializers import _serialize_resources, _serialize_session
@@ -47,15 +46,9 @@ def _list_sessions(request):
 
 
 def _create_session(request):
-    try:
-        body = json.loads(request.body)
-    except (json.JSONDecodeError, ValueError):
-        return JsonResponse({"detail": "Invalid JSON"}, status=400)
-
-    try:
-        req = RunRequest(**body)
-    except ValidationError as e:
-        return JsonResponse({"detail": e.errors(include_context=False)}, status=422)
+    req, err = parse_request_body(request, RunRequest)
+    if err is not None:
+        return err
 
     try:
         agent_obj = Agent.objects.get(pk=req.agent_id, user=request.user)
@@ -196,24 +189,23 @@ def _create_session(request):
             timeout=float(req.timeout),
         )
 
-    with posthog.new_context():
-        posthog.identify_context(str(request.user.id))
-        posthog.capture(
-            "session.created",
-            properties={
-                "session_id": str(session.id),
-                "agent_id": str(agent_obj.id),
-                "environment_id": str(environment_obj.id) if environment_obj else None,
-                "runtime": runtime,
-                "model": agent_obj.model,
-                "prompt_length": len(req.prompt),
-                "repo_count": len(req.resources),
-                "mcp_server_count": len(agent_obj.mcp_servers or []),
-                "skill_count": len(agent_obj.skills or []),
-                "env_var_count": len((environment_obj.env_vars or {})) if environment_obj else 0,
-                "timeout": req.timeout,
-            },
-        )
+    posthog_capture(
+        request.user,
+        "session.created",
+        properties={
+            "session_id": str(session.id),
+            "agent_id": str(agent_obj.id),
+            "environment_id": str(environment_obj.id) if environment_obj else None,
+            "runtime": runtime,
+            "model": agent_obj.model,
+            "prompt_length": len(req.prompt),
+            "repo_count": len(req.resources),
+            "mcp_server_count": len(agent_obj.mcp_servers or []),
+            "skill_count": len(agent_obj.skills or []),
+            "env_var_count": len((environment_obj.env_vars or {})) if environment_obj else 0,
+            "timeout": req.timeout,
+        },
+    )
 
     return JsonResponse(
         {

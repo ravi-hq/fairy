@@ -1,4 +1,3 @@
-import posthog
 from django.contrib import messages
 from django.contrib.auth import login
 from django.contrib.auth.decorators import login_required
@@ -6,6 +5,7 @@ from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
+from agent_on_demand.analytics import capture as posthog_capture
 from agent_on_demand.models import (
     Agent,
     AgentSession,
@@ -39,9 +39,7 @@ def register(request):
             login(request, user)
             request.session["onboarding_raw_key"] = raw_key
 
-            with posthog.new_context():
-                posthog.identify_context(str(user.id))
-                posthog.capture("user.registered")
+            posthog_capture(user, "user.registered")
 
             return redirect("ui-welcome")
     else:

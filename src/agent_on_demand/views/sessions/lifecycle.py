@@ -1,16 +1,14 @@
-import json
-
-import posthog
 from django.db import transaction
 from django.db.models import Max
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST
-from pydantic import ValidationError
 
 from agent_on_demand import session_service
+from agent_on_demand.analytics import capture as posthog_capture
 from agent_on_demand.auth import require_api_key
 from agent_on_demand.models import AgentSession, SessionTurn
+from agent_on_demand.views._helpers import parse_request_body
 
 from .schemas import PromptRequest
 from .serializers import _serialize_session, _serialize_turn
@@ -57,15 +55,9 @@ def send_prompt(request, session_id):
     if err is not None:
         return err
 
-    try:
-        body = json.loads(request.body)
-    except (json.JSONDecodeError, ValueError):
-        return JsonResponse({"detail": "Invalid JSON"}, status=400)
-
-    try:
-        req = PromptRequest(**body)
-    except ValidationError as e:
-        return JsonResponse({"detail": e.errors(include_context=False)}, status=422)
+    req, err = parse_request_body(request, PromptRequest)
+    if err is not None:
+        return err
 
     try:
         session_service.resume_session(request.user, session.backend_handle)
@@ -117,17 +109,16 @@ def send_prompt(request, session_id):
     except AgentSession.DoesNotExist:
         return JsonResponse({"detail": "Session not found"}, status=404)
 
-    with posthog.new_context():
-        posthog.identify_context(str(request.user.id))
-        posthog.capture(
-            "session.prompt_sent",
-            properties={
-                "session_id": str(session.id),
-                "turn_number": turn.turn_number,
-                "prompt_length": len(req.prompt),
-                "timeout": req.timeout,
-            },
-        )
+    posthog_capture(
+        request.user,
+        "session.prompt_sent",
+        properties={
+            "session_id": str(session.id),
+            "turn_number": turn.turn_number,
+            "prompt_length": len(req.prompt),
+            "timeout": req.timeout,
+        },
+    )
 
     return JsonResponse(
         {
@@ -174,12 +165,11 @@ def terminate_session(request, session_id):
     if handle:
         session_service.destroy_session_task.defer(user_id=request.user.id, handle=handle)
 
-    with posthog.new_context():
-        posthog.identify_context(str(request.user.id))
-        posthog.capture(
-            "session.terminated",
-            properties={"session_id": str(session.id)},
-        )
+    posthog_capture(
+        request.user,
+        "session.terminated",
+        properties={"session_id": str(session.id)},
+    )
 
     return JsonResponse(
         {
@@ -207,11 +197,10 @@ def delete_session(request, session_id):
     except AgentSession.DoesNotExist:
         return JsonResponse({"detail": "Session not found"}, status=404)
 
-    with posthog.new_context():
-        posthog.identify_context(str(request.user.id))
-        posthog.capture(
-            "session.deleted",
-            properties={"session_id": session_id_str},
-        )
+    posthog_capture(
+        request.user,
+        "session.deleted",
+        properties={"session_id": session_id_str},
+    )
 
     return JsonResponse({"detail": "Session deleted"}, status=200)
