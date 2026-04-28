@@ -126,3 +126,30 @@ def test_parse_request_body_400_on_various_malformed_inputs(payload):
     assert err is not None
     assert err.status_code == 400
     assert _decode(err) == {"detail": "Invalid JSON"}
+
+
+def test_parse_request_body_rejects_json_array_body():
+    req = _make_request(b"[1, 2, 3]")
+    instance, err = parse_request_body(req, _ExampleSchema)
+    assert instance is None
+    assert err is not None
+    assert err.status_code == 400
+    assert _decode(err) == {"detail": "Invalid JSON"}
+
+
+def test_parse_request_body_rejects_json_number_body():
+    req = _make_request(b"42")
+    instance, err = parse_request_body(req, _ExampleSchema)
+    assert instance is None
+    assert err is not None
+    assert err.status_code == 400
+    assert _decode(err) == {"detail": "Invalid JSON"}
+
+
+def test_parse_request_body_rejects_json_string_body():
+    req = _make_request(b'"hello"')
+    instance, err = parse_request_body(req, _ExampleSchema)
+    assert instance is None
+    assert err is not None
+    assert err.status_code == 400
+    assert _decode(err) == {"detail": "Invalid JSON"}

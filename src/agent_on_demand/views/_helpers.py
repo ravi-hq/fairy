@@ -20,6 +20,12 @@ def parse_request_body(
     except (json.JSONDecodeError, ValueError):
         return None, JsonResponse({"detail": "Invalid JSON"}, status=400)
 
+    if not isinstance(body, dict):
+        # `schema(**body)` would raise TypeError on lists/scalars and surface
+        # as a 500. Treat any non-object top-level JSON as the same client
+        # error shape as a parse failure.
+        return None, JsonResponse({"detail": "Invalid JSON"}, status=400)
+
     try:
         return schema(**body), None
     except ValidationError as e:
