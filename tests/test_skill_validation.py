@@ -10,7 +10,7 @@ hammett (mutmut's runner) can execute them.
 
 import pytest
 
-from agent_on_demand.skill_validation import (
+from agent_on_demand.validation.skill_validation import (
     GITHUB_SOURCE_RE,
     MAX_SKILL_CONTENT_BYTES,
     MAX_SKILL_DESCRIPTION_LEN,

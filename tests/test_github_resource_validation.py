@@ -9,7 +9,7 @@ hammett (mutmut's runner) can execute them.
 
 import pytest
 
-from agent_on_demand.github_resource_validation import (
+from agent_on_demand.validation.github_resource_validation import (
     GITHUB_URL_RE,
     MAX_RESOURCES_PER_SESSION,
     RESERVED_MOUNT_PATHS,

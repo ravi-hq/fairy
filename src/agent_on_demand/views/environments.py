@@ -10,7 +10,7 @@ from django.views.decorators.http import require_GET, require_POST
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from agent_on_demand.auth import require_api_key
-from agent_on_demand.environment_validation import (
+from agent_on_demand.validation.environment_validation import (
     validate_env_vars,
     validate_networking,
     validate_packages,

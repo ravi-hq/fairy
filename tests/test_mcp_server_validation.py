@@ -10,7 +10,7 @@ hammett (mutmut's runner) can execute them.
 
 import pytest
 
-from agent_on_demand.mcp_server_validation import (
+from agent_on_demand.validation.mcp_server_validation import (
     MAX_MCP_SERVERS_PER_AGENT,
     VALID_MCP_SERVER_TYPES,
     validate_mcp_servers,

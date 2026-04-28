@@ -10,13 +10,15 @@ from django.views.decorators.http import require_GET, require_POST
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from agent_on_demand.auth import require_api_key
-from agent_on_demand.mcp_server_validation import validate_mcp_servers as _validate_mcp_servers
-from agent_on_demand.metadata_merge import merge_metadata
 from agent_on_demand.models import Agent, AgentVersion, Environment
 from agent_on_demand.models_catalog import MODELS
-from agent_on_demand.runtime_model_compat import check_runtime_model_compat
 from agent_on_demand.runtimes import RUNTIMES
-from agent_on_demand.skill_validation import validate_skills as _validate_skills
+from agent_on_demand.validation.mcp_server_validation import (
+    validate_mcp_servers as _validate_mcp_servers,
+)
+from agent_on_demand.validation.metadata_merge import merge_metadata
+from agent_on_demand.validation.runtime_model_compat import check_runtime_model_compat
+from agent_on_demand.validation.skill_validation import validate_skills as _validate_skills
 from agent_on_demand.versioning import check_version_match
 
 
@@ -322,7 +324,7 @@ def agent_detail(request, agent_id):
                     changed = True
 
             # Metadata merges at key level (matching Anthropic semantics).
-            # See agent_on_demand.metadata_merge for the contract — pinned by
+            # See agent_on_demand.validation.metadata_merge for the contract — pinned by
             # mutation testing because the "" → delete branch is the kind of
             # thing a refactor can quietly drop.
             if req.metadata is not None:
