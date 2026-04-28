@@ -11,14 +11,16 @@ from pydantic import ValidationError
 from agent_on_demand import session_service
 from agent_on_demand.auth import require_api_key
 from agent_on_demand.models import AgentSession, SessionTurn
-from agent_on_demand.session_state import check_can_delete, check_can_terminate
 
 from .schemas import PromptRequest
 from .serializers import _serialize_session, _serialize_turn
 
-# Test code patches `agent_on_demand.views.sessions.check_can_accept_prompt`,
-# expecting the view to consult the patched binding at call time. Resolve
-# the function via the package namespace so the patch is observed here.
+# Resolve the session-state predicates and `stream_session_from_db` through
+# the package namespace at call time. Tests patch them at
+# `agent_on_demand.views.sessions.<name>`; going through `_pkg` is the only
+# way for those patches to be observed without per-test module knowledge.
+# All three predicates use the same indirection so the convention is uniform
+# — adding a fourth predicate later won't silently bypass test patches.
 from agent_on_demand.views import sessions as _pkg  # noqa: E402
 
 
@@ -158,7 +160,7 @@ def terminate_session(request, session_id):
     try:
         with transaction.atomic():
             session = AgentSession.objects.select_for_update().get(pk=session_id, user=request.user)
-            err = check_can_terminate(session.status)
+            err = _pkg.check_can_terminate(session.status)
             if err is not None:
                 return err
             sprite_name = session.sprite_name
@@ -196,7 +198,7 @@ def delete_session(request, session_id):
     try:
         with transaction.atomic():
             session = AgentSession.objects.select_for_update().get(pk=session_id, user=request.user)
-            err = check_can_delete(session.status)
+            err = _pkg.check_can_delete(session.status)
             if err is not None:
                 return err
             session_id_str = str(session.id)
