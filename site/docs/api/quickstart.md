@@ -37,7 +37,7 @@ An agent is a reusable template. The minimum required fields are `name`, `model`
       -H "Content-Type: application/json" \
       -d '{
         "name": "hello",
-        "model": "claude-sonnet-4-6",
+        "model": "anthropic/claude-sonnet-4-6",
         "runtime": "claude"
       }'
     ```
@@ -50,7 +50,7 @@ An agent is a reusable template. The minimum required fields are `name`, `model`
     client = Client()  # reads AOD_API_URL + AOD_API_TOKEN
     agent = client.agents.create(
         name="hello",
-        model="claude-sonnet-4-6",
+        model="anthropic/claude-sonnet-4-6",
         runtime="claude",
     )
     print(agent.id)
@@ -63,7 +63,7 @@ Response (`201 Created`):
   "id": "<agent-uuid>",
   "type": "agent",
   "name": "hello",
-  "model": "claude-sonnet-4-6",
+  "model": "anthropic/claude-sonnet-4-6",
   "runtime": "claude",
   "system": null,
   "description": null,
@@ -137,9 +137,13 @@ Connect to the SSE stream to receive agent output in real time.
     ```
     data: {"type":"start","runtime":"claude","session_id":"<session-uuid>"}
 
-    data: {"type":"output","stream":"stdout","data":"Thu Apr 17 14:00:00 UTC 2026\n"}
+    data: {"type":"turn_start","id":1,"turn":1}
 
-    data: {"type":"exit","code":0}
+    id: 1
+    data: {"type":"output","id":1,"stream":"stdout","data":"Thu Apr 17 14:00:00 UTC 2026\n","turn":1}
+
+    id: 2
+    data: {"type":"exit","id":2,"code":0}
     ```
 
 === "Python"
@@ -169,7 +173,7 @@ The stream closes after the terminal event (`exit`, `error`, or `terminated`). R
 
     # Create agent
     AGENT_ID=$(curl -s -X POST "$BASE/agents" -H "$AUTH" -H "$JSON" \
-      -d '{"name":"demo","model":"claude-sonnet-4-6","runtime":"claude"}' \
+      -d '{"name":"demo","model":"anthropic/claude-sonnet-4-6","runtime":"claude"}' \
       | jq -r .id)
 
     # Create session
@@ -191,7 +195,7 @@ The stream closes after the terminal event (`exit`, `error`, or `terminated`). R
 
     with Client() as client:
         agent = client.agents.create(
-            name="demo", model="claude-sonnet-4-6", runtime="claude"
+            name="demo", model="anthropic/claude-sonnet-4-6", runtime="claude"
         )
         ack = client.sessions.create(
             agent_id=agent.id, prompt="Say hello.", timeout=120
