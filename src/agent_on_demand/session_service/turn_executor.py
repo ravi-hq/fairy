@@ -76,7 +76,7 @@ class TurnExecutor:
     def run(self) -> None:
         started_at = timezone.now()
 
-        if self._abort_if_terminated(started_at):
+        if self._abort_pre_run(started_at):
             return
 
         self._mark_running(started_at)
@@ -113,26 +113,54 @@ class TurnExecutor:
 
         self._finalize(started_at)
 
-    def _abort_if_terminated(self, now) -> bool:
-        """Guard against a concurrent terminate_session that committed
-        status="terminated" after the task fetched the session row.
-        Without this check, the unconditional save below would overwrite
-        the termination, leaving the session showing "running" for the
-        whole turn."""
-        self._session.refresh_from_db(fields=["status"])
-        if self._session.status != "terminated":
-            return False
-        AgentSessionLog.objects.create(
-            session=self._session,
-            turn=self._turn,
-            stream="stderr",
-            data="turn aborted: session terminated before execution started\n",
-        )
-        self._turn.status = "failed"
-        self._turn.started_at = now
-        self._turn.ended_at = now
-        self._turn.save(update_fields=["status", "started_at", "ended_at"])
-        return True
+    def _abort_pre_run(self, now) -> bool:
+        """Single pre-run guard for terminate-and-interrupt races.
+
+        Catches two concurrent commits that landed after the task fetched
+        the session row:
+
+        - ``status="terminated"`` (terminate_session): mark turn failed,
+          leave session terminated. Without this the unconditional saves
+          below would overwrite the termination.
+        - ``interrupt_requested=True`` (interrupt_session) before the
+          turn actually started: mark turn ``interrupted`` and bring the
+          session back to ``completed`` so the next prompt is legal. The
+          flag is cleared so a follow-up turn doesn't inherit it.
+
+        One refresh covers both — adding a second refresh would create
+        an extra DB round-trip on every turn for a rare race.
+        """
+        self._session.refresh_from_db(fields=["status", "interrupt_requested"])
+        if self._session.status == "terminated":
+            AgentSessionLog.objects.create(
+                session=self._session,
+                turn=self._turn,
+                stream="stderr",
+                data="turn aborted: session terminated before execution started\n",
+            )
+            self._turn.status = "failed"
+            self._turn.started_at = now
+            self._turn.ended_at = now
+            self._turn.save(update_fields=["status", "started_at", "ended_at"])
+            return True
+        if self._session.interrupt_requested:
+            AgentSessionLog.objects.create(
+                session=self._session,
+                turn=self._turn,
+                stream="stderr",
+                data="turn aborted: interrupt requested before execution started\n",
+            )
+            self._turn.status = "interrupted"
+            self._turn.started_at = now
+            self._turn.ended_at = now
+            self._turn.save(update_fields=["status", "started_at", "ended_at"])
+            self._session.status = "completed"
+            self._session.interrupt_requested = False
+            self._session.save(
+                update_fields=["status", "interrupt_requested", "updated_at"]
+            )
+            return True
+        return False
 
     def _mark_running(self, now) -> None:
         self._session.status = "running"
@@ -178,7 +206,7 @@ class TurnExecutor:
         final_status, exit_code = compute_final_status(self._result_holder)
         ended = timezone.now()
         try:
-            self._session.refresh_from_db(fields=["status"])
+            self._session.refresh_from_db(fields=["status", "interrupt_requested"])
         except AgentSession.DoesNotExist:
             # Session was deleted mid-turn (e.g. client raced terminate + delete).
             # Turn + logs were cascade-deleted alongside it; nothing left to write.
@@ -187,25 +215,53 @@ class TurnExecutor:
                 self._session.id,
             )
             return
-        if self._session.status != "terminated":
-            self._session.status = final_status
-            self._session.exit_code = exit_code
-            self._session.save(update_fields=["status", "exit_code", "updated_at"])
 
-        self._turn.status = final_status
+        # An interrupt that landed during the turn overrides the natural
+        # outcome: the in-Sprite process was killed at user request, so
+        # the SDK exit code is incidental. The session goes back to
+        # `completed` (not `failed`) so the caller can immediately send
+        # a new prompt against the same Sprite.
+        interrupted = (
+            self._session.interrupt_requested and self._session.status != "terminated"
+        )
+        if interrupted:
+            final_status_for_session = "completed"
+            final_status_for_turn = "interrupted"
+        else:
+            final_status_for_session = final_status
+            final_status_for_turn = final_status
+
+        if self._session.status != "terminated":
+            self._session.status = final_status_for_session
+            self._session.exit_code = exit_code
+            if interrupted:
+                self._session.interrupt_requested = False
+                self._session.save(
+                    update_fields=[
+                        "status",
+                        "exit_code",
+                        "interrupt_requested",
+                        "updated_at",
+                    ]
+                )
+            else:
+                self._session.save(update_fields=["status", "exit_code", "updated_at"])
+
+        self._turn.status = final_status_for_turn
         self._turn.exit_code = exit_code
         self._turn.ended_at = ended
         self._turn.save(update_fields=["status", "exit_code", "ended_at"])
 
         duration_seconds = (ended - started_at).total_seconds()
-        self._span.set_attribute("aod.final_status", final_status)
+        event_status = final_status_for_turn
+        self._span.set_attribute("aod.final_status", event_status)
         if exit_code is not None:
             self._span.set_attribute("aod.exit_code", exit_code)
         self._span.set_attribute("aod.duration_seconds", duration_seconds)
 
         posthog_capture(
             self._session.user,
-            f"session.{final_status}",
+            f"session.{event_status}",
             properties={
                 "session_id": str(self._session.id),
                 "turn_number": self._turn.turn_number,

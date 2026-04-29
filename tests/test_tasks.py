@@ -29,6 +29,7 @@ from agent_on_demand.session_service.log_sink import LogChunkSink, TaggingQueueW
 from agent_on_demand.session_service.tasks import (
     destroy_session_task,
     execute_turn,
+    interrupt_session_task,
     provision_session_task,
 )
 
@@ -631,6 +632,142 @@ def test_destroy_task_swallows_sprite_errors(provision_user, fake_sprites, mocke
     mocker.patch.object(fake_sprites, "delete_sprite", side_effect=SpriteError("transient"))
     destroy_session_task(user_id=provision_user.id, handle="aod-xyz")
     # Assertion is "no exception raised".
+
+
+# --------------------------------------------------------------------------
+# interrupt_session_task tests
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_interrupt_task_calls_interrupt_running_commands(provision_user, fake_sprites):
+    """Happy path: the task resolves the user, resumes the handle, and
+    calls ``interrupt_running_commands()`` on it."""
+    sprite = fake_sprites.get_sprite("aod-int-1")
+    interrupt_session_task(user_id=provision_user.id, handle="aod-int-1")
+    assert getattr(sprite, "interrupt_calls", 0) == 1
+
+
+@pytest.mark.django_db
+def test_interrupt_task_noop_when_user_gone(fake_sprites):
+    """User row gone by the time the worker picks up — skip."""
+    interrupt_session_task(user_id=999_999, handle="aod-int-1")
+    assert "aod-int-1" not in fake_sprites.sprites
+
+
+@pytest.mark.django_db
+def test_interrupt_task_swallows_handle_errors(provision_user, fake_sprites, mocker):
+    """Best-effort: a backend error during the kill is logged, not raised.
+    Procrastinate would otherwise retry an action that may never succeed."""
+    sprite = fake_sprites.get_sprite("aod-int-2")
+    sprite.raise_on("interrupt_running_commands", SpriteError("transient"))
+    # Assertion is "no exception raised".
+    interrupt_session_task(user_id=provision_user.id, handle="aod-int-2")
+
+
+# --------------------------------------------------------------------------
+# execute_turn interrupt tests
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_execute_turn_honors_pre_run_interrupt(user, mocker):
+    """``interrupt_requested=True`` set before the worker picks the turn
+    up: skip the runtime entirely, mark the turn ``interrupted``, and
+    bring the session back to ``completed`` so a follow-up prompt is
+    legal. The flag is cleared so it doesn't leak into the next turn."""
+    session, turn = _make_session_and_turn(user)
+    AgentSession.objects.filter(pk=session.pk).update(interrupt_requested=True)
+    mock_handle, _ = _patch_sprite(mocker, "success")
+
+    execute_turn(
+        session_id=str(session.id),
+        turn_id=turn.id,
+        prompt="hi",
+        mode="run",
+        timeout=10.0,
+    )
+
+    session.refresh_from_db()
+    turn.refresh_from_db()
+    assert session.status == "completed"
+    assert session.interrupt_requested is False
+    assert turn.status == "interrupted"
+    assert turn.started_at is not None
+    assert turn.ended_at is not None
+    # The runtime was never invoked — the abort fires before _run_command.
+    mock_handle.make_command.assert_not_called()
+
+
+@pytest.mark.django_db
+def test_execute_turn_finalizes_as_interrupted_when_flag_set_during_run(user, mocker):
+    """Interrupt arrives while the cmd is running: the in-Sprite kill
+    causes ``cmd.run()`` to return non-zero, but the post-run refresh
+    sees ``interrupt_requested=True`` so the turn finalizes as
+    ``interrupted`` (not ``failed``) and the session as ``completed``
+    (so the caller can immediately POST another prompt)."""
+    session, turn = _make_session_and_turn(user)
+    _, mock_cmd = _patch_sprite(mocker, 137)  # SIGTERM-ish exit
+
+    refresh_count = [0]
+    original_refresh = AgentSession.refresh_from_db
+
+    def fake_refresh(self, *args, **kwargs):
+        if self.pk == session.pk:
+            refresh_count[0] += 1
+            # Pre-run refresh sees the unchanged row; the second refresh
+            # (post-run, inside _finalize) sees the interrupt request that
+            # the view committed during the turn. Subsequent refreshes
+            # (e.g. the test's own check below) are pass-through so the
+            # cleared flag isn't re-set after _finalize wrote it.
+            if refresh_count[0] == 2:
+                AgentSession.objects.filter(pk=self.pk).update(interrupt_requested=True)
+        return original_refresh(self, *args, **kwargs)
+
+    mocker.patch.object(AgentSession, "refresh_from_db", fake_refresh)
+
+    execute_turn(
+        session_id=str(session.id),
+        turn_id=turn.id,
+        prompt="hi",
+        mode="run",
+        timeout=10.0,
+    )
+
+    session.refresh_from_db()
+    turn.refresh_from_db()
+    assert session.status == "completed"
+    assert session.interrupt_requested is False
+    assert session.exit_code == 137
+    assert turn.status == "interrupted"
+    assert turn.exit_code == 137
+
+
+@pytest.mark.django_db
+def test_execute_turn_terminate_beats_interrupt(user, mocker):
+    """If both flags fire concurrently — ``status=terminated`` wins. The
+    Sprite is gone; the session must stay ``terminated`` rather than
+    transitioning to ``completed``."""
+    session, turn = _make_session_and_turn(user)
+    AgentSession.objects.filter(pk=session.pk).update(
+        status="terminated", interrupt_requested=True
+    )
+    _patch_sprite(mocker, "success")
+
+    execute_turn(
+        session_id=str(session.id),
+        turn_id=turn.id,
+        prompt="hi",
+        mode="run",
+        timeout=10.0,
+    )
+
+    session.refresh_from_db()
+    turn.refresh_from_db()
+    assert session.status == "terminated"
+    # The pre-run guard for terminated short-circuits — turn marked failed,
+    # interrupt flag is left as-is for the operator to inspect.
+    assert turn.status == "failed"
 
 
 # --------------------------------------------------------------------------

@@ -148,6 +148,54 @@ def list_session_turns(request, session_id):
 @csrf_exempt
 @require_POST
 @require_api_key
+def interrupt_session(request, session_id):
+    """Stop the running (or pending) turn without destroying the Sprite.
+
+    Sets ``interrupt_requested`` on the session row and defers a worker
+    task that SIGTERMs the in-Sprite agent process. The turn finalizes
+    as ``status="interrupted"`` and the session returns to ``completed``,
+    so the caller can immediately send a new prompt. Async — the
+    response is a 202 ack with the *current* status.
+    """
+    try:
+        with transaction.atomic():
+            session = AgentSession.objects.select_for_update().get(
+                pk=session_id, user=request.user
+            )
+            err = _pkg.check_can_interrupt(session.status)
+            if err is not None:
+                return err
+            handle = session.backend_handle
+            session.interrupt_requested = True
+            session.save(update_fields=["interrupt_requested", "updated_at"])
+    except AgentSession.DoesNotExist:
+        return JsonResponse({"detail": "Session not found"}, status=404)
+
+    if handle:
+        session_service.interrupt_session_task.defer(
+            user_id=request.user.id,
+            handle=handle,
+            _otel_carrier=inject_carrier(),
+        )
+
+    posthog_capture(
+        request.user,
+        "session.interrupt_requested",
+        properties={"session_id": str(session.id)},
+    )
+
+    return JsonResponse(
+        {
+            "id": str(session.id),
+            "status": session.status,
+        },
+        status=202,
+    )
+
+
+@csrf_exempt
+@require_POST
+@require_api_key
 def terminate_session(request, session_id):
     """Terminate a session's Sprite without deleting the session record."""
     try:

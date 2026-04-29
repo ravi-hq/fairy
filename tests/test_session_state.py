@@ -10,6 +10,7 @@ import json
 from agent_on_demand.session_state import (
     check_can_accept_prompt,
     check_can_delete,
+    check_can_interrupt,
     check_can_terminate,
 )
 
@@ -135,3 +136,52 @@ def test_delete_rejects_running():
 def test_delete_rejection_response_only_has_detail_key():
     payload = body(check_can_delete("running"))
     assert set(payload.keys()) == {"detail"}
+
+
+# === check_can_interrupt ===
+
+
+def test_interrupt_allows_pending():
+    """A pending session has a turn enqueued; interrupt cancels it
+    before the worker runs it."""
+    assert check_can_interrupt("pending") is None
+
+
+def test_interrupt_allows_running():
+    """A running session has an in-flight turn; interrupt SIGTERMs it."""
+    assert check_can_interrupt("running") is None
+
+
+def test_interrupt_rejects_completed():
+    resp = check_can_interrupt("completed")
+    assert resp is not None
+    assert resp.status_code == 409
+    assert body(resp) == {"detail": "Session has no active turn to interrupt"}
+
+
+def test_interrupt_rejects_terminated():
+    resp = check_can_interrupt("terminated")
+    assert resp is not None
+    assert resp.status_code == 409
+    assert body(resp) == {"detail": "Session has been terminated"}
+
+
+def test_interrupt_rejects_failed():
+    resp = check_can_interrupt("failed")
+    assert resp is not None
+    assert resp.status_code == 409
+    assert body(resp) == {"detail": "Session has failed"}
+
+
+def test_interrupt_rejection_response_only_has_detail_key():
+    for status in ("completed", "terminated", "failed"):
+        payload = body(check_can_interrupt(status))
+        assert set(payload.keys()) == {"detail"}, status
+
+
+def test_interrupt_unknown_status_treated_as_acceptable():
+    """Mirrors the unknown-status policy on check_can_accept_prompt: callers
+    are responsible for ensuring the status is a known value, and the helper
+    doesn't 409 on unrecognized states."""
+    assert check_can_interrupt("queued") is None
+    assert check_can_interrupt("") is None

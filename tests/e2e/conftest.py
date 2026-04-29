@@ -114,6 +114,9 @@ class APIClient:
     def send_prompt(self, sid, **kw):
         return self.http.post(self._url(f"/sessions/{sid}/prompt"), json=kw)
 
+    def interrupt_session(self, sid):
+        return self.http.post(self._url(f"/sessions/{sid}/interrupt"))
+
     def terminate_session(self, sid):
         return self.http.post(self._url(f"/sessions/{sid}/terminate"))
 

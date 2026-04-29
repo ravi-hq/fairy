@@ -44,6 +44,29 @@ def check_can_terminate(status: str) -> JsonResponse | None:
     return None
 
 
+def check_can_interrupt(status: str) -> JsonResponse | None:
+    """Reject interrupt unless the session has an active turn to stop.
+
+    Accepts: ``pending`` and ``running``. Pending sessions have a turn
+    enqueued (or in-flight on the worker) — interrupting cancels the
+    work before it executes. Running sessions have an in-progress turn
+    that gets killed on the backend.
+
+    Rejects: ``completed`` (no active turn — caller probably raced a
+    natural completion), ``failed`` (terminal), ``terminated`` (Sprite
+    is gone). Each gets a distinct ``detail`` so SDKs can act on it.
+    """
+    if status in ("pending", "running"):
+        return None
+    if status == "completed":
+        return JsonResponse({"detail": "Session has no active turn to interrupt"}, status=409)
+    if status == "terminated":
+        return JsonResponse({"detail": "Session has been terminated"}, status=409)
+    if status == "failed":
+        return JsonResponse({"detail": "Session has failed"}, status=409)
+    return None
+
+
 def check_can_delete(status: str) -> JsonResponse | None:
     """Reject delete while the session is active. ``pending`` has a
     provision_session_task in flight; deleting the row mid-provision either

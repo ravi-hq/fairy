@@ -201,6 +201,10 @@ class RecordingSprite:
         except SpriteError as e:
             raise BackendError(str(e)) from e
 
+    def interrupt_running_commands(self) -> None:
+        self._maybe_raise(("interrupt_running_commands",))
+        self.interrupt_calls = getattr(self, "interrupt_calls", 0) + 1
+
     @property
     def writes(self) -> list[RecordedWrite]:
         return self._fs.writes

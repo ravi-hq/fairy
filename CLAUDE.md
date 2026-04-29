@@ -74,7 +74,10 @@ directly (without `make`), `tests/e2e/conftest.py` defaults to
   `crypto.py`.
 - **Session states**: `pending → running → {completed, failed, terminated}`.
   `POST /prompt` is only valid on a `pending`/`completed` session;
-  `running`, `failed`, and `terminated` all return `409`.
+  `running`, `failed`, and `terminated` all return `409`. `POST
+  /interrupt` is the inverse: only valid on `pending`/`running`. An
+  interrupt brings the session back to `completed` (Sprite stays alive)
+  and the affected turn finalizes with `status="interrupted"`.
 
 ## Testing guidance
 

@@ -211,6 +211,35 @@ class TestTermination:
             cleanup_agent()
 
 
+class TestInterrupt:
+    """Verify the interrupt endpoint's state-machine contract end-to-end.
+
+    Doesn't try to race a real running agent — that path is covered by
+    unit tests against TurnExecutor. Here we just confirm the 409 shape
+    that SDKs depend on against a live deployment."""
+
+    def test_interrupt_409_shapes(self, api, runtime):
+        agent, cleanup_agent = _create_throwaway_agent(api, runtime, "intr")
+        session = _start_throwaway_session(api, agent["id"], "Say ok.")
+        try:
+            final, _ = api.run_session(session["id"])
+            assert final["status"] == "completed"
+
+            # Completed → 409 with the contract message.
+            resp = api.interrupt_session(session["id"])
+            assert resp.status_code == 409
+            assert resp.json() == {"detail": "Session has no active turn to interrupt"}
+
+            # Terminate the session, then interrupt → "Session has been terminated".
+            resp = api.terminate_session(session["id"])
+            assert resp.status_code == 200
+            resp = api.interrupt_session(session["id"])
+            assert resp.status_code == 409
+            assert resp.json() == {"detail": "Session has been terminated"}
+        finally:
+            cleanup_agent()
+
+
 # ---------------------------------------------------------------------------
 # Multi-turn
 # ---------------------------------------------------------------------------

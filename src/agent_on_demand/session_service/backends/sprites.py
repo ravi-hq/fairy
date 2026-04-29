@@ -16,9 +16,11 @@ idempotent — repeated `SpritesBackend()` instantiations don't re-patch.
 from __future__ import annotations
 
 import io
+import logging
 from typing import Any, BinaryIO
 
 import sprites
+import sprites.session as _sprites_session
 from django.conf import settings
 
 from .base import (
@@ -30,6 +32,8 @@ from .base import (
     SessionNotFoundError,
     WorkspaceFS,
 )
+
+logger = logging.getLogger(__name__)
 
 # Re-exported for callers that still need to catch sprites-native
 # exceptions during the PR 2 → PR 4 transition. `tasks.py` catches
@@ -133,6 +137,30 @@ class _SpritesHandle:
             raise SessionNotFoundError(str(e)) from e
         except sprites.SpriteError as e:
             raise BackendError(str(e)) from e
+
+    def interrupt_running_commands(self) -> None:
+        """Send SIGTERM to every active sprites-side exec session on this
+        sprite. Each ``Cmd.run()`` we spawn registers a server-side
+        session; killing it makes the in-Sprite agent process exit, the
+        SDK call returns with ``ExecError``, and the worker thread
+        finalizes the turn. Best-effort: per-session NotFoundError is
+        swallowed (race with natural completion); transport-layer
+        failures surface as ``BackendError``."""
+        try:
+            sessions = _sprites_session.list_sessions(self._sprite)
+        except sprites.SpriteError as e:
+            raise BackendError(str(e)) from e
+        for s in sessions:
+            if not s.is_active:
+                continue
+            try:
+                _sprites_session.kill_session(
+                    self._sprite, s.id, signal="SIGTERM", timeout=5
+                )
+            except sprites.NotFoundError:
+                pass
+            except sprites.SpriteError as e:
+                logger.warning("kill_session failed for %s on %s: %s", s.id, self._sprite.name, e)
 
 
 class _SpritesBackendClient:

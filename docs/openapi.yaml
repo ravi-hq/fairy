@@ -407,6 +407,32 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /sessions/{session_id}/interrupt:
+    parameters:
+      - $ref: "#/components/parameters/SessionId"
+    post:
+      tags: [sessions]
+      summary: Interrupt the active turn without destroying the Sprite
+      description: >
+        Stop the running (or pending) turn and leave the Sprite alive so
+        the next `POST /prompt` can resume the conversation. Async — the
+        worker SIGTERMs the in-Sprite agent process and finalizes the
+        turn as `status="interrupted"` and the session as
+        `status="completed"`. The response echoes the *current* session
+        status (still `running` or `pending` until the worker observes
+        the request).
+      responses:
+        "202":
+          description: Interrupt accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionInterruptAck"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
   /sessions/{session_id}/terminate:
     parameters:
       - $ref: "#/components/parameters/SessionId"
@@ -1035,7 +1061,7 @@ components:
           type: string
         status:
           type: string
-          enum: [pending, running, completed, failed]
+          enum: [pending, running, completed, failed, interrupted]
         exit_code:
           type: integer
           nullable: true
@@ -1139,3 +1165,18 @@ components:
         status:
           type: string
           enum: [terminated]
+
+    SessionInterruptAck:
+      type: object
+      description: >
+        Async ack for `POST /sessions/{id}/interrupt`. Echoes the
+        session's current status — typically `running` or `pending` —
+        because the actual transition to `completed` happens on the
+        worker once the in-Sprite process exits.
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [pending, running]
