@@ -8,7 +8,7 @@ import json
 import pytest
 from django.contrib.auth.models import User
 
-from agent_on_demand.runtimes.claude import CLAUDE_CODE_VERSION, ClaudeRuntime
+from agent_on_demand.runtimes.claude import ClaudeRuntime
 from agent_on_demand.session_service.specs import McpServerSpec, SessionSpec
 from tests.fakes.sprite import RecordingSprite
 
@@ -43,10 +43,12 @@ def test_providers():
     assert ClaudeRuntime().providers == {"anthropic"}
 
 
-def test_install_runs_npm_global():
+def test_install_runs_claude_update():
     """Sprite base image pins claude to 2.1.92, which predates the
-    Traces (beta) `TRACEPARENT` propagation. install() must upgrade
-    via npm so `claude_code.interaction` parents under our worker span.
+    Traces (beta) `TRACEPARENT` propagation. install() must run
+    `claude update` so `claude_code.interaction` parents under our
+    worker span. Delegating the version choice to `claude update` keeps
+    the upgrade channel consistent with what claude itself ships.
     """
     sprite = RecordingSprite("s")
     ClaudeRuntime().install(sprite)
@@ -54,8 +56,7 @@ def test_install_runs_npm_global():
     argv = sprite.commands[0].argv
     assert argv[0] == "bash"
     assert argv[1] == "-lc"
-    assert f"@anthropic-ai/claude-code@{CLAUDE_CODE_VERSION}" in argv[2]
-    assert "npm install -g" in argv[2]
+    assert argv[2] == "claude update"
 
 
 @pytest.mark.django_db

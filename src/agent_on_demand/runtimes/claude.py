@@ -15,15 +15,6 @@ if TYPE_CHECKING:
     from agent_on_demand.session_service.specs import McpServerSpec, SessionSpec
 
 
-# Minimum version that emits `claude_code.interaction` spans and honors
-# inbound `TRACEPARENT` in `-p`/`--print` non-interactive mode (the
-# Traces (beta) feature documented at
-# https://code.claude.com/docs/en/monitoring-usage#traces-beta). The
-# Sprite base image ships an older 2.1.92 that drops both, breaking the
-# parent linkage we propagate from `session.execute_turn`.
-CLAUDE_CODE_VERSION = "2.1.123"
-
-
 class ClaudeRuntime:
     """Runtime for Anthropic's Claude Code CLI.
 
@@ -32,11 +23,14 @@ class ClaudeRuntime:
     its own, so the command shape is the same for both.
 
     The Sprite base image ships claude pre-installed but pinned to 2.1.92,
-    which predates the Traces (beta) `TRACEPARENT` propagation. `install`
-    upgrades it to `CLAUDE_CODE_VERSION` per provision so child spans
-    parent under our `session.execute_turn` span. If the Environment has
-    `networking_type="limited"`, the allowed-hosts list must include
-    `registry.npmjs.org`.
+    which predates the Traces (beta) `TRACEPARENT` propagation documented
+    at https://code.claude.com/docs/en/monitoring-usage#traces-beta. On
+    that version, child spans land in Honeycomb as orphan roots instead
+    of parenting under our `session.execute_turn` span. `install` runs
+    `claude update` per provision to pull the latest CLI before the
+    network policy locks down. If the Environment has
+    `networking_type="limited"`, the allowed-hosts list must reach
+    whatever update channel claude uses (npm registry today).
     """
 
     name = "claude"
@@ -45,9 +39,7 @@ class ClaudeRuntime:
     skills_sh_agent: str | None = "claude-code"
 
     def install(self, handle: "SessionHandle") -> None:
-        handle.make_command(
-            "bash", "-lc", f"npm install -g @anthropic-ai/claude-code@{CLAUDE_CODE_VERSION}"
-        ).run()
+        handle.make_command("bash", "-lc", "claude update").run()
 
     def build_command(self, spec: "SessionSpec", mode: Literal["run", "continue"]) -> list[str]:
         return build_claude_command(spec, mode)
