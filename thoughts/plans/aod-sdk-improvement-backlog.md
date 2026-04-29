@@ -42,14 +42,14 @@ Ordered by impact-per-effort. Each entry is one PR.
 
 ### Type fidelity (server validation has shapes the SDK doesn't expose)
 
-1. **Typed MCP server request models.** API accepts two distinct shapes
+- [ ] 1. **Typed MCP server request models.** API accepts two distinct shapes
    (`url` / `stdio`) with different required fields
    (`mcp_server_validation.py`). SDK request methods take
    `list[dict[str, Any]]` so users get no validation until the server
    422s. Add `McpServerUrl` / `McpServerStdio` typed inputs, accept
    `dict | typed` in `agents.create/update`, validate at call time.
 
-2. **Typed Skill request models.** API accepts inline (`name`,
+- [ ] 2. **Typed Skill request models.** API accepts inline (`name`,
    `description`, `content`) and github (`type=github`, `source`,
    optional `name`) shapes with strict field allowlists, name regex,
    content size cap, heredoc-delimiter blocklist
@@ -58,7 +58,7 @@ Ordered by impact-per-effort. Each entry is one PR.
    client-side to fail fast on the obvious mistakes (length, name
    regex, missing fields).
 
-3. **Typed session resource with `authorization_token`.** API supports
+- [ ] 3. **Typed session resource with `authorization_token`.** API supports
    `authorization_token` on `github_repository` resources (private repo
    PAT). SDK accepts a dict so users *can* pass it, but there's no
    typed surface — `resources=[{"type": ..., "authorization_token":
@@ -66,15 +66,15 @@ Ordered by impact-per-effort. Each entry is one PR.
    model with `authorization_token`, accept `dict | typed`. Mirrors the
    Pydantic model already on the server.
 
-4. **Typed networking for env create/update.** API takes
+- [ ] 4. **Typed networking for env create/update.** API takes
    `{"type": "unrestricted" | "limited", "allowed_hosts": [...]}`
    with regex validation (`environment_validation.py`). SDK takes
    `dict[str, Any]`. Add `NetworkingRequest` typed input.
 
 ### DX (high-value helpers that don't exist today)
 
-5. **`sessions.run()` — create + stream + collect.** Today's golden
-   path is six lines:
+- [ ] 5. **`sessions.run()` — create + stream + collect.** Today's golden
+   path is four lines:
 
    ```python
    ack = client.sessions.create(...)
@@ -88,41 +88,48 @@ Ordered by impact-per-effort. Each entry is one PR.
    stdout/stderr if requested). Same for async. This is the single
    biggest DX win in the SDK.
 
-6. **`sessions.wait_for_completion(session_id, timeout=...)`.** Often
+- [ ] 6. **`sessions.wait_for_completion(session_id, timeout=...)`.** Often
    you've already created a session (or are resuming an existing one)
    and just want a blocking wait. Implement on top of the stream so it
    reuses the SSE plumbing.
 
-7. **`Last-Event-ID` header on stream resume.** Server reads
+- [ ] 7. **`Last-Event-ID` header on stream resume.** Server reads
    `HTTP_LAST_EVENT_ID` *or* `?since=`. SDK only sends `?since=`.
    Adding the header makes resume work transparently with any
    spec-compliant SSE client/proxy in the chain.
 
-8. **Stream auto-reconnect on transient disconnect.** SSE drops happen
+- [ ] 8. **Stream auto-reconnect on transient disconnect.** SSE drops happen
    (proxies, idle timeouts). Add an opt-in
    `stream(session_id, auto_reconnect=True)` that catches
    `httpx.RemoteProtocolError` / `httpx.ReadError`, sleeps with
    exponential backoff, and reconnects with `since=<last seen id>`.
    Off by default to keep the existing behavior.
 
-9. **Retry on 5xx with backoff.** Configurable transport-level retry
+- [ ] 9. **Retry on 5xx with backoff.** Configurable transport-level retry
    for idempotent methods (GET / DELETE /archive). Users can wire it
    today via `httpx.HTTPTransport(retries=...)` but a first-class
-   knob on `Client(...)` is friendlier.
+   knob on `Client(...)` is friendlier. **Caveat:** auto-retry on
+   DELETE / `/archive` is only safe if the server treats those routes
+   as idempotent. AoD currently returns `409` when archiving an
+   already-archived row (and likewise for delete on a missing row), so
+   a 5xx that masked a successful first call would be retried into a
+   confusing 409 on the second. Verify the server contract before
+   wiring this up — either widen the retry rules to swallow the
+   follow-up 409, or scope the retry to GET only.
 
 ### Pretty-printers (currently only Claude has one)
 
-10. **`aod.pretty.codex` formatter.** Codex CLI emits its own line
+- [ ] 10. **`aod.pretty.codex` formatter.** Codex CLI emits its own line
     format. Mirror the `ClaudeFormatter` shape (`consume(event)`,
     `feed(chunk)`, `flush()`).
 
-11. **`aod.pretty.gemini` formatter.** Same, for Gemini CLI.
+- [ ] 11. **`aod.pretty.gemini` formatter.** Same, for Gemini CLI.
 
-12. **`aod.pretty.opencode` formatter.** Same, for OpenCode.
+- [ ] 12. **`aod.pretty.opencode` formatter.** Same, for OpenCode.
 
 ### Documentation / spec sync
 
-13. **OpenAPI sync sweep.** `docs/openapi.yaml` is stale. Diff it
+- [ ] 13. **OpenAPI sync sweep.** `docs/openapi.yaml` is stale. Diff it
     against the current view code and update:
     request shapes (skills, mcp_servers, networking, resources),
     response shapes (session ack vs session detail),
@@ -130,7 +137,7 @@ Ordered by impact-per-effort. Each entry is one PR.
     new endpoints/fields landed since the last sweep. May be one PR or
     split by section depending on size.
 
-14. **README quickstart matches the typed surface.** Once 1–4 land,
+- [ ] 14. **README quickstart matches the typed surface.** Once 1–4 land,
     update the quickstart in `clients/python/README.md` to use typed
     inputs in at least one example, with a note that dicts still work.
 
@@ -152,5 +159,11 @@ Ordered by impact-per-effort. Each entry is one PR.
   links each component PR. Reviewers can read the omnibus diff for the
   full picture or click through to each component PR for focused
   review.
+- **Treat `sdk/omnibus` as throwaway.** Because it's force-pushed every
+  iteration, any local checkout will silently diverge from the remote.
+  If you've checked it out, delete the local copy
+  (`git branch -D sdk/omnibus`) and re-fetch (`git fetch origin
+  sdk/omnibus && git checkout sdk/omnibus`) rather than rebasing or
+  pulling on top of an existing local copy.
 - This file is the single source of truth for what's done, what's
   open, and what's next; tick items as the PRs land.
