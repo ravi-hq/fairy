@@ -58,13 +58,13 @@ A **session** is one execution of an agent inside a Sprite. Sessions are:
         POST /sessions/{id}/prompt (allowed from completed)
 ```
 
-- `pending` → accepted, not yet executing. Prompts are accepted but state stays `pending`.
-- `running` → agent CLI is executing inside the Sprite. Prompts return `409`.
+- `pending` → accepted, not yet executing. Cannot accept a new prompt; a turn is already queued. `POST /prompt` returns `409`.
+- `running` → agent CLI is executing inside the Sprite. `POST /prompt` returns `409`.
 - `completed` → runtime exited with code 0. Prompts accepted; session resets to `pending`.
 - `failed` → runtime exited non-zero, or an unhandled exception. Cannot be continued; `POST /prompt` returns `409`.
 - `terminated` → stopped by `POST /sessions/{id}/terminate`. Cannot be continued.
 
-Only `pending` and `completed` sessions accept `POST /sessions/{id}/prompt`. `running`, `failed`, and `terminated` all return `409`.
+Only `completed` sessions accept `POST /sessions/{id}/prompt`. All other states (`pending`, `running`, `failed`, `terminated`) return `409`.
 
 ## Optimistic concurrency (agents and environments)
 
