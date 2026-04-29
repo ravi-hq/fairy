@@ -33,6 +33,7 @@ sourced from `src/config/settings.py`:
 | `SPRITES_BASE_URL` | No | `https://api.sprites.dev` | Override the Sprites API base URL |
 | `SPRITE_NAME_PREFIX` | No | `aod` | Prefix applied to all Sprite names created by this instance |
 | `DEFAULT_TIMEOUT` | No | `600` | Default session timeout in seconds |
+| `DEFAULT_MAX_CONCURRENT_SESSIONS` | No | `100` | Per-user cap on concurrent (`pending` + `running`) sessions. Raise or lower per user via `UserQuota.max_concurrent_sessions` in the Django shell. |
 
 A minimal production `.env`:
 
