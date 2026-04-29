@@ -70,8 +70,8 @@ Use this when your infrastructure doesn't support long-lived HTTP responses
   `ConflictError` (HTTP 409) — handle it gracefully.
 - **Cleanup:** Implement a retention policy: call
   `client.sessions.delete(session_id)` on sessions older than your threshold.
-  Sessions cannot be deleted while `status == "running"` — attempting to
-  raises `ConflictError`.
+  Active sessions (`status` of `pending` or `running`) cannot be deleted —
+  attempting to raises `ConflictError`. Terminate first, then delete.
 
 A complete runnable implementation — FastAPI backend, browser-side
 `EventSource`, single-token SSE proxy — lives at
