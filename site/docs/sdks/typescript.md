@@ -141,6 +141,7 @@ After a session reaches `completed`, call `client.sessions.prompt()` to send a f
 
 ```ts
 import { Client, ConflictError } from "@ravi-hq/aod-sdk";
+import type { SessionAck } from "@ravi-hq/aod-sdk";
 
 const client = new Client({ token: "aod_..." });
 
@@ -149,26 +150,58 @@ const ack = await client.sessions.create({
   agent_id: agentId,
   prompt: "List the TypeScript files here.",
 });
-const stream = await client.sessions.stream(ack.id);
+const turn1 = ack.current_turn;
+const stream1 = await client.sessions.stream(ack.id);
 try {
-  for await (const event of stream) {
-    if (event.type === "output") process.stdout.write(event.extra.data ?? "");
-    else if (event.type === "exit" || event.type === "error") break;
+  for await (const event of stream1) {
+    if (event.type === "output" && event.extra.turn === turn1) {
+      process.stdout.write((event.extra.data as string) ?? "");
+    } else if (
+      event.type === "exit" ||
+      event.type === "error" ||
+      event.type === "terminated" ||
+      event.type === "stale"
+    ) {
+      break;
+    }
   }
 } finally {
-  await stream.close();
+  await stream1.close();
 }
 
 // Turn 2 — only valid once session is `completed`
+let ack2: SessionAck;
 try {
-  const ack2 = await client.sessions.prompt(ack.id, {
+  ack2 = await client.sessions.prompt(ack.id, {
     prompt: "Now summarise what each file does.",
   });
-  console.log("turn", ack2.current_turn);
 } catch (err) {
   if (err instanceof ConflictError) {
-    // session is running, failed, or terminated — check err.detail
+    // session is pending, running, failed, or terminated — inspect err.detail
+    // and either retry (pending/running) or start a new session (failed/terminated)
+    throw err;
+  } else {
+    throw err;
   }
+}
+
+const turn2 = ack2.current_turn;
+const stream2 = await client.sessions.stream(ack.id);
+try {
+  for await (const event of stream2) {
+    if (event.type === "output" && event.extra.turn === turn2) {
+      process.stdout.write((event.extra.data as string) ?? "");
+    } else if (
+      event.type === "exit" ||
+      event.type === "error" ||
+      event.type === "terminated" ||
+      event.type === "stale"
+    ) {
+      break;
+    }
+  }
+} finally {
+  await stream2.close();
 }
 ```
 

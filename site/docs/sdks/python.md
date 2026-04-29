@@ -130,10 +130,21 @@ with Client() as client:
     try:
         ack2 = client.sessions.prompt(ack.id, prompt="Now summarise what each file does.")
     except ConflictError as e:
-        if "failed" in e.detail or "terminated" in e.detail:
-            pass  # session ended — start a new one
-        else:
-            pass  # session is still running — retry after it completes
+        detail = str(e.detail)
+        if "failed" in detail or "terminated" in detail:
+            # session ended — start a new one (or surface to the caller)
+            raise
+        # session is pending or running — wait and retry, e.g.:
+        #   time.sleep(2); ack2 = client.sessions.prompt(ack.id, prompt=...)
+        raise
+
+    turn2 = ack2.current_turn
+    with client.sessions.stream(ack.id) as events:
+        for event in events:
+            if event.type == "output" and event.extra.get("turn") == turn2:
+                print(event.extra["data"], end="")
+            elif event.type in ("exit", "error", "terminated", "stale"):
+                break
 ```
 
 `prompt()` returns a `SessionAck` with the updated `current_turn`. Only `completed` sessions accept a prompt — `running`, `pending`, `failed`, and `terminated` all raise `ConflictError` (409). See [Core Concepts → Session state machine](../api/concepts.md#session-state-machine).
