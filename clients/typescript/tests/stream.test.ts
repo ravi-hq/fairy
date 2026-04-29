@@ -107,6 +107,33 @@ describe("stream", () => {
     await stream.close();
   });
 
+  it("aborts the underlying fetch when the iteration ends without close()", async () => {
+    // Pre-fix, breaking out of `for await` only released the reader's lock —
+    // the fetch's underlying connection stayed open until socket idle-out.
+    // Pin: the iterator's finally aborts the controller, which propagates
+    // the abort to the request signal observed by the server.
+    const server = new MockServer();
+    const sid = uuid();
+    let abortObserved = false;
+    server.register("GET", `/sessions/${sid}/stream`, (req) => {
+      req.signal.addEventListener("abort", () => {
+        abortObserved = true;
+      });
+      const body =
+        'data: {"type":"start"}\n\n' +
+        'data: {"type":"output","id":1,"stream":"stdout","data":"hi"}\n\n';
+      return new Response(body, {
+        status: 200,
+        headers: { "content-type": "text/event-stream" },
+      });
+    });
+    const stream = await newClient(server).sessions.stream(sid);
+    for await (const event of stream) {
+      if (event.type === "output") break;
+    }
+    expect(abortObserved).toBe(true);
+  });
+
   it("ignores non-data lines", async () => {
     const server = new MockServer();
     const sid = uuid();

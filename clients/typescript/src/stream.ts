@@ -10,13 +10,23 @@ export function createStreamHandle(
   url: string,
   controller: AbortController,
 ): StreamHandle {
-  const iterator = iterateSSE(response, url);
+  // Releasing the reader's lock leaves the response body unconsumed; the
+  // socket can outlive the for-await loop unless we abort the fetch. Run
+  // abort on every iteration-end path (natural completion, break, throw,
+  // or explicit close) and guard it with an idempotency flag.
+  let aborted = false;
+  const abortOnce = () => {
+    if (aborted) return;
+    aborted = true;
+    controller.abort();
+  };
+  const iterator = iterateSSE(response, url, abortOnce);
   return {
     [Symbol.asyncIterator]() {
       return iterator;
     },
     async close() {
-      controller.abort();
+      abortOnce();
       try {
         await iterator.return?.(undefined);
       } catch {
@@ -29,6 +39,7 @@ export function createStreamHandle(
 async function* iterateSSE(
   response: Response,
   url: string,
+  onDone: () => void,
 ): AsyncGenerator<StreamEvent, void, unknown> {
   if (response.status >= 400) {
     const text = await response.text();
@@ -40,11 +51,15 @@ async function* iterateSSE(
         parsed = text;
       }
     }
+    onDone();
     raiseForStatus(response.status, parsed, "GET", url);
     return;
   }
 
-  if (!response.body) return;
+  if (!response.body) {
+    onDone();
+    return;
+  }
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder("utf-8");
@@ -77,6 +92,7 @@ async function* iterateSSE(
     } catch {
       // reader already released
     }
+    onDone();
   }
 }
 
