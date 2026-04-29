@@ -70,8 +70,9 @@ def handle_mention(event, say):
             # 409 has two causes:
             #   running/pending — agent is still executing (user typed quickly)
             #   failed/terminated — session ended and cannot be resumed
-            if "failed" in e.detail or "terminated" in e.detail:
-                # Start a fresh session instead of resuming
+            if e.detail and ("failed" in e.detail or "terminated" in e.detail):
+                # Start a fresh session instead of resuming. Drop the stale
+                # ID first so a failed create() doesn't leave it mapped.
                 del thread_sessions[thread_ts]
                 ack = client.sessions.create(agent_id=AGENT_ID, prompt=prompt)
                 thread_sessions[thread_ts] = str(ack.id)
