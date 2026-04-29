@@ -66,11 +66,18 @@ def handle_mention(event, say):
         session_id = thread_sessions[thread_ts]
         try:
             ack = client.sessions.prompt(session_id, prompt=prompt)
-        except ConflictError:
-            # 409: session is already running (user typed quickly).
-            # Queue this message or tell the user to wait.
-            say(text="Still working on the previous message…", thread_ts=thread_ts)
-            return
+        except ConflictError as e:
+            # 409 has two causes:
+            #   running/pending — agent is still executing (user typed quickly)
+            #   failed/terminated — session ended and cannot be resumed
+            if "failed" in e.detail or "terminated" in e.detail:
+                # Start a fresh session instead of resuming
+                del thread_sessions[thread_ts]
+                ack = client.sessions.create(agent_id=AGENT_ID, prompt=prompt)
+                thread_sessions[thread_ts] = str(ack.id)
+            else:
+                say(text="Still working on the previous message…", thread_ts=thread_ts)
+                return
 
     output = run_turn(thread_sessions[thread_ts], ack.current_turn)
     say(text=output, thread_ts=thread_ts)
@@ -88,5 +95,5 @@ in the repo.
 | **Stateful threads** | Agent on Demand holds the session state; your bot only stores the `session_id` mapping. |
 | **Multi-turn** | `client.sessions.prompt(id, prompt=...)` re-enters the Sprite — the agent sees previous output. |
 | **Session lifetime** | Sprites are long-lived within a session; call `client.sessions.terminate(id)` when the thread is archived or idle. |
-| **Concurrency** | `prompt()` raises `ConflictError` (HTTP 409) if the session is already running — queue incoming messages per thread if users type quickly. |
+| **Concurrency** | `prompt()` raises `ConflictError` (HTTP 409) if the session is `running` or `pending` (user typed quickly), or if it has `failed` or `terminated` (cannot be resumed). Check `e.detail` to distinguish. |
 | **Storage** | In production, persist the `thread_ts → session_id` map in Redis or a database so it survives bot restarts. |
