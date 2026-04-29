@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from contextlib import asynccontextmanager, contextmanager
 from typing import Any
@@ -247,8 +248,6 @@ class AsyncSessions:
         return the final session record. See `Sessions.run` for the
         semantics; `on_event` may be sync or async.
         """
-        import inspect
-
         ack = await self.create(
             agent_id=agent_id,
             prompt=prompt,

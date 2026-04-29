@@ -252,6 +252,7 @@ def test_run_with_collect_events_false(client, server, make_session):
     assert result.session.id is not None
 
 
+@pytest.mark.asyncio
 async def test_async_run(async_client, server, make_session):
     sid = str(uuid4())
     server.json("POST", "/sessions", 202, {"id": sid, "status": "pending"})
@@ -271,6 +272,7 @@ async def test_async_run(async_client, server, make_session):
     assert [e.type for e in result.events] == ["start", "exit"]
 
 
+@pytest.mark.asyncio
 async def test_async_run_supports_async_on_event(async_client, server, make_session):
     sid = str(uuid4())
     server.json("POST", "/sessions", 202, {"id": sid, "status": "pending"})

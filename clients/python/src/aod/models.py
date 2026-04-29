@@ -181,9 +181,12 @@ TERMINAL_EVENT_TYPES: frozenset[StreamEventType] = frozenset({"exit", "error", "
 
 
 class RunResult(_Model):
-    """The result of `sessions.run(...)` — what `sessions.create` would
-    have returned plus the streamed events and the final session
-    record."""
+    """The result of `sessions.run(...)`: the final `Session` record
+    (fetched via `sessions.get()` after the stream closes) plus the
+    collected `StreamEvent`s observed while the turn was running.
+
+    `events` is empty when `run()` was called with `collect_events=False`.
+    """
 
     session: Session
     events: list[StreamEvent] = Field(default_factory=list)
