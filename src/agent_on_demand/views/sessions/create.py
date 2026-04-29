@@ -19,6 +19,7 @@ from agent_on_demand.models import (
 from agent_on_demand.models.auth import CREDENTIAL_ENV_VAR, UserCredential
 from agent_on_demand.models_catalog import MODELS
 from agent_on_demand.runtimes import RUNTIMES
+from agent_on_demand.session_service.tracing import inject_carrier
 from agent_on_demand.views._helpers import parse_request_body
 
 from .schemas import RunRequest
@@ -187,6 +188,7 @@ def _create_session(request):
             prompt=effective_prompt,
             mode="run",
             timeout=float(req.timeout),
+            _otel_carrier=inject_carrier(),
         )
 
     posthog_capture(

@@ -21,6 +21,7 @@ def run_turn(
     # Local import: `tasks` imports `turn.argv` / `turn.outcome`, so a
     # top-level import here would cycle through the `turn` package init.
     from agent_on_demand.session_service.tasks import execute_turn
+    from agent_on_demand.session_service.tracing import inject_carrier
 
     execute_turn.defer(
         session_id=str(session.id),
@@ -28,4 +29,5 @@ def run_turn(
         prompt=prompt,
         mode=mode,
         timeout=float(timeout),
+        _otel_carrier=inject_carrier(),
     )

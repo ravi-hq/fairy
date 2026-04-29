@@ -8,6 +8,7 @@ from agent_on_demand import session_service
 from agent_on_demand.analytics import capture as posthog_capture
 from agent_on_demand.auth import require_api_key
 from agent_on_demand.models import AgentSession, SessionTurn
+from agent_on_demand.session_service.tracing import inject_carrier
 from agent_on_demand.views._helpers import parse_request_body
 
 from .schemas import PromptRequest
@@ -163,7 +164,11 @@ def terminate_session(request, session_id):
         return JsonResponse({"detail": "Session not found"}, status=404)
 
     if handle:
-        session_service.destroy_session_task.defer(user_id=request.user.id, handle=handle)
+        session_service.destroy_session_task.defer(
+            user_id=request.user.id,
+            handle=handle,
+            _otel_carrier=inject_carrier(),
+        )
 
     posthog_capture(
         request.user,

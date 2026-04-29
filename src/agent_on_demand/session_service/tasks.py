@@ -49,12 +49,18 @@ from .provisioning import (
     resume_session,
 )
 from .specs import build_spec_for_session
+from .tracing import inject_carrier, traced_task
 from .turn_executor import TurnExecutor
 
 logger = logging.getLogger(__name__)
 
 
+# `@procrastinate_app.task` must wrap `@traced_task` so the registered task body
+# is the traced wrapper, not the bare function. `_otel_carrier` is consumed and
+# stripped by `@traced_task`; declared explicitly so `inspect.signature(...)`
+# (which follows `functools.wraps.__wrapped__`) reflects the real call surface.
 @procrastinate_app.task(queue="sessions", name="provision_session", pass_context=False)
+@traced_task("provision_session")
 def provision_session_task(
     *,
     session_id: str,
@@ -62,6 +68,7 @@ def provision_session_task(
     prompt: str,
     mode: str,
     timeout: float,
+    _otel_carrier: dict | None = None,
 ) -> None:
     """Provision the Sprite on the worker, then enqueue the first turn.
 
@@ -149,6 +156,7 @@ def _provision_session_inner(
         prompt=prompt,
         mode=mode,
         timeout=timeout,
+        _otel_carrier=inject_carrier(),
     )
 
 
@@ -208,7 +216,9 @@ def _fail_pending_turn(session: AgentSession, turn: SessionTurn, message: str) -
     turn.save(update_fields=["status", "ended_at"])
 
 
+# Decorator order + `_otel_carrier`: see note on `provision_session_task` above.
 @procrastinate_app.task(queue="sessions", name="execute_turn", pass_context=False)
+@traced_task("execute_turn")
 def execute_turn(
     *,
     session_id: str,
@@ -216,6 +226,7 @@ def execute_turn(
     prompt: str,
     mode: str,
     timeout: float,
+    _otel_carrier: dict | None = None,
 ) -> None:
     """Run one turn. Arguments are JSON-serializable primitives; we re-fetch
     ORM rows and re-open the Sprite handle inside the task.
@@ -286,8 +297,10 @@ def _execute_turn_inner(
         TurnExecutor(session, turn, spec, handle, prompt, mode, timeout, span).run()
 
 
+# Decorator order + `_otel_carrier`: see note on `provision_session_task` above.
 @procrastinate_app.task(queue="sessions", name="destroy_session", pass_context=False)
-def destroy_session_task(*, user_id: int, handle: str) -> None:
+@traced_task("destroy_session")
+def destroy_session_task(*, user_id: int, handle: str, _otel_carrier: dict | None = None) -> None:
     """Delete a backend session on the worker. Best-effort — failures are
     logged, not retried, matching the pre-existing `destroy_session` contract.
 
