@@ -24,3 +24,16 @@ class Runtime(Protocol):
     ) -> None:
         """Write any per-runtime config files on the session. Always called at provision time,
         even when mcp_servers is empty."""
+
+    def otel_env(
+        self,
+        spec: SessionSpec,
+        traceparent: str | None,
+        tracestate: str | None,
+    ) -> dict[str, str]:
+        """Env vars to inject into the per-turn process for OpenTelemetry export.
+
+        Return ``{}`` to disable. Implementations that support OTel should
+        honor ``traceparent`` / ``tracestate`` so the runtime CLI's spans
+        parent under the worker span that launched the turn.
+        """

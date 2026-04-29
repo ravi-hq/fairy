@@ -53,3 +53,11 @@ class OpencodeRuntime:
             "/home/sprite/.config/opencode/opencode.json",
             json.dumps({"mcp": config}, indent=2),
         )
+
+    def otel_env(
+        self,
+        spec: "SessionSpec",
+        traceparent: str | None,
+        tracestate: str | None,
+    ) -> dict[str, str]:
+        return {}

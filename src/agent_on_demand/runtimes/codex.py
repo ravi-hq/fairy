@@ -39,3 +39,11 @@ class CodexRuntime:
             return
         body = render_codex_mcp_config(mcp_servers)
         handle.workspace().write_text("/home/sprite/.codex/config.toml", body)
+
+    def otel_env(
+        self,
+        spec: "SessionSpec",
+        traceparent: str | None,
+        tracestate: str | None,
+    ) -> dict[str, str]:
+        return {}
