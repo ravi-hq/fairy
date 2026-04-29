@@ -151,6 +151,39 @@ If the `id` is not a non-negative integer, the server returns `400`.
         ...
     ```
 
+=== "TypeScript (aod-sdk)"
+
+    The [`@ravi-hq/aod-sdk`](../sdks/typescript.md) package handles SSE parsing, heartbeats, and `Last-Event-ID` resume. `stream()` returns a `StreamHandle` — an `AsyncIterable<StreamEvent>` with a `close()` method.
+
+    ```ts
+    import { Client } from "@ravi-hq/aod-sdk";
+
+    const client = new Client({ token: "aod_..." });
+
+    const stream = await client.sessions.stream(sessionId);
+    try {
+      for await (const event of stream) {
+        if (event.type === "output") {
+          process.stdout.write(event.extra.data ?? "");
+        } else if (event.type === "stage") {
+          console.log(`[${event.extra.stage} ${event.extra.state}]`);
+        } else if (["exit", "error", "terminated", "stale"].includes(event.type)) {
+          console.log(`\n[${event.type}]`);
+          break;
+        }
+      }
+    } finally {
+      await stream.close();
+    }
+    ```
+
+    Pass `since` to resume after a previously-seen event, or `signal` to cancel from outside:
+
+    ```ts
+    const stream = await client.sessions.stream(sessionId, { since: 42 });
+    // or: { signal: abortController.signal }
+    ```
+
 === "Python (raw)"
 
     If you'd rather not add `aod-sdk` as a dependency, here's a minimal reconnect-aware loop on top of `requests`:
