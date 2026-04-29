@@ -66,7 +66,7 @@ class TurnExecutor:
         self._mode = mode
         self._timeout = timeout
         self._span = span
-        self._sink = LogChunkSink(session, turn)
+        self._sink = LogChunkSink(session, turn, span=span)
         self._result_holder: list = []
 
     def run(self) -> None:

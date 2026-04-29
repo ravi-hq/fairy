@@ -81,9 +81,10 @@ class LogChunkSink:
          emit the posthog event for any dropped chunks.
     """
 
-    def __init__(self, session: AgentSession, turn: SessionTurn):
+    def __init__(self, session: AgentSession, turn: SessionTurn, span=None):
         self._session = session
         self._turn = turn
+        self._span = span
         self._queue: queue.Queue = queue.Queue(maxsize=QUEUE_MAXSIZE)
         self._buffer: list[AgentSessionLog] = []
         self.stdout_writer = TaggingQueueWriter(self._queue, "stdout")
@@ -107,6 +108,7 @@ class LogChunkSink:
                 continue
             if chunk is _SENTINEL:
                 break
+            self._record_chunk_event(chunk)
             self._buffer.append(
                 AgentSessionLog(
                     session=self._session,
@@ -143,6 +145,23 @@ class LogChunkSink:
                     raise
                 close_old_connections()
                 time.sleep(delay)
+
+    def _record_chunk_event(self, chunk: TaggedChunk) -> None:
+        """Mark each chunk as a span event so the trace timeline shows when
+        the runtime produced output during the long sprite.command().run().
+        Without this, only the periodic INSERT statements appear in the
+        worker span and the gaps between them (model thinking + tool use)
+        are invisible. PR 2 will parse stream-json lines into richer child
+        spans; this is the cheap, runtime-agnostic baseline."""
+        if self._span is None:
+            return
+        self._span.add_event(
+            "runtime.output",
+            attributes={
+                "aod.stream": chunk.stream,
+                "aod.bytes": len(chunk.data),
+            },
+        )
 
     @property
     def total_drop_count(self) -> int:
