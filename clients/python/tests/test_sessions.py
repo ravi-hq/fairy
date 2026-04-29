@@ -189,7 +189,7 @@ def test_create_with_typed_github_resource(client, server):
 
 def test_create_with_typed_github_resource_custom_mount(client, server):
     ack_id = str(uuid4())
-    server.json("POST", "/sessions", 202, {"id": ack_id, "status": "pending"})
+    server.json("POST", "/sessions", 202, {"id": ack_id, "status": "pending", "current_turn": 1})
 
     client.sessions.create(
         agent_id=uuid4(),
@@ -204,7 +204,7 @@ def test_create_with_typed_github_resource_custom_mount(client, server):
 
 def test_create_with_dict_resources_still_works(client, server):
     ack_id = str(uuid4())
-    server.json("POST", "/sessions", 202, {"id": ack_id, "status": "pending"})
+    server.json("POST", "/sessions", 202, {"id": ack_id, "status": "pending", "current_turn": 1})
 
     client.sessions.create(
         agent_id=uuid4(),
@@ -215,6 +215,20 @@ def test_create_with_dict_resources_still_works(client, server):
     assert server.requests[-1].body["resources"] == [
         {"type": "github_repository", "url": "https://github.com/me/repo"}
     ]
+
+
+def test_create_with_dot_git_suffixed_url(client, server):
+    """`Field(pattern=...)` must allow the `.git` suffix end-to-end."""
+    ack_id = str(uuid4())
+    server.json("POST", "/sessions", 202, {"id": ack_id, "status": "pending", "current_turn": 1})
+
+    client.sessions.create(
+        agent_id=uuid4(),
+        prompt="hi",
+        resources=[GithubRepoResource(url="https://github.com/me/repo.git")],
+    )
+
+    assert server.requests[-1].body["resources"][0]["url"] == "https://github.com/me/repo.git"
 
 
 def test_github_resource_rejects_non_github_url():
@@ -233,3 +247,9 @@ def test_github_resource_rejects_reserved_mount_path():
         GithubRepoResource(url="https://github.com/me/repo", mount_path="/")
     with pytest.raises(pydantic.ValidationError):
         GithubRepoResource(url="https://github.com/me/repo", mount_path="/home/sprite")
+
+
+def test_github_resource_rejects_reserved_mount_path_trailing_slash():
+    """`/home/sprite/` resolves to the same dir as `/home/sprite`; reject both."""
+    with pytest.raises(pydantic.ValidationError):
+        GithubRepoResource(url="https://github.com/me/repo", mount_path="/home/sprite/")

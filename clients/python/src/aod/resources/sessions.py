@@ -6,10 +6,16 @@ from typing import Any
 from uuid import UUID
 
 import httpx
-from pydantic import BaseModel
 
 from .._http import check_response
-from ..models import GithubRepoResourceInput, Session, SessionAck, SessionTurn, StreamEvent
+from ..models import (
+    GithubRepoResource,
+    GithubRepoResourceInput,
+    Session,
+    SessionAck,
+    SessionTurn,
+    StreamEvent,
+)
 from ..stream import aiter_sse, iter_sse
 
 
@@ -20,9 +26,10 @@ def _normalize_resources(
         return None
     out: list[dict[str, Any]] = []
     for entry in resources:
-        if isinstance(entry, BaseModel):
+        if isinstance(entry, GithubRepoResource):
             out.append(entry.model_dump(exclude_none=True))
         else:
+            # dicts bypass client-side validation intentionally
             out.append(entry)
     return out
 

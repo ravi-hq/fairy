@@ -72,7 +72,11 @@ class GithubRepoResource(_Model):
             return None
         if not v.startswith("/"):
             raise ValueError("mount_path must be an absolute path")
-        if v in {"/", "/home/sprite"}:
+        # Strip a trailing slash so `/home/sprite/` is treated the same
+        # as `/home/sprite`. The server's reserved-path set today does
+        # not normalize the trailing slash, so the SDK fails fast where
+        # the server might accept; treat that gap as a server bug.
+        if v.rstrip("/") in {"", "/home/sprite"}:
             raise ValueError("mount_path must not be the Sprite root")
         return v
 
