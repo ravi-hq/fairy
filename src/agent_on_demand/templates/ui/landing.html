@@ -12,15 +12,14 @@
             REST API · Open source · Apache-2.0
           </div>
           <h1>
-            Spawn a coding agent
-            <span class="grad">in one request.</span>
+            Agents as
+            <span class="grad">a primitive.</span>
           </h1>
           <p class="lede">
-            Agent on Demand is a REST API for running Claude Code, Codex,
-            Gemini CLI, and opencode on fresh, sandboxed cloud machines.
-            Define an agent, wire up an environment,
-            <code>POST /sessions</code>, stream the output over SSE.
-            Multi-turn when you need it.
+            Build apps where AI agents are part of the runtime — not a chat
+            box bolted on the side. Define an agent, send a prompt, stream
+            what it does over SSE. Agent on Demand runs the sandbox, the
+            secrets, the lifecycle. You ship the product.
           </p>
           <div class="landing-ctas">
             {% if user.is_authenticated %}
@@ -28,7 +27,7 @@
             {% else %}
               <a class="btn-primary" href="{% url 'ui-register' %}">Get started — it's free →</a>
             {% endif %}
-            <a class="btn-ghost" href="https://ravi-hq.github.io/agent-on-demand">Read the docs</a>
+            <a class="btn-ghost" href="https://ravi-hq.github.io/agent-on-demand/api/why/">Why this exists</a>
             <a class="btn-ghost" href="https://github.com/ravi-hq/agent-on-demand">GitHub ↗</a>
           </div>
           <div class="hero-meta">
@@ -68,25 +67,32 @@
     <section class="landing-container landing-features">
       <div class="feature">
         <div class="feature-icon">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/><circle cx="9" cy="10" r="1.2" fill="currentColor"/><circle cx="15" cy="10" r="1.2" fill="currentColor"/></svg>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 17h7"/></svg>
         </div>
-        <h3>Agents</h3>
-        <p>Runtime + model. Claude Code, Codex, Gemini CLI, opencode. Optional MCP servers, system prompts. Versioned with optimistic concurrency.</p>
+        <h3>Kanban that ships PRs</h3>
+        <p>Move a card to <em>In Progress</em>. Spawn Claude Code in a fresh sandbox. The agent opens the PR. The card moves itself to <em>In Review</em> when the run finishes.</p>
       </div>
       <div class="feature">
         <div class="feature-icon">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l8 4v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6l8-4z"/><path d="M9 12l2 2 4-4"/></svg>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s-7-7.5-7-13a7 7 0 0 1 14 0c0 5.5-7 13-7 13z"/><circle cx="12" cy="9" r="2.5"/></svg>
         </div>
-        <h3>Environments</h3>
-        <p>Packages, setup scripts, env vars, DNS allow-lists. Secrets encrypted at rest, never echoed back. DNS-enforced egress when you need it.</p>
+        <h3>Research fleets, live on the page</h3>
+        <p>Fan out a swarm of agents to investigate neighborhoods, schools, vendors, anything. Each session streams its findings back. Your UI fills in as the work completes.</p>
       </div>
       <div class="feature">
         <div class="feature-icon">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h3l2-6 4 12 2-6h5"/></svg>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.4 8.4 0 0 1 3.8-.9h.5a8.5 8.5 0 0 1 8 8z"/></svg>
         </div>
-        <h3>Sessions</h3>
-        <p>One agent on one environment. Stream turns over SSE. Resume with follow-up prompts. Every turn logged, replayable, terminable.</p>
+        <h3>Inboxes that triage themselves</h3>
+        <p>Every inbound ticket spawns an investigator agent. It reproduces the bug, writes the repro, files the report. Your humans see triaged tickets, not raw ones.</p>
       </div>
+    </section>
+
+    <section class="landing-container" style="margin-top: 1.5rem;">
+      <p class="muted" style="text-align: center; margin: 0;">
+        None of these are coding tools. They're products that use coding agents as compute.
+        <a href="https://ravi-hq.github.io/agent-on-demand/patterns/">See the patterns →</a>
+      </p>
     </section>
 
     <section class="landing-container landing-code">
