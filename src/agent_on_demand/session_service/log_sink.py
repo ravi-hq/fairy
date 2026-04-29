@@ -16,11 +16,15 @@ import io
 import logging
 import queue
 import time
+from typing import TYPE_CHECKING
 
 from django.db import close_old_connections
 
 from agent_on_demand.analytics import capture as posthog_capture
 from agent_on_demand.models import AgentSession, AgentSessionLog, SessionTurn
+
+if TYPE_CHECKING:
+    from opentelemetry.trace import Span
 
 logger = logging.getLogger(__name__)
 
@@ -81,9 +85,15 @@ class LogChunkSink:
          emit the posthog event for any dropped chunks.
     """
 
-    def __init__(self, session: AgentSession, turn: SessionTurn):
+    def __init__(
+        self,
+        session: AgentSession,
+        turn: SessionTurn,
+        span: Span | None = None,
+    ):
         self._session = session
         self._turn = turn
+        self._span = span
         self._queue: queue.Queue = queue.Queue(maxsize=QUEUE_MAXSIZE)
         self._buffer: list[AgentSessionLog] = []
         self.stdout_writer = TaggingQueueWriter(self._queue, "stdout")
@@ -115,6 +125,7 @@ class LogChunkSink:
                     data=chunk.data.decode("utf-8", errors="replace"),
                 )
             )
+            self._record_chunk_event(chunk)
             if len(self._buffer) >= FLUSH_SIZE:
                 self._flush_buffer()
         self._flush_buffer()
@@ -143,6 +154,21 @@ class LogChunkSink:
                     raise
                 close_old_connections()
                 time.sleep(delay)
+
+    def _record_chunk_event(self, chunk: TaggedChunk) -> None:
+        """Mark each chunk as a span event so the trace timeline shows when
+        the runtime produced output. Without this, only the periodic INSERT
+        statements appear inside the turn span and the gaps between them
+        (model thinking + tool use) are invisible."""
+        if self._span is None:
+            return
+        self._span.add_event(
+            "runtime.output",
+            attributes={
+                "aod.stream": chunk.stream,
+                "aod.bytes": len(chunk.data),
+            },
+        )
 
     @property
     def total_drop_count(self) -> int:

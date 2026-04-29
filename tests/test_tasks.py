@@ -25,7 +25,7 @@ from agent_on_demand.models import (
     UserBackendCredential,
     UserCredential,
 )
-from agent_on_demand.session_service.log_sink import TaggingQueueWriter
+from agent_on_demand.session_service.log_sink import LogChunkSink, TaggingQueueWriter
 from agent_on_demand.session_service.tasks import (
     destroy_session_task,
     execute_turn,
@@ -668,6 +668,65 @@ def test_bulk_create_exhausts_retries_and_raises(user, mocker):
     assert len(exhaustion_calls) == 1
     props = exhaustion_calls[0].kwargs.get("properties", {})
     assert props.get("dropped_chunks", 0) > 0
+
+
+@pytest.mark.django_db
+def test_drain_emits_runtime_output_span_event_per_chunk(user):
+    """Each chunk consumed by the drain loop should fan out as a `runtime.output`
+    span event on the parent span. The trace would otherwise only show INSERT
+    spans at flush time, hiding the cadence of model output between flushes."""
+    session, turn = _make_session_and_turn(user)
+    span_events: list[tuple[str, dict]] = []
+
+    class FakeSpan:
+        def add_event(self, name, attributes=None):
+            span_events.append((name, dict(attributes or {})))
+
+    sink = LogChunkSink(session, turn, span=FakeSpan())
+    sink.stdout_writer.write(b"hello")
+    sink.stderr_writer.write(b"warn\n")
+    sink.put_sentinel()
+    sink.drain()
+
+    assert [(name, attrs["aod.stream"], attrs["aod.bytes"]) for name, attrs in span_events] == [
+        ("runtime.output", "stdout", 5),
+        ("runtime.output", "stderr", 5),
+    ]
+
+
+@pytest.mark.django_db
+def test_drain_buffers_chunk_before_emitting_span_event(user):
+    """If span.add_event raises (custom exporter, ended span on a buggy SDK,
+    etc.) the chunk must already be in the buffer — otherwise it's silently
+    lost with no drop counter or posthog event. The drain loop intentionally
+    buffers first, then emits."""
+    session, turn = _make_session_and_turn(user)
+
+    class RaisingSpan:
+        def add_event(self, name, attributes=None):
+            raise RuntimeError("exporter blew up")
+
+    sink = LogChunkSink(session, turn, span=RaisingSpan())
+    sink.stdout_writer.write(b"persisted")
+    sink.put_sentinel()
+
+    with pytest.raises(RuntimeError, match="exporter blew up"):
+        sink.drain()
+
+    assert len(sink._buffer) == 1
+    assert sink._buffer[0].data == "persisted"
+
+
+@pytest.mark.django_db
+def test_drain_without_span_does_not_raise(user):
+    """LogChunkSink must tolerate a missing span — span is None when callers
+    construct the sink outside a traced task (none today, but the constructor
+    keeps the parameter optional)."""
+    session, turn = _make_session_and_turn(user)
+    sink = LogChunkSink(session, turn, span=None)
+    sink.stdout_writer.write(b"x")
+    sink.put_sentinel()
+    sink.drain()
 
 
 @pytest.mark.django_db
