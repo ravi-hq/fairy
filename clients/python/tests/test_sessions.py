@@ -10,6 +10,7 @@ from aod import (
     ConflictError,
     GithubRepoResource,
     RateLimitError,
+    RunResult,
     Session,
     SessionAck,
     SessionTurn,
@@ -253,3 +254,149 @@ def test_github_resource_rejects_reserved_mount_path_trailing_slash():
     """`/home/sprite/` resolves to the same dir as `/home/sprite`; reject both."""
     with pytest.raises(pydantic.ValidationError):
         GithubRepoResource(url="https://github.com/me/repo", mount_path="/home/sprite/")
+
+
+def _stream_responder(events: list[bytes]):
+    import httpx
+
+    def responder(_):
+        body = b"".join(b"data: " + e + b"\n\n" for e in events)
+        return httpx.Response(200, content=body, headers={"content-type": "text/event-stream"})
+
+    return responder
+
+
+def test_run_creates_streams_and_fetches_final(client, server, make_session):
+    sid = str(uuid4())
+    final = make_session(id=sid, status="completed", exit_code=0, current_turn=1)
+    server.json(
+        "POST",
+        "/sessions",
+        202,
+        {"id": sid, "status": "pending", "current_turn": 1},
+    )
+    server.register(
+        "GET",
+        f"/sessions/{sid}/stream",
+        _stream_responder(
+            [
+                b'{"type":"start","session_id":"' + sid.encode() + b'"}',
+                b'{"type":"output","id":1,"stream":"stdout","data":"hi"}',
+                b'{"type":"exit","id":2,"exit_code":0}',
+            ]
+        ),
+    )
+    server.json("GET", f"/sessions/{sid}", 200, final)
+
+    result = client.sessions.run(agent_id=uuid4(), prompt="hi")
+
+    assert isinstance(result, RunResult)
+    assert isinstance(result.session, Session)
+    assert result.session.status == "completed"
+    assert result.session.exit_code == 0
+    assert [e.type for e in result.events] == ["start", "output", "exit"]
+
+
+def test_run_stops_at_first_terminal_event(client, server, make_session):
+    """Events after `exit`/`error`/`terminated` are not consumed."""
+    sid = str(uuid4())
+    server.json("POST", "/sessions", 202, {"id": sid, "status": "pending"})
+    server.register(
+        "GET",
+        f"/sessions/{sid}/stream",
+        _stream_responder(
+            [
+                b'{"type":"start"}',
+                b'{"type":"error","id":1,"detail":"boom"}',
+                b'{"type":"output","id":2,"data":"never seen"}',
+            ]
+        ),
+    )
+    server.json("GET", f"/sessions/{sid}", 200, make_session(id=sid, status="failed"))
+
+    result = client.sessions.run(agent_id=uuid4(), prompt="x")
+
+    assert [e.type for e in result.events] == ["start", "error"]
+    assert result.session.status == "failed"
+
+
+def test_run_calls_on_event(client, server, make_session):
+    sid = str(uuid4())
+    server.json("POST", "/sessions", 202, {"id": sid, "status": "pending"})
+    server.register(
+        "GET",
+        f"/sessions/{sid}/stream",
+        _stream_responder(
+            [
+                b'{"type":"start"}',
+                b'{"type":"output","id":1,"data":"hi"}',
+                b'{"type":"exit","id":2,"exit_code":0}',
+            ]
+        ),
+    )
+    server.json("GET", f"/sessions/{sid}", 200, make_session(id=sid))
+
+    seen = []
+    client.sessions.run(agent_id=uuid4(), prompt="x", on_event=lambda e: seen.append(e.type))
+
+    assert seen == ["start", "output", "exit"]
+
+
+def test_run_with_collect_events_false(client, server, make_session):
+    sid = str(uuid4())
+    server.json("POST", "/sessions", 202, {"id": sid, "status": "pending"})
+    server.register(
+        "GET",
+        f"/sessions/{sid}/stream",
+        _stream_responder(
+            [b'{"type":"start"}', b'{"type":"exit","id":1,"exit_code":0}']
+        ),
+    )
+    server.json("GET", f"/sessions/{sid}", 200, make_session(id=sid))
+
+    result = client.sessions.run(agent_id=uuid4(), prompt="x", collect_events=False)
+
+    assert result.events == []
+    assert result.session.id is not None
+
+
+@pytest.mark.asyncio
+async def test_async_run(async_client, server, make_session):
+    sid = str(uuid4())
+    server.json("POST", "/sessions", 202, {"id": sid, "status": "pending"})
+    server.register(
+        "GET",
+        f"/sessions/{sid}/stream",
+        _stream_responder(
+            [b'{"type":"start"}', b'{"type":"exit","id":1,"exit_code":0}']
+        ),
+    )
+    server.json("GET", f"/sessions/{sid}", 200, make_session(id=sid, status="completed"))
+
+    async with async_client as c:
+        result = await c.sessions.run(agent_id=uuid4(), prompt="hi")
+
+    assert result.session.status == "completed"
+    assert [e.type for e in result.events] == ["start", "exit"]
+
+
+@pytest.mark.asyncio
+async def test_async_run_supports_async_on_event(async_client, server, make_session):
+    sid = str(uuid4())
+    server.json("POST", "/sessions", 202, {"id": sid, "status": "pending"})
+    server.register(
+        "GET",
+        f"/sessions/{sid}/stream",
+        _stream_responder([b'{"type":"start"}', b'{"type":"exit","id":1,"exit_code":0}']),
+    )
+    server.json("GET", f"/sessions/{sid}", 200, make_session(id=sid))
+
+    seen = []
+
+    async def on_event(e):
+        seen.append(e.type)
+
+    async with async_client as c:
+        await c.sessions.run(agent_id=uuid4(), prompt="x", on_event=on_event)
+
+    assert seen == ["start", "exit"]

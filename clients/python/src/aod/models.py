@@ -328,3 +328,22 @@ class StreamEvent(_Model):
             id=payload.get("id"),
             extra={k: v for k, v in payload.items() if k not in known},
         )
+
+
+# Stream events that mark a turn boundary. After one of these arrives the
+# server has finished writing log rows for this turn; the stream may emit
+# more events (subsequent turns), but `sessions.run()` returns once it
+# sees one of these for the *first* turn it is waiting on.
+TERMINAL_EVENT_TYPES: frozenset[StreamEventType] = frozenset({"exit", "error", "terminated"})
+
+
+class RunResult(_Model):
+    """The result of `sessions.run(...)`: the final `Session` record
+    (fetched via `sessions.get()` after the stream closes) plus the
+    collected `StreamEvent`s observed while the turn was running.
+
+    `events` is empty when `run()` was called with `collect_events=False`.
+    """
+
+    session: Session
+    events: list[StreamEvent] = Field(default_factory=list)
