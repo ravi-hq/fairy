@@ -166,8 +166,10 @@ enabled automatically.
 
 ### Cutting a release
 
-1. Bump the version in `clients/typescript/package.json` **and** the `VERSION`
-   export in `clients/typescript/src/index.ts`. PR + merge to `main`.
+1. Bump the version in `clients/typescript/package.json` and the `VERSION`
+   export in `clients/typescript/src/version.ts` (the `VERSION` re-export from
+   `index.ts` and the `User-Agent` header in `http.ts` both pull from there).
+   PR + merge to `main`.
 2. Tag and publish a GitHub Release:
 
    ```bash

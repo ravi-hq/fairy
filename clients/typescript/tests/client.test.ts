@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { Client } from "../src/index.js";
+import { Client, VERSION } from "../src/index.js";
 import { MockServer, makeAgent } from "./helpers.js";
 
 describe("Client", () => {
@@ -54,6 +54,18 @@ describe("Client", () => {
       fetch: server.fetch,
     });
     await expect(client.health()).resolves.toEqual({ status: "ok" });
+  });
+
+  it("sets a User-Agent identifying the SDK", async () => {
+    const server = new MockServer();
+    server.json("GET", "/health", 200, { status: "ok" });
+    const client = new Client({
+      baseUrl: "http://mock",
+      token: "aod_test",
+      fetch: server.fetch,
+    });
+    await client.health();
+    expect(server.requests[0]?.headers["user-agent"]).toBe(`aod-sdk-ts/${VERSION}`);
   });
 
   it("strips trailing slash from baseUrl", async () => {

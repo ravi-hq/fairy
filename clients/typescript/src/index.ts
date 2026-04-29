@@ -50,4 +50,4 @@ export type {
   SessionStreamOptions,
 } from "./resources/index.js";
 
-export const VERSION = "0.1.1";
+export { VERSION } from "./version.js";
