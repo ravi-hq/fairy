@@ -9,6 +9,7 @@ from typing import Any
 from uuid import UUID
 
 import httpx
+from pydantic import BaseModel
 
 from .._http import check_response
 from ..models import (
