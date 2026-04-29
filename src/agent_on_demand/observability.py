@@ -40,9 +40,7 @@ def _make_orphan_psycopg_filter(wrapped: SpanProcessor) -> SpanProcessor:
     from opentelemetry.trace import SpanKind
 
     class _OrphanPsycopgFilter(SpanProcessor):
-        def on_start(
-            self, span: Span, parent_context: Context | None = None
-        ) -> None:
+        def on_start(self, span: Span, parent_context: Context | None = None) -> None:
             wrapped.on_start(span, parent_context)
 
         def on_end(self, span: ReadableSpan) -> None:
