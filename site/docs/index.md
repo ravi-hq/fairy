@@ -4,7 +4,7 @@ Agent on Demand is a REST API for running AI coding agents on [Sprites](https://
 
 - **Agents** — reusable templates that define the model, runtime, system prompt, MCP servers, and skills for an AI coding agent.
 - **Environments** — Sprite sandbox configurations: packages to install, environment variables to export, a setup script, and a network policy.
-- **Sessions** — one execution of an agent inside a Sprite. Sessions are async; output is consumed via a Server-Sent Events stream.
+- **Sessions** — one execution of an agent inside a Sprite. Sessions are async; output is consumed via a Server-Sent Events stream. After a session completes, send a follow-up prompt to continue in the same Sprite with the same filesystem and history.
 
 Local dev runs on `http://localhost:8777` (`make dev`). Every request except `GET /health` requires a Bearer token.
 
@@ -73,3 +73,5 @@ Three calls to go from zero to a running agent:
 | [Streaming](api/streaming.md) | SSE event types, reconnect, replay |
 | [Errors](api/errors.md) | Every status code and when it fires |
 | [Pagination](api/pagination.md) | List envelope format |
+| [Patterns](patterns/chat-bot.md) | Chat bot, CI bot, batch automation, CLI wrapper, dashboard |
+| [Deploy Guide](operators/deploy.md) | Self-hosting: env vars, worker, production setup |
