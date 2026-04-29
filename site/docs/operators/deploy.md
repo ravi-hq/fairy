@@ -26,13 +26,14 @@ sourced from `src/config/settings.py`:
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `DJANGO_SECRET_KEY` | Yes (prod) | `dev-insecure-key-change-in-prod` | Django secret key for session signing — safe to rotate |
-| `FIELD_ENCRYPTION_KEY` | Yes (prod) | Falls back to `DJANGO_SECRET_KEY` | KEK for encrypted `UserSpritesKey` / `UserRuntimeKey` rows — **durable; rotating requires a re-encrypt migration** |
+| `FIELD_ENCRYPTION_KEY` | Yes (prod) | Falls back to `DJANGO_SECRET_KEY` | KEK for encrypted `UserBackendCredential` / `UserCredential` rows — **durable; rotating requires a re-encrypt migration** |
 | `DJANGO_DEBUG` | No | `true` | Set to `false` in production |
 | `DJANGO_ALLOWED_HOSTS` | No | `*` | Comma-separated list of allowed host headers |
 | `DATABASE_URL` | Yes | `postgres://agent_on_demand:agent_on_demand@localhost:5460/agent_on_demand` (matches `make db-up`) | Postgres DSN parsed by `dj-database-url`. Postgres is required — SQLite is only used by the test suite. |
 | `SPRITES_BASE_URL` | No | `https://api.sprites.dev` | Override the Sprites API base URL |
 | `SPRITE_NAME_PREFIX` | No | `aod` | Prefix applied to all Sprite names created by this instance |
 | `DEFAULT_TIMEOUT` | No | `600` | Default session timeout in seconds |
+| `DEFAULT_MAX_CONCURRENT_SESSIONS` | No | `100` | Per-user cap on concurrent (`pending` + `running`) sessions. Raise or lower per user via `UserQuota.max_concurrent_sessions` in the Django shell. |
 
 A minimal production `.env`:
 
@@ -42,6 +43,25 @@ FIELD_ENCRYPTION_KEY=your-separate-long-random-key
 DJANGO_DEBUG=false
 DJANGO_ALLOWED_HOSTS=aod.example.com
 ```
+
+### Per-user concurrent-session overrides
+
+`DEFAULT_MAX_CONCURRENT_SESSIONS` sets the cap for every user. To raise or lower
+the cap for a specific user, write a `UserQuota` row from the Django shell:
+
+```python
+from agent_on_demand.models import UserQuota
+from django.contrib.auth.models import User
+
+user = User.objects.get(username="alice")
+quota, _ = UserQuota.objects.get_or_create(user=user)
+quota.max_concurrent_sessions = 10  # set to None to fall back to DEFAULT_MAX_CONCURRENT_SESSIONS
+quota.save()
+```
+
+`UserQuota.max_concurrent_sessions = None` (the default for newly-created rows)
+falls back to `DEFAULT_MAX_CONCURRENT_SESSIONS`, so resetting an override is a
+field assignment — not a row delete.
 
 ## Installation
 

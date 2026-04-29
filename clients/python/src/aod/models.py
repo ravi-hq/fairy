@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal
+from typing import Any, Literal, Union
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class _Model(BaseModel):
@@ -17,11 +17,103 @@ NetworkingType = Literal["unrestricted", "limited"]
 PackageManager = Literal["apt", "cargo", "gem", "go", "npm", "pip"]
 
 
+class McpServerUrl(_Model):
+    """MCP server reachable over HTTP/SSE.
+
+    Use this in `agents.create(..., mcp_servers=[...])` for fast-fail
+    validation; the SDK accepts plain dicts too. The server validates
+    the same shape (see `mcp_server_validation.py`).
+    """
+
+    name: str
+    type: Literal["url"] = "url"
+    url: str
+    headers: dict[str, str] | None = None
+
+
+class McpServerStdio(_Model):
+    """MCP server spawned as a local process on the Sprite.
+
+    Use this in `agents.create(..., mcp_servers=[...])` for fast-fail
+    validation; the SDK accepts plain dicts too.
+    """
+
+    name: str
+    type: Literal["stdio"] = "stdio"
+    command: str
+    args: list[str] | None = None
+    env: dict[str, str] | None = None
+
+
+# Response shape — the server stores whatever was submitted, so the read
+# model carries the full union of optional fields rather than two
+# discriminated classes (which would force consumers to type-narrow on
+# every iteration).
 class McpServer(_Model):
     name: str
     type: Literal["url", "stdio"]
     url: str | None = None
     command: str | None = None
+    headers: dict[str, str] | None = None
+    args: list[str] | None = None
+    env: dict[str, str] | None = None
+
+
+# Module-level runtime expression — `from __future__ import annotations` only
+# defers evaluation of *annotations*, not assignments. Use `Union` so this
+# stays import-safe on Python <3.10 even though we currently floor at 3.11.
+McpServerInput = Union[McpServerUrl, McpServerStdio, dict[str, Any]]
+
+
+# Mirrors `skill_validation.py` on the server. Validating client-side
+# means callers see a typed exception immediately rather than a 422
+# from the wire.
+SKILL_NAME_RE = r"^[a-z0-9][a-z0-9-]{0,63}$"
+GITHUB_SOURCE_RE = r"^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$"
+MAX_SKILL_CONTENT_BYTES = 64 * 1024
+MAX_SKILL_DESCRIPTION_LEN = 1024
+SKILL_HEREDOC_DELIMITER = "SKILL_EOF"
+
+
+class InlineSkill(_Model):
+    """A skill whose content is shipped in-band.
+
+    The server materializes `content` to `<skills_root>/<name>/SKILL.md`
+    via a bash heredoc at provision time; `content` must therefore not
+    contain the heredoc delimiter `SKILL_EOF`. Same regex and size cap
+    as `skill_validation.py` on the server.
+    """
+
+    # `SKILL_NAME_RE` already caps the length at 64 (`{0,63}` plus the
+    # leading char), so no separate `max_length` is needed.
+    name: str = Field(pattern=SKILL_NAME_RE)
+    description: str = Field(max_length=MAX_SKILL_DESCRIPTION_LEN)
+    content: str
+
+    @field_validator("content")
+    @classmethod
+    def _validate_content(cls, v: str) -> str:
+        if len(v.encode("utf-8")) > MAX_SKILL_CONTENT_BYTES:
+            raise ValueError(f"content exceeds {MAX_SKILL_CONTENT_BYTES} bytes")
+        if SKILL_HEREDOC_DELIMITER in v:
+            raise ValueError(f"content must not contain {SKILL_HEREDOC_DELIMITER!r}")
+        return v
+
+
+class GithubSkill(_Model):
+    """A skill installed from a GitHub repo at provision time.
+
+    Omit `name` to install every `SKILL.md` the repo exposes; provide
+    `name` to install just one.
+    """
+
+    type: Literal["github"] = "github"
+    description: str = Field(max_length=MAX_SKILL_DESCRIPTION_LEN)
+    source: str = Field(pattern=GITHUB_SOURCE_RE)
+    name: str | None = Field(default=None, pattern=SKILL_NAME_RE)
+
+
+SkillInput = InlineSkill | GithubSkill | dict[str, Any]
 
 
 class Networking(_Model):
@@ -59,6 +151,50 @@ class SessionResource(_Model):
     type: Literal["github_repository"]
     url: str
     mount_path: str | None = None
+
+
+# Mirrors `github_resource_validation.py` on the server.
+GITHUB_URL_RE = r"^https://github\.com/[\w.-]+/[\w.-]+(\.git)?$"
+
+
+class GithubRepoResource(_Model):
+    """Request shape for a github_repository resource on a session.
+
+    Use this in `sessions.create(..., resources=[...])` for fast-fail
+    validation and to expose `authorization_token` on the typed path.
+    Plain dicts continue to work too. The server validates this same
+    shape (`github_resource_validation.py`).
+
+    `mount_path` defaults server-side to `/workspace/<repo-name>` when
+    omitted. Setting it requires an absolute path that is not `/` or
+    `/home/sprite` (those would shadow the Sprite's working directory).
+    """
+
+    type: Literal["github_repository"] = "github_repository"
+    url: str = Field(pattern=GITHUB_URL_RE)
+    mount_path: str | None = None
+    authorization_token: str | None = Field(
+        default=None,
+        description="GitHub PAT for private repos. Never echoed back on any response.",
+    )
+
+    @field_validator("mount_path")
+    @classmethod
+    def _validate_mount_path(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        if not v.startswith("/"):
+            raise ValueError("mount_path must be an absolute path")
+        # Strip a trailing slash so `/home/sprite/` is treated the same
+        # as `/home/sprite`. The server's reserved-path set today does
+        # not normalize the trailing slash, so the SDK fails fast where
+        # the server might accept; treat that gap as a server bug.
+        if v.rstrip("/") in {"", "/home/sprite"}:
+            raise ValueError("mount_path must not be the Sprite root")
+        return v
+
+
+GithubRepoResourceInput = GithubRepoResource | dict[str, Any]
 
 
 class Agent(_Model):

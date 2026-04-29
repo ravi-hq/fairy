@@ -41,27 +41,20 @@ model's provider — mismatched pairs (e.g. an OpenAI model with the `claude` ru
 
 ## Supplying API keys
 
-Each runtime reads its API key from a specific env var at session start. On the hosted API
-(`aod.ravi.id`) you register credentials once via the dashboard; they are stored encrypted
-and injected into every session you own.
+Each runtime reads its API key from a specific env var at session start. Credentials are
+stored per-user, encrypted at rest, and injected automatically into every session. On the
+hosted API (`aod.ravi.id`) you register them once via the dashboard. When self-hosting,
+set them via the Django shell — see
+[Deploy → Sprites credentials](../operators/deploy.md#sprites-credentials).
 
-When self-hosting, set the env var on the session's **environment**:
-
-```bash
-curl -X POST https://aod.ravi.id/environments \
-  -H "Authorization: Bearer $AOD_API_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "with-anthropic-key",
-    "env_vars": {"ANTHROPIC_API_KEY": "sk-ant-..."}
-  }'
-```
-
-`env_vars` are encrypted at rest and never echoed back in API responses.
+`env_vars` on an environment are also sourced into the session and **override** any
+matching user credential — useful for pinning a specific key to one environment or for
+testing. `env_vars` are encrypted at rest and never echoed back in API responses.
 See [Core Concepts → Environments](concepts.md#environments) for the full shape.
 
-If no environment is attached to a session, or the environment doesn't set the runtime's
-expected env var, the CLI will fail on startup and the session will transition to `failed`.
+If the user has no credential configured for the runtime's provider, and no attached
+environment supplies the expected env var either, the CLI will fail on startup and
+the session will transition to `failed`.
 
 ## Per-runtime notes
 

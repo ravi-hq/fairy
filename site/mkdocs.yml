@@ -44,6 +44,7 @@ nav:
     - Python: sdks/python.md
     - TypeScript: sdks/typescript.md
   - Patterns:
+    - Overview: patterns/index.md
     - CLI Wrapper: patterns/cli-wrapper.md
     - Chat Bot: patterns/chat-bot.md
     - CI Bot: patterns/ci-bot.md
