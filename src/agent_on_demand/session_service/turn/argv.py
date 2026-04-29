@@ -66,12 +66,32 @@ def build_turn_argv(
 def build_env_source_shim(extra_env: dict[str, str] | None) -> str:
     """Render the bash shim that sources `/tmp/aod-env` and re-execs the
     runtime argv. ``extra_env`` keys are emitted in sorted order between
-    the source and the ``exec``."""
+    the source and the ``exec``.
+
+    Emits a one-line ``AOD_DEBUG`` to stderr right before the exec so the
+    runtime CLI's effective env is captured into ``AgentSessionLog``
+    (stderr stream). Only the presence of secret-bearing vars is reported
+    (`otel_headers=yes/no`), never their value. TRACEPARENT itself is
+    safe to log — it's a span+trace ID hex, not a credential.
+    """
     parts = ["set -a", "source /tmp/aod-env"]
     if extra_env:
         for key in sorted(extra_env):
             parts.append(f"{key}={shlex.quote(extra_env[key])}")
     parts.append("set +a")
+    # Probe each value into a temp _aod_dbg_* before echoing so the secret
+    # OTEL_EXPORTER_OTLP_HEADERS only ever produces "yes"/"no", never the
+    # actual header. _aod_dbg_* names are scoped to the shim, never sourced
+    # by /tmp/aod-env (no real env var has that prefix).
+    parts.append("_aod_dbg_hdr=${OTEL_EXPORTER_OTLP_HEADERS:+yes}")
+    parts.append(
+        'echo "AOD_DEBUG traceparent=${TRACEPARENT:-<unset>} '
+        "tracestate=${TRACESTATE:-<unset>} "
+        "telemetry=${CLAUDE_CODE_ENABLE_TELEMETRY:-<unset>} "
+        "enhanced=${CLAUDE_CODE_ENHANCED_TELEMETRY_BETA:-<unset>} "
+        "otel_endpoint=${OTEL_EXPORTER_OTLP_ENDPOINT:-<unset>} "
+        'otel_headers=${_aod_dbg_hdr:-no}" >&2'
+    )
     parts.append('exec "$@"')
     return "; ".join(parts)
 

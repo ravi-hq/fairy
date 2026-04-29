@@ -66,12 +66,23 @@ def test_argv_begins_with_bash_lc_shim_and_separator():
     assert argv[3] == "--"
 
 
+_DEBUG_ECHO = (
+    "_aod_dbg_hdr=${OTEL_EXPORTER_OTLP_HEADERS:+yes}; "
+    'echo "AOD_DEBUG traceparent=${TRACEPARENT:-<unset>} '
+    "tracestate=${TRACESTATE:-<unset>} "
+    "telemetry=${CLAUDE_CODE_ENABLE_TELEMETRY:-<unset>} "
+    "enhanced=${CLAUDE_CODE_ENHANCED_TELEMETRY_BETA:-<unset>} "
+    "otel_endpoint=${OTEL_EXPORTER_OTLP_ENDPOINT:-<unset>} "
+    'otel_headers=${_aod_dbg_hdr:-no}" >&2'
+)
+
+
 def test_shim_string_is_exact():
     """Full-string assertion to kill wrapper mutants like ``XXset
     -aXX...``. The exact bytes matter — ``set -a`` exports every
     sourced var, and ``exec "$@"`` replaces the bash process with the
     runtime CLI so signals propagate."""
-    assert _ENV_SOURCE_SHIM == 'set -a; source /tmp/aod-env; set +a; exec "$@"'
+    assert _ENV_SOURCE_SHIM == (f'set -a; source /tmp/aod-env; set +a; {_DEBUG_ECHO}; exec "$@"')
 
 
 # ---------- runtime argv pass-through ----------
@@ -281,4 +292,6 @@ def test_build_env_source_shim_with_extras():
     """Exact rendered shape with two exports — pins the order of the
     parts joined with ``; ``."""
     rendered = build_env_source_shim({"FOO": "bar", "BAZ": "qux"})
-    assert rendered == ('set -a; source /tmp/aod-env; BAZ=qux; FOO=bar; set +a; exec "$@"')
+    assert rendered == (
+        f'set -a; source /tmp/aod-env; BAZ=qux; FOO=bar; set +a; {_DEBUG_ECHO}; exec "$@"'
+    )
