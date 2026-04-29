@@ -52,8 +52,8 @@ matching user credential — useful for pinning a specific key to one environmen
 testing. `env_vars` are encrypted at rest and never echoed back in API responses.
 See [Core Concepts → Environments](concepts.md#environments) for the full shape.
 
-If the user has no credential configured for the runtime's provider, and the attached
-environment doesn't supply the expected env var either, the CLI will fail on startup and
+If the user has no credential configured for the runtime's provider, and no attached
+environment supplies the expected env var either, the CLI will fail on startup and
 the session will transition to `failed`.
 
 ## Per-runtime notes
