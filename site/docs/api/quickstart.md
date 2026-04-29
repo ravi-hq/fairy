@@ -6,21 +6,23 @@ Python examples use the official [`aod-sdk`](../sdks/python.md) package (`pip in
 
 ## Prerequisites
 
-- **Local**: run `make dev` — the server starts on `http://localhost:8777`.
-- **Remote**: set `BASE` to your deployment URL.
-- A valid API token (created server-side via `APIKey.create_key`).
+Choose a deployment:
+
+- **Hosted API** (`https://aod.ravi.id`): [sign up](https://aod.ravi.id/ui/register) — your token is shown once on the welcome screen. Create more at `/ui/api-keys`.
+- **Local dev**: run `make dev` (server on `http://localhost:8777`), then register at `http://localhost:8777/ui/register` to get a token.
+- **Self-hosted**: set `BASE` to your deployment URL and follow the same sign-up flow.
 
 === "curl"
 
     ```bash
-    BASE=http://localhost:8777
+    BASE=https://aod.ravi.id   # or http://localhost:8777 for local dev
     TOKEN=aod_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
     ```
 
 === "Python"
 
     ```bash
-    export AOD_API_URL=http://localhost:8777
+    export AOD_API_URL=https://aod.ravi.id   # or http://localhost:8777 for local dev
     export AOD_API_TOKEN=aod_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
     pip install aod-sdk
     ```
