@@ -19,6 +19,14 @@ Stream the agent's response back to the thread via
 
 ## Example (Slack)
 
+!!! warning "Filter the stream by turn"
+    `client.sessions.stream(session_id)` replays every `output` event from the
+    start of the session, and the `exit`/`error`/`terminated` events are
+    *session*-terminal, not per-turn. If you don't filter, every reply after
+    the first will include all prior turns concatenated. Capture
+    `ack.current_turn` from the create/prompt response and only emit
+    `output` events whose `event.extra["turn"]` matches.
+
 ```python
 import os
 from aod import Client, ConflictError
@@ -31,12 +39,16 @@ client = Client()  # reads AOD_API_URL + AOD_API_TOKEN
 # Simple in-memory store; use Redis/DB in production
 thread_sessions: dict[str, str] = {}
 
-def run_turn(session_id: str) -> str:
-    """Collect all output for one turn into a single reply string."""
+def run_turn(session_id: str, turn: int) -> str:
+    """Collect this turn's stdout into a single reply string."""
     parts: list[str] = []
     with client.sessions.stream(session_id) as events:
         for event in events:
-            if event.type == "output" and event.extra.get("stream") == "stdout":
+            if (
+                event.type == "output"
+                and event.extra.get("stream") == "stdout"
+                and event.extra.get("turn") == turn
+            ):
                 parts.append(event.extra.get("data", ""))
             elif event.type in ("exit", "error", "terminated", "stale"):
                 break
@@ -53,14 +65,14 @@ def handle_mention(event, say):
     else:
         session_id = thread_sessions[thread_ts]
         try:
-            client.sessions.prompt(session_id, prompt=prompt)
+            ack = client.sessions.prompt(session_id, prompt=prompt)
         except ConflictError:
             # 409: session is already running (user typed quickly).
             # Queue this message or tell the user to wait.
             say(text="Still working on the previous message…", thread_ts=thread_ts)
             return
 
-    output = run_turn(thread_sessions[thread_ts])
+    output = run_turn(thread_sessions[thread_ts], ack.current_turn)
     say(text=output, thread_ts=thread_ts)
 ```
 

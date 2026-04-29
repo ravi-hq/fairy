@@ -38,12 +38,21 @@ client = Client()  # reads AOD_API_URL + AOD_API_TOKEN
 thread_sessions: dict[str, str] = {}
 
 
-def _drain_stdout(session_id: str) -> str:
-    """Block until the session reaches a terminal event, returning stdout joined."""
+def _drain_stdout(session_id: str, turn: int) -> str:
+    """Block until the session reaches a terminal event, returning this turn's stdout joined.
+
+    Filters by ``turn`` because ``client.sessions.stream`` replays from the
+    start of the session; without the filter, every reply after the first
+    would include all prior turns concatenated.
+    """
     parts: list[str] = []
     with client.sessions.stream(session_id) as events:
         for event in events:
-            if event.type == "output" and event.extra.get("stream") == "stdout":
+            if (
+                event.type == "output"
+                and event.extra.get("stream") == "stdout"
+                and event.extra.get("turn") == turn
+            ):
                 parts.append(event.extra.get("data", ""))
             elif event.type in ("exit", "error", "terminated", "stale"):
                 break
@@ -65,7 +74,7 @@ def on_mention(event: dict, say) -> None:
         else:
             session_id = thread_sessions[thread_ts]
             try:
-                client.sessions.prompt(session_id, prompt=prompt)
+                ack = client.sessions.prompt(session_id, prompt=prompt)
                 log.info("resumed session %s for thread %s", session_id, thread_ts)
             except ConflictError:
                 # 409: session is running (user typed during a reply).
@@ -73,7 +82,7 @@ def on_mention(event: dict, say) -> None:
                 say(text="Still working on the previous message…", thread_ts=thread_ts)
                 return
 
-        reply = _drain_stdout(thread_sessions[thread_ts])
+        reply = _drain_stdout(thread_sessions[thread_ts], ack.current_turn)
     except AodError as e:
         log.exception("aod error")
         say(text=f":warning: agent error: {e}", thread_ts=thread_ts)
