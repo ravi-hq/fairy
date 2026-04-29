@@ -182,6 +182,49 @@ Honeycomb + PostHog triggers cover the most common regression shapes;
 4/5 are wired (the `session.completed` volume-drop trigger is still
 pending).
 
+## Migrations
+
+CI runs `django-migration-linter` against every unapplied migration on each PR
+via the `check-migrations` job in `.github/workflows/ci.yml`. The job spins up a
+fresh Postgres 16 container, applies all existing migrations (so they're marked
+applied), then lints any migrations not yet in the DB. A non-zero exit from the
+linter fails the job and blocks the PR.
+
+**Dangerous patterns the linter catches:** NOT NULL column additions on populated
+tables, column drops, column renames, and index changes that lock the table.
+
+### Per-migration escape hatch
+
+Add `ignore_migration = True` as a class-level attribute on the `Migration` class
+inside the migration file:
+
+```python
+class Migration(migrations.Migration):
+    ignore_migration = True  # reviewed and coordinated — see PR description
+
+    dependencies = [...]
+    operations = [...]
+```
+
+Use this **sparingly**. Every bypass must be justified in the PR description.
+
+### When bypass is acceptable
+
+- **Data backfills with explicit deploy-time coordination**: the dangerous column
+  is added nullable, a backfill script runs before the NOT NULL constraint lands,
+  and the deploy is sequenced accordingly.
+- **Intentional renames with a sequenced deploy**: deploy code that reads *both*
+  old and new names → run the migration → deploy code that reads only the new name.
+  The overlap window prevents downtime.
+- **Any unavoidable dangerous operation** that has been reviewed by a human and
+  has a documented rollback plan in the PR description.
+
+### When bypass is not acceptable
+
+- Skipping the gate to "make CI green" without a coordinated deploy plan.
+- Bypassing because the operation *seems* low-risk on a table that happens to be
+  small today — tables grow, and the linter catches patterns, not row counts.
+
 ## Style
 
 - Python 3.11+, ruff with `line-length = 100`.

@@ -113,20 +113,36 @@ test-e2e-scoped:
 test-all:
 	uv run pytest tests/ -v
 
-# Lint migrations introduced on the current branch (since it diverged from main)
-# for safety issues like NOT NULL adds on populated tables, column drops/renames,
-# and dangerous index changes. Existing migrations on main are grandfathered.
+# Lint migrations for safety issues (NOT NULL adds, column drops/renames, bad indexes).
+#
+# Two modes:
+#   BASE_SHA=<sha>  — Scope to migrations added since that commit (git-based).
+#                     Falls back to DATABASE_URL=sqlite:///test.db when DATABASE_URL
+#                     is not set. Works locally without a running Postgres.
+#                     Used by `make check-migrations BASE_SHA=$(git merge-base main HEAD)`.
+#
+#   (no BASE_SHA)   — Use --exclude-applied-migrations: run `manage.py migrate` first
+#                     so all current migrations are marked applied, then lint only the
+#                     unapplied (new) ones. Requires DATABASE_URL set to a Postgres URL.
+#                     Used by the `check-migrations` CI job.
 #
 # CI sets BASE_SHA explicitly via `git merge-base origin/main HEAD`. Locally,
 # `git merge-base main HEAD` works as long as your local main is up-to-date.
 BASE_SHA ?= $(shell git merge-base main HEAD 2>/dev/null)
 check-migrations:
-	@if [ -z "$(BASE_SHA)" ]; then \
-		echo "Could not compute BASE_SHA — pass BASE_SHA=<sha> or ensure 'main' branch exists locally"; \
+	@if [ -n "$(BASE_SHA)" ]; then \
+		DATABASE_URL=$${DATABASE_URL:-sqlite:///test.db} uv run python manage.py lintmigrations \
+			--include-apps fairy --git-commit-id $(BASE_SHA) --project-root-path .; \
+	elif [ -n "$${DATABASE_URL:-}" ]; then \
+		uv run python manage.py lintmigrations \
+			--include-apps fairy --exclude-applied-migrations --project-root-path .; \
+	else \
+		echo "Either pass BASE_SHA=<sha> (git-based, works with SQLite) or"; \
+		echo "set DATABASE_URL to a Postgres URL and run 'manage.py migrate' first"; \
+		echo "(applied-migration-based, requires Postgres)."; \
+		echo "Locally: make check-migrations BASE_SHA=\$$(git merge-base main HEAD)"; \
 		exit 1; \
 	fi
-	DATABASE_URL=sqlite:///test.db uv run python manage.py lintmigrations \
-		--include-apps fairy --git-commit-id $(BASE_SHA) --project-root-path .
 
 # Snapshot the JSON schemas of all pydantic request models in views/ and
 # fail if they drift from docs/request_schemas.json. Catches accidental

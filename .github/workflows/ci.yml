@@ -145,6 +145,36 @@ jobs:
       - run: uv sync --all-extras
       - run: make check-migrations BASE_SHA=$(git merge-base origin/main HEAD)
 
+  check-migrations:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: agent_on_demand
+          POSTGRES_PASSWORD: agent_on_demand
+          POSTGRES_DB: agent_on_demand
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgres://agent_on_demand:agent_on_demand@localhost:5432/agent_on_demand
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+      - run: uv sync --all-extras
+      - run: uv run python manage.py migrate
+      - run: make check-migrations
+
   e2e-scoped:
     # Runs the e2e tests that map to the current branch's diff. The scope
     # computation always runs (validates the path-mapping script). The
