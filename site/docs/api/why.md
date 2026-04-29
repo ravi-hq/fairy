@@ -74,16 +74,16 @@ company.
 
 Three resources, one HTTP API:
 
-- **[Agents](concepts.md)** are the recipe — runtime, model, system prompt,
-  MCP servers, skills. Define once, version with optimistic concurrency,
-  share across a million sessions.
-- **[Environments](concepts.md)** are the sandbox — packages, secrets
-  (encrypted at rest, never echoed back), setup scripts, network policy.
-  Declare it once, applied automatically when a session starts.
-- **[Sessions](concepts.md)** are the run — one agent in one sandbox,
-  streaming its work back over [SSE](streaming.md). Continue with another
-  prompt; the filesystem is still warm. Every turn logged, replayable,
-  terminable.
+- **[Agents](concepts.md#agents)** are the recipe — runtime, model, system
+  prompt, MCP servers, skills. Define once, version with optimistic
+  concurrency, share across a million sessions.
+- **[Environments](concepts.md#environments)** are the sandbox — packages,
+  secrets (encrypted at rest, never echoed back), setup scripts, network
+  policy. Declare it once, applied automatically when a session starts.
+- **[Sessions](concepts.md#sessions)** are the run — one agent in one
+  sandbox, streaming its work back over [SSE](streaming.md). Continue with
+  another prompt; the filesystem is still warm. Every turn logged,
+  replayable, terminable.
 
 Bring your own model keys. Bring your own Sprites account, or use ours.
 Run it locally with `make dev`, deploy on Render in an hour, or hit the
