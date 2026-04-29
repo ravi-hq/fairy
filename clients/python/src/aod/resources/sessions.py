@@ -308,8 +308,6 @@ class AsyncSessions:
         """See `Sessions.wait_for_completion` — async variant. `on_event`
         may be sync or async.
         """
-        import inspect
-
         events: list[StreamEvent] = []
         async with self.stream(session_id, since=since) as stream:
             async for event in stream:

@@ -470,3 +470,44 @@ async def test_async_wait_for_completion(async_client, server, make_session):
 
     assert result.session.status == "terminated"
     assert [e.type for e in result.events] == ["start", "terminated"]
+
+
+async def test_async_wait_for_completion_supports_async_on_event(
+    async_client, server, make_session
+):
+    sid = str(uuid4())
+    server.register(
+        "GET",
+        f"/sessions/{sid}/stream",
+        _stream_responder([b'{"type":"start"}', b'{"type":"exit","id":1,"exit_code":0}']),
+    )
+    server.json("GET", f"/sessions/{sid}", 200, make_session(id=sid))
+
+    seen = []
+
+    async def on_event(e):
+        seen.append(e.type)
+
+    async with async_client as c:
+        result = await c.sessions.wait_for_completion(sid, on_event=on_event)
+
+    assert seen == ["start", "exit"]
+    assert [e.type for e in result.events] == ["start", "exit"]
+
+
+async def test_async_wait_for_completion_collect_events_false(
+    async_client, server, make_session
+):
+    sid = str(uuid4())
+    server.register(
+        "GET",
+        f"/sessions/{sid}/stream",
+        _stream_responder([b'{"type":"start"}', b'{"type":"exit","id":1,"exit_code":0}']),
+    )
+    server.json("GET", f"/sessions/{sid}", 200, make_session(id=sid))
+
+    async with async_client as c:
+        result = await c.sessions.wait_for_completion(sid, collect_events=False)
+
+    assert result.events == []
+    assert result.session.id is not None
