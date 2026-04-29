@@ -65,7 +65,7 @@ Mapping matches the [Errors reference](../api/errors.md):
 | 401 | `AuthError` | Missing or invalid token |
 | 404 | `NotFoundError` | Resource missing (or not owned by caller) |
 | 409 | `ConflictError` | Archived row, terminal session, or stale `version` |
-| 422 | `ValidationError` | Server-side pydantic validation failure |
+| 422 | `ValidationError` | Server-side validation failure (see [Errors reference](../api/errors.md) for list vs string detail) |
 | 429 | `RateLimitError` | Per-user concurrent session limit (`.limit`, `.active`) |
 | 5xx | `ServerError` | |
 

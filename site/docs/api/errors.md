@@ -9,20 +9,28 @@ Most error responses use this shape:
 ```
 
 - For every status code **except 422 and 429**, `detail` is a string.
-- For **422**, `detail` is a list of Pydantic validation error objects:
+- For **422**, `detail` is **either** a list (request-body field error) or a string (server-side validation, e.g. an incompatible model/runtime pair):
 
-```json
-{
-  "detail": [
-    {
-      "type": "missing",
-      "loc": ["prompt"],
-      "msg": "Field required",
-      "input": {}
-    }
-  ]
-}
-```
+  List shape — missing or wrong-type field in the request body:
+
+  ```json
+  {
+    "detail": [
+      {
+        "type": "missing",
+        "loc": ["prompt"],
+        "msg": "Field required",
+        "input": {}
+      }
+    ]
+  }
+  ```
+
+  String shape — server-side validation (e.g. `POST /agents` with an OpenAI model on the `claude` runtime):
+
+  ```json
+  {"detail": "Runtime claude cannot serve model openai/gpt-4.1: provider openai not in ['anthropic']"}
+  ```
 
 - For **429**, `detail` is a string and two extra fields are present:
 
@@ -34,7 +42,7 @@ Most error responses use this shape:
 }
 ```
 
-Client rule: `isinstance(detail, list)` if and only if status is 422.
+Client rule: when status is 422, use `isinstance(detail, list)` to distinguish request-body field errors (list) from server-side validation errors (string). Do not assume 422 always carries a list.
 
 ## Status code reference
 
@@ -48,7 +56,7 @@ Client rule: `isinstance(detail, list)` if and only if status is 422.
 | 404 | string | Resource not found, or not owned by this token's user | `{"detail":"Agent not found"}` |
 | 405 | string | Method not allowed | `{"detail":"Method not allowed"}` |
 | 409 | string | Conflict — see table below | `{"detail":"Version mismatch: expected 3, got 2"}` |
-| 422 | **list** | Pydantic validation failure | `{"detail":[{"type":"missing",...}]}` |
+| 422 | list or string | Server-side validation failure (list for body field errors; string for model/runtime incompatibility) | `{"detail":[{"type":"missing",...}]}` |
 | 429 | string + extras | Concurrent session limit reached | `{"detail":"...","limit":3,"active":3}` |
 | 502 | string | Sprites upstream error during session create | `{"detail":"Failed to create Sprite: connection refused"}` |
 
