@@ -71,7 +71,7 @@ export class HttpClient {
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), this.timeoutMs);
-    const signal = linkSignal(controller, opts.signal);
+    const { signal, cleanup } = linkSignal(controller, opts.signal);
     init.signal = signal;
 
     // Keep the timer covering parseBody too — fetch resolves once headers
@@ -83,6 +83,7 @@ export class HttpClient {
       return body as T;
     } finally {
       clearTimeout(timeoutId);
+      cleanup();
     }
   }
 
@@ -134,19 +135,24 @@ function buildQueryString(query?: Record<string, unknown>): string {
   return count === 0 ? "" : `?${params.toString()}`;
 }
 
-function linkSignal(
+// Without explicit removal, the listener (closing over `controller`) leaks
+// for as long as `external` lives — a real issue when callers reuse one
+// AbortController across many requests. The returned `cleanup` removes the
+// listener on every exit path.
+export function linkSignal(
   controller: AbortController,
   external?: AbortSignal,
-): AbortSignal {
-  if (!external) return controller.signal;
+): { signal: AbortSignal; cleanup: () => void } {
+  const noop = () => {};
+  if (!external) return { signal: controller.signal, cleanup: noop };
   if (external.aborted) {
     controller.abort(external.reason);
-    return controller.signal;
+    return { signal: controller.signal, cleanup: noop };
   }
-  external.addEventListener(
-    "abort",
-    () => controller.abort(external.reason),
-    { once: true },
-  );
-  return controller.signal;
+  const onAbort = () => controller.abort(external.reason);
+  external.addEventListener("abort", onAbort);
+  return {
+    signal: controller.signal,
+    cleanup: () => external.removeEventListener("abort", onAbort),
+  };
 }

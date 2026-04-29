@@ -107,6 +107,49 @@ describe("stream", () => {
     await stream.close();
   });
 
+  it("removes its abort listener from the external signal after the stream closes", async () => {
+    // Mirrors the non-streaming listener-leak guarantee in client.test.ts.
+    // sessions.stream goes through linkSignal too, so a long-lived external
+    // signal must not accumulate one listener per opened stream.
+    const server = new MockServer();
+    const sid = uuid();
+    server.register("GET", `/sessions/${sid}/stream`, () => {
+      const body = 'data: {"type":"start"}\n\n';
+      return new Response(body, {
+        status: 200,
+        headers: { "content-type": "text/event-stream" },
+      });
+    });
+    const real = new AbortController();
+    let added = 0;
+    let removed = 0;
+    const fakeSignal = {
+      aborted: false,
+      reason: undefined,
+      addEventListener: (
+        type: string,
+        listener: EventListener,
+        opts?: AddEventListenerOptions,
+      ) => {
+        added++;
+        real.signal.addEventListener(type, listener, opts);
+      },
+      removeEventListener: (type: string, listener: EventListener) => {
+        removed++;
+        real.signal.removeEventListener(type, listener);
+      },
+    } as unknown as AbortSignal;
+
+    const stream = await newClient(server).sessions.stream(sid, { signal: fakeSignal });
+    for await (const _ of stream) {
+      break;
+    }
+    await stream.close();
+
+    expect(added).toBe(1);
+    expect(removed).toBe(1);
+  });
+
   it("aborts the underlying fetch when the iteration ends without close()", async () => {
     // Pre-fix, breaking out of `for await` only released the reader's lock —
     // the fetch's underlying connection stayed open until socket idle-out.
