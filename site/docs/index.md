@@ -73,5 +73,5 @@ Three calls to go from zero to a running agent:
 | [Streaming](api/streaming.md) | SSE event types, reconnect, replay |
 | [Errors](api/errors.md) | Every status code and when it fires |
 | [Pagination](api/pagination.md) | List envelope format |
-| [Patterns](patterns/chat-bot.md) | Chat bot, CI bot, batch automation, CLI wrapper, dashboard |
+| [Patterns](patterns/index.md) | Chat bot, CI bot, batch automation, CLI wrapper, dashboard |
 | [Deploy Guide](operators/deploy.md) | Self-hosting: env vars, worker, production setup |
