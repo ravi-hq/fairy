@@ -69,6 +69,36 @@ describe("Client", () => {
     expect(server.requests[0]?.headers["user-agent"]).toBe(`aod-sdk-ts/${VERSION}`);
   });
 
+  it("aborts when reading the body exceeds timeoutMs", async () => {
+    // Pre-fix, fetch resolved on headers and the body read had no timer,
+    // so a slow body would hang the caller for as long as the server held
+    // the connection open. Pin: timeoutMs covers parseBody too.
+    const fetchFn: typeof fetch = (_input, init) => {
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          init?.signal?.addEventListener("abort", () => {
+            controller.error(new DOMException("aborted", "AbortError"));
+          });
+        },
+      });
+      return Promise.resolve(
+        new Response(stream, {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+    };
+    const client = new Client({
+      baseUrl: "http://mock",
+      token: "aod_test",
+      fetch: fetchFn,
+      timeoutMs: 50,
+    });
+    const start = Date.now();
+    await expect(client.agents.list()).rejects.toMatchObject({ name: "AbortError" });
+    expect(Date.now() - start).toBeLessThan(2000);
+  });
+
   it("strips trailing slash from baseUrl", async () => {
     const server = new MockServer();
     server.json("GET", "/health", 200, { status: "ok" });

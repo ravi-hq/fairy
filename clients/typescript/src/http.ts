@@ -74,16 +74,16 @@ export class HttpClient {
     const signal = linkSignal(controller, opts.signal);
     init.signal = signal;
 
-    let response: Response;
+    // Keep the timer covering parseBody too — fetch resolves once headers
+    // arrive, so a slow body would otherwise read forever.
     try {
-      response = await this.fetchFn(url, init);
+      const response = await this.fetchFn(url, init);
+      const body = await parseBody(response);
+      raiseForStatus(response.status, body, method, url);
+      return body as T;
     } finally {
       clearTimeout(timeoutId);
     }
-
-    const body = await parseBody(response);
-    raiseForStatus(response.status, body, method, url);
-    return body as T;
   }
 
   async rawStream(
