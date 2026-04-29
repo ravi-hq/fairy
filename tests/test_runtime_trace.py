@@ -160,9 +160,7 @@ def test_claude_adapter_user_tool_result_error_flag():
             {
                 "type": "user",
                 "message": {
-                    "content": [
-                        {"type": "tool_result", "tool_use_id": "x", "is_error": True}
-                    ]
+                    "content": [{"type": "tool_result", "tool_use_id": "x", "is_error": True}]
                 },
             }
         )
@@ -252,9 +250,7 @@ def test_emitter_starts_and_ends_tool_use_span(memory_tracer):
         _line(
             {
                 "type": "user",
-                "message": {
-                    "content": [{"type": "tool_result", "tool_use_id": "t1"}]
-                },
+                "message": {"content": [{"type": "tool_result", "tool_use_id": "t1"}]},
             }
         ),
     )
@@ -278,9 +274,7 @@ def test_emitter_finish_closes_orphan_tool_spans(memory_tracer):
         _line(
             {
                 "type": "assistant",
-                "message": {
-                    "content": [{"type": "tool_use", "id": "orphan", "name": "Read"}]
-                },
+                "message": {"content": [{"type": "tool_use", "id": "orphan", "name": "Read"}]},
             }
         ),
     )
@@ -312,12 +306,8 @@ def test_emitter_buffers_partial_lines(memory_tracer):
 def test_emitter_handles_multiple_lines_in_one_chunk(memory_tracer):
     parent = FakeSpan()
     emitter = _emitter(parent)
-    a = _line(
-        {"type": "assistant", "message": {"content": [{"type": "text", "text": "a"}]}}
-    )
-    b = _line(
-        {"type": "assistant", "message": {"content": [{"type": "text", "text": "bb"}]}}
-    )
+    a = _line({"type": "assistant", "message": {"content": [{"type": "text", "text": "a"}]}})
+    b = _line({"type": "assistant", "message": {"content": [{"type": "text", "text": "bb"}]}})
     emitter.feed("stdout", a + b)
     assert parent.events == [
         ("claude.assistant_text", {"aod.length": 1}),
@@ -369,9 +359,7 @@ def test_emitter_duplicate_tool_start_ignored(memory_tracer):
     block = _line(
         {
             "type": "assistant",
-            "message": {
-                "content": [{"type": "tool_use", "id": "dup", "name": "Bash"}]
-            },
+            "message": {"content": [{"type": "tool_use", "id": "dup", "name": "Bash"}]},
         }
     )
     emitter.feed("stdout", block)
@@ -381,9 +369,7 @@ def test_emitter_duplicate_tool_start_ignored(memory_tracer):
         _line(
             {
                 "type": "user",
-                "message": {
-                    "content": [{"type": "tool_result", "tool_use_id": "dup"}]
-                },
+                "message": {"content": [{"type": "tool_result", "tool_use_id": "dup"}]},
             }
         ),
     )
@@ -399,9 +385,7 @@ def test_emitter_unknown_tool_result_silently_ignored(memory_tracer):
         _line(
             {
                 "type": "user",
-                "message": {
-                    "content": [{"type": "tool_result", "tool_use_id": "ghost"}]
-                },
+                "message": {"content": [{"type": "tool_result", "tool_use_id": "ghost"}]},
             }
         ),
     )
@@ -412,9 +396,7 @@ def test_emitter_adapter_exception_does_not_propagate(memory_tracer, mocker):
     """A bug in an adapter must not abort the drain loop and fail the turn."""
     parent = FakeSpan()
     emitter = _emitter(parent)
-    mocker.patch.object(
-        emitter, "_adapter", side_effect=RuntimeError("adapter exploded")
-    )
+    mocker.patch.object(emitter, "_adapter", side_effect=RuntimeError("adapter exploded"))
     emitter.feed(
         "stdout",
         _line({"type": "assistant", "message": {"content": []}}),
