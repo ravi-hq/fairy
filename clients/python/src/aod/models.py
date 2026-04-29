@@ -43,7 +43,9 @@ class InlineSkill(_Model):
     as `skill_validation.py` on the server.
     """
 
-    name: str = Field(pattern=SKILL_NAME_RE, max_length=64)
+    # `SKILL_NAME_RE` already caps the length at 64 (`{0,63}` plus the
+    # leading char), so no separate `max_length` is needed.
+    name: str = Field(pattern=SKILL_NAME_RE)
     description: str = Field(max_length=MAX_SKILL_DESCRIPTION_LEN)
     content: str
 
@@ -67,7 +69,7 @@ class GithubSkill(_Model):
     type: Literal["github"] = "github"
     description: str = Field(max_length=MAX_SKILL_DESCRIPTION_LEN)
     source: str = Field(pattern=GITHUB_SOURCE_RE)
-    name: str | None = Field(default=None, pattern=SKILL_NAME_RE, max_length=64)
+    name: str | None = Field(default=None, pattern=SKILL_NAME_RE)
 
 
 SkillInput = InlineSkill | GithubSkill | dict[str, Any]
