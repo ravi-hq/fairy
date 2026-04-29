@@ -327,6 +327,63 @@ def test_execute_turn_writes_log_chunks_via_tagging_writer(user, mocker):
     assert all(log.turn_id == turn.id for log in logs)
 
 
+@pytest.mark.django_db
+def test_execute_turn_wires_runtime_trace_emitter_with_runtime_name(user, mocker):
+    """Regression: `spec.runtime` is a Runtime *object* after the PR #285
+    refactor; passing the object to RuntimeTraceEmitter silently produced a
+    no-op adapter in prod (PR #286 + #285 integration bug). The emitter
+    expects the runtime *name* string. This test would have caught it: it
+    drives a Claude stream-json chunk through the full execute_turn path
+    and asserts the emitter was constructed with the right shape."""
+    import json as _json
+
+    from agent_on_demand.session_service import turn_executor as turn_executor_mod
+
+    session, turn = _make_session_and_turn(user)
+    _, mock_cmd = _patch_sprite(mocker, "success")
+
+    captured: list = []
+    real_emitter_cls = turn_executor_mod.RuntimeTraceEmitter
+
+    def capture_emitter(span, runtime, tracer):
+        captured.append(runtime)
+        return real_emitter_cls(span, runtime, tracer)
+
+    mocker.patch.object(turn_executor_mod, "RuntimeTraceEmitter", capture_emitter)
+
+    def drive_output(*_, **__):
+        writer = mock_cmd.stdout
+        writer.write(
+            (
+                _json.dumps(
+                    {
+                        "type": "assistant",
+                        "message": {
+                            "content": [{"type": "text", "text": "ok"}],
+                        },
+                    }
+                )
+                + "\n"
+            ).encode()
+        )
+
+    mock_cmd.run.side_effect = drive_output
+
+    execute_turn(
+        session_id=str(session.id),
+        turn_id=turn.id,
+        prompt="t",
+        mode="run",
+        timeout=10.0,
+    )
+
+    assert captured, "RuntimeTraceEmitter was never constructed"
+    assert captured[0] == "claude", (
+        f"emitter received {captured[0]!r}; expected the runtime name string 'claude'. "
+        "Passing the Runtime object instead silently disables the adapter."
+    )
+
+
 # --------------------------------------------------------------------------
 # provision_session_task tests
 # --------------------------------------------------------------------------

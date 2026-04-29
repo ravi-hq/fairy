@@ -69,7 +69,7 @@ class TurnExecutor:
         self._mode = mode
         self._timeout = timeout
         self._span = span
-        self._trace_emitter = RuntimeTraceEmitter(span, spec.runtime, get_tracer())
+        self._trace_emitter = RuntimeTraceEmitter(span, spec.runtime.name, get_tracer())
         self._sink = LogChunkSink(session, turn, span=span, trace_emitter=self._trace_emitter)
         self._result_holder: list = []
 

@@ -340,6 +340,20 @@ def test_emitter_ignores_stderr(memory_tracer):
     assert parent.events == []
 
 
+def test_emitter_rejects_non_string_runtime(memory_tracer):
+    """Pinning the constructor's type guard. PR #286's wiring originally
+    passed `spec.runtime` (a Runtime object) instead of `spec.runtime.name`,
+    silently producing a no-op adapter. The TypeError makes that regression
+    fail at construction instead of in production."""
+
+    class FakeRuntime:
+        name = "claude"
+
+    parent = FakeSpan()
+    with pytest.raises(TypeError, match="spec.runtime.name"):
+        RuntimeTraceEmitter(parent, FakeRuntime(), trace.get_tracer("test"))
+
+
 def test_emitter_unknown_runtime_is_a_noop(memory_tracer):
     parent = FakeSpan()
     emitter = _emitter(parent, runtime="opencode")  # no adapter wired yet
