@@ -4,9 +4,25 @@ from typing import Any
 from uuid import UUID
 
 import httpx
+from pydantic import BaseModel
 
 from .._http import check_response
-from ..models import Agent, AgentVersion
+from ..models import Agent, AgentVersion, McpServerInput
+
+
+def _normalize_mcp_servers(
+    mcp_servers: list[McpServerInput] | None,
+) -> list[dict[str, Any]] | None:
+    """Accept typed pydantic inputs or raw dicts, return wire form."""
+    if mcp_servers is None:
+        return None
+    out: list[dict[str, Any]] = []
+    for entry in mcp_servers:
+        if isinstance(entry, BaseModel):
+            out.append(entry.model_dump(exclude_none=True))
+        else:
+            out.append(entry)
+    return out
 
 
 def _create_body(
@@ -18,7 +34,7 @@ def _create_body(
     description: str | None = None,
     environment_id: str | UUID | None = None,
     skills: list[dict[str, Any]] | None = None,
-    mcp_servers: list[dict[str, Any]] | None = None,
+    mcp_servers: list[McpServerInput] | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     body: dict[str, Any] = {"name": name, "model": model, "runtime": runtime}
@@ -30,8 +46,9 @@ def _create_body(
         body["environment_id"] = str(environment_id)
     if skills is not None:
         body["skills"] = skills
-    if mcp_servers is not None:
-        body["mcp_servers"] = mcp_servers
+    normalized_mcp = _normalize_mcp_servers(mcp_servers)
+    if normalized_mcp is not None:
+        body["mcp_servers"] = normalized_mcp
     if metadata is not None:
         body["metadata"] = metadata
     return body
@@ -47,7 +64,7 @@ def _update_body(
     description: str | None = None,
     environment_id: str | UUID | None = None,
     skills: list[dict[str, Any]] | None = None,
-    mcp_servers: list[dict[str, Any]] | None = None,
+    mcp_servers: list[McpServerInput] | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     body: dict[str, Any] = {"version": version}
@@ -65,8 +82,9 @@ def _update_body(
         body["environment_id"] = str(environment_id)
     if skills is not None:
         body["skills"] = skills
-    if mcp_servers is not None:
-        body["mcp_servers"] = mcp_servers
+    normalized_mcp = _normalize_mcp_servers(mcp_servers)
+    if normalized_mcp is not None:
+        body["mcp_servers"] = normalized_mcp
     if metadata is not None:
         body["metadata"] = metadata
     return body
@@ -90,7 +108,7 @@ class Agents:
         description: str | None = None,
         environment_id: str | UUID | None = None,
         skills: list[dict[str, Any]] | None = None,
-        mcp_servers: list[dict[str, Any]] | None = None,
+        mcp_servers: list[McpServerInput] | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> Agent:
         body = _create_body(
@@ -121,7 +139,7 @@ class Agents:
         description: str | None = None,
         environment_id: str | UUID | None = None,
         skills: list[dict[str, Any]] | None = None,
-        mcp_servers: list[dict[str, Any]] | None = None,
+        mcp_servers: list[McpServerInput] | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> Agent:
         body = _update_body(
@@ -168,7 +186,7 @@ class AsyncAgents:
         description: str | None = None,
         environment_id: str | UUID | None = None,
         skills: list[dict[str, Any]] | None = None,
-        mcp_servers: list[dict[str, Any]] | None = None,
+        mcp_servers: list[McpServerInput] | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> Agent:
         body = _create_body(
@@ -199,7 +217,7 @@ class AsyncAgents:
         description: str | None = None,
         environment_id: str | UUID | None = None,
         skills: list[dict[str, Any]] | None = None,
-        mcp_servers: list[dict[str, Any]] | None = None,
+        mcp_servers: list[McpServerInput] | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> Agent:
         body = _update_body(

@@ -17,11 +17,49 @@ NetworkingType = Literal["unrestricted", "limited"]
 PackageManager = Literal["apt", "cargo", "gem", "go", "npm", "pip"]
 
 
+class McpServerUrl(_Model):
+    """MCP server reachable over HTTP/SSE.
+
+    Use this in `agents.create(..., mcp_servers=[...])` for fast-fail
+    validation; the SDK accepts plain dicts too. The server validates
+    the same shape (see `mcp_server_validation.py`).
+    """
+
+    name: str
+    type: Literal["url"] = "url"
+    url: str
+    headers: dict[str, str] | None = None
+
+
+class McpServerStdio(_Model):
+    """MCP server spawned as a local process on the Sprite.
+
+    Use this in `agents.create(..., mcp_servers=[...])` for fast-fail
+    validation; the SDK accepts plain dicts too.
+    """
+
+    name: str
+    type: Literal["stdio"] = "stdio"
+    command: str
+    args: list[str] | None = None
+    env: dict[str, str] | None = None
+
+
+# Response shape — the server stores whatever was submitted, so the read
+# model carries the full union of optional fields rather than two
+# discriminated classes (which would force consumers to type-narrow on
+# every iteration).
 class McpServer(_Model):
     name: str
     type: Literal["url", "stdio"]
     url: str | None = None
     command: str | None = None
+    headers: dict[str, str] | None = None
+    args: list[str] | None = None
+    env: dict[str, str] | None = None
+
+
+McpServerInput = McpServerUrl | McpServerStdio | dict[str, Any]
 
 
 class Networking(_Model):

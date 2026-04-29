@@ -2,7 +2,16 @@ from __future__ import annotations
 
 import pytest
 
-from aod import Agent, AgentVersion, ConflictError, NotFoundError, ValidationError
+from aod import (
+    Agent,
+    AgentVersion,
+    ConflictError,
+    McpServer,
+    McpServerStdio,
+    McpServerUrl,
+    NotFoundError,
+    ValidationError,
+)
 
 
 def test_list(client, server, make_agent):
@@ -137,3 +146,106 @@ def test_auth_header_sent(client, server, make_agent):
     server.json("GET", "/agents", 200, {"data": []})
     client.agents.list()
     assert server.requests[-1].headers["authorization"] == "Bearer aod_test"
+
+
+def test_create_with_typed_mcp_servers(client, server, make_agent):
+    created = make_agent()
+    server.json("POST", "/agents", 201, created)
+
+    client.agents.create(
+        name="x",
+        model="m",
+        runtime="r",
+        mcp_servers=[
+            McpServerUrl(name="docs", url="https://docs.example/mcp"),
+            McpServerStdio(name="local", command="my-mcp-server", args=["--quiet"]),
+        ],
+    )
+
+    assert server.requests[-1].body["mcp_servers"] == [
+        {"name": "docs", "type": "url", "url": "https://docs.example/mcp"},
+        {"name": "local", "type": "stdio", "command": "my-mcp-server", "args": ["--quiet"]},
+    ]
+
+
+def test_create_with_dict_mcp_servers_still_works(client, server, make_agent):
+    """Plain dicts continue to work — typed inputs are additive."""
+    created = make_agent()
+    server.json("POST", "/agents", 201, created)
+
+    client.agents.create(
+        name="x",
+        model="m",
+        runtime="r",
+        mcp_servers=[{"name": "raw", "type": "url", "url": "https://example/mcp"}],
+    )
+
+    assert server.requests[-1].body["mcp_servers"] == [
+        {"name": "raw", "type": "url", "url": "https://example/mcp"}
+    ]
+
+
+def test_create_with_mixed_typed_and_dict_mcp_servers(client, server, make_agent):
+    created = make_agent()
+    server.json("POST", "/agents", 201, created)
+
+    client.agents.create(
+        name="x",
+        model="m",
+        runtime="r",
+        mcp_servers=[
+            McpServerUrl(name="a", url="https://a/mcp"),
+            {"name": "b", "type": "stdio", "command": "b"},
+        ],
+    )
+
+    assert len(server.requests[-1].body["mcp_servers"]) == 2
+
+
+def test_typed_mcp_url_optional_headers(client, server, make_agent):
+    created = make_agent()
+    server.json("POST", "/agents", 201, created)
+
+    client.agents.create(
+        name="x",
+        model="m",
+        runtime="r",
+        mcp_servers=[
+            McpServerUrl(name="auth", url="https://api/mcp", headers={"X-Token": "secret"}),
+        ],
+    )
+
+    sent = server.requests[-1].body["mcp_servers"][0]
+    assert sent["headers"] == {"X-Token": "secret"}
+
+
+def test_update_accepts_typed_mcp_servers(client, server, make_agent):
+    agent = make_agent(version=2)
+    server.json("PUT", f"/agents/{agent['id']}", 200, agent)
+
+    client.agents.update(
+        agent["id"],
+        version=1,
+        mcp_servers=[McpServerStdio(name="s", command="cmd")],
+    )
+
+    assert server.requests[-1].body["mcp_servers"] == [
+        {"name": "s", "type": "stdio", "command": "cmd"}
+    ]
+
+
+def test_mcp_server_response_exposes_optional_fields(client, server, make_agent):
+    """Server-side responses include url/stdio-specific fields; SDK preserves them."""
+    agent_payload = make_agent(
+        mcp_servers=[
+            {"name": "u", "type": "url", "url": "https://x/mcp", "headers": {"H": "v"}},
+            {"name": "s", "type": "stdio", "command": "c", "args": ["a"], "env": {"E": "v"}},
+        ]
+    )
+    server.json("GET", f"/agents/{agent_payload['id']}", 200, agent_payload)
+
+    agent = client.agents.get(agent_payload["id"])
+    assert isinstance(agent.mcp_servers[0], McpServer)
+    assert agent.mcp_servers[0].headers == {"H": "v"}
+    assert agent.mcp_servers[1].args == ["a"]
+    assert agent.mcp_servers[1].env == {"E": "v"}
