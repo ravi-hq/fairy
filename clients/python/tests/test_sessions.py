@@ -569,3 +569,219 @@ async def test_async_wait_for_completion_collect_events_false(
 
     assert result.events == []
     assert result.session.id is not None
+
+
+
+
+def test_stream_resumable_yields_events(client, server):
+    """Happy path — no errors, just yields events from a single stream."""
+    import httpx
+
+    sid = str(uuid4())
+
+    def responder(request):
+        body = (
+            b'data: {"type":"start","id":1}\n\n'
+            b'data: {"type":"output","id":2,"data":"hi"}\n\n'
+            b'data: {"type":"exit","id":3,"exit_code":0}\n\n'
+        )
+        return httpx.Response(200, content=body, headers={"content-type": "text/event-stream"})
+
+    server.register("GET", f"/sessions/{sid}/stream", responder)
+
+    events = list(client.sessions.stream_resumable(sid, max_retries=0))
+    assert [e.type for e in events] == ["start", "output", "exit"]
+
+
+def _make_sync_boom_stream(prefix: bytes, exc: Exception):
+    import httpx
+
+    class _SyncBoomStream(httpx.SyncByteStream):
+        def __iter__(self):
+            yield prefix
+            raise exc
+
+        def close(self) -> None:
+            return None
+
+    return _SyncBoomStream()
+
+
+def test_stream_resumable_reconnects_with_last_seen_id(client, server, monkeypatch):
+    """First attempt yields some events then raises; reconnect resumes from the last seen id."""
+    import httpx
+
+    sid = str(uuid4())
+    state = {"calls": 0}
+
+    def responder(request):
+        state["calls"] += 1
+        if state["calls"] == 1:
+            return httpx.Response(
+                200,
+                stream=_make_sync_boom_stream(
+                    b'data: {"type":"start","id":1}\n\n'
+                    b'data: {"type":"output","id":2,"data":"a"}\n\n',
+                    httpx.RemoteProtocolError("dropped"),
+                ),
+                headers={"content-type": "text/event-stream"},
+            )
+        body = b'data: {"type":"exit","id":3,"exit_code":0}\n\n'
+        return httpx.Response(200, content=body, headers={"content-type": "text/event-stream"})
+
+    server.register("GET", f"/sessions/{sid}/stream", responder)
+    monkeypatch.setattr("aod.resources.sessions.time.sleep", lambda _: None)
+
+    events = list(client.sessions.stream_resumable(sid, max_retries=2))
+
+    assert [e.type for e in events] == ["start", "output", "exit"]
+    # Second attempt resumed from cursor=2 (the last id seen on the first attempt).
+    second_call = [r for r in server.requests if "/stream" in r.path][1]
+    assert second_call.params.get("since") == ["2"]
+
+
+def test_stream_resumable_resets_attempt_after_progress(client, server, monkeypatch):
+    """Each successful event resets the failure budget.
+
+    With `max_retries=2`, three drops separated by progress should still succeed
+    — the docstring promises "consecutive" failures, not cumulative.
+    """
+    import httpx
+
+    sid = str(uuid4())
+    state = {"calls": 0}
+
+    def responder(request):
+        state["calls"] += 1
+        # Drops on calls 1, 2, 3 (each yields one event then raises).
+        if state["calls"] == 1:
+            return httpx.Response(
+                200,
+                stream=_make_sync_boom_stream(
+                    b'data: {"type":"start","id":1}\n\n',
+                    httpx.RemoteProtocolError("drop 1"),
+                ),
+                headers={"content-type": "text/event-stream"},
+            )
+        if state["calls"] == 2:
+            return httpx.Response(
+                200,
+                stream=_make_sync_boom_stream(
+                    b'data: {"type":"output","id":2,"data":"a"}\n\n',
+                    httpx.RemoteProtocolError("drop 2"),
+                ),
+                headers={"content-type": "text/event-stream"},
+            )
+        if state["calls"] == 3:
+            return httpx.Response(
+                200,
+                stream=_make_sync_boom_stream(
+                    b'data: {"type":"output","id":3,"data":"b"}\n\n',
+                    httpx.RemoteProtocolError("drop 3"),
+                ),
+                headers={"content-type": "text/event-stream"},
+            )
+        body = b'data: {"type":"exit","id":4,"exit_code":0}\n\n'
+        return httpx.Response(200, content=body, headers={"content-type": "text/event-stream"})
+
+    server.register("GET", f"/sessions/{sid}/stream", responder)
+    monkeypatch.setattr("aod.resources.sessions.time.sleep", lambda _: None)
+
+    events = list(client.sessions.stream_resumable(sid, max_retries=2))
+
+    assert [e.type for e in events] == ["start", "output", "output", "exit"]
+    assert state["calls"] == 4
+
+
+def test_stream_resumable_caught_on_timeout(client, server, monkeypatch):
+    """`httpx.ReadTimeout` is the canonical proxy-idle-timeout drop."""
+    import httpx
+
+    sid = str(uuid4())
+    state = {"calls": 0}
+
+    def responder(request):
+        state["calls"] += 1
+        if state["calls"] == 1:
+            return httpx.Response(
+                200,
+                stream=_make_sync_boom_stream(
+                    b'data: {"type":"start","id":1}\n\n',
+                    httpx.ReadTimeout("idle timeout"),
+                ),
+                headers={"content-type": "text/event-stream"},
+            )
+        body = b'data: {"type":"exit","id":2,"exit_code":0}\n\n'
+        return httpx.Response(200, content=body, headers={"content-type": "text/event-stream"})
+
+    server.register("GET", f"/sessions/{sid}/stream", responder)
+    monkeypatch.setattr("aod.resources.sessions.time.sleep", lambda _: None)
+
+    events = list(client.sessions.stream_resumable(sid, max_retries=1))
+    assert [e.type for e in events] == ["start", "exit"]
+
+
+def test_stream_resumable_gives_up_after_max_retries(client, server, monkeypatch):
+    import httpx
+
+    sid = str(uuid4())
+
+    def responder(request):
+        return httpx.Response(
+            200,
+            stream=_make_sync_boom_stream(b"", httpx.ReadError("network down")),
+            headers={"content-type": "text/event-stream"},
+        )
+
+    server.register("GET", f"/sessions/{sid}/stream", responder)
+    monkeypatch.setattr("aod.resources.sessions.time.sleep", lambda _: None)
+
+    with pytest.raises(httpx.ReadError):
+        list(client.sessions.stream_resumable(sid, max_retries=2))
+
+
+@pytest.mark.asyncio
+async def test_async_stream_resumable_reconnects(async_client, server, monkeypatch):
+    import httpx
+
+    sid = str(uuid4())
+    state = {"calls": 0}
+
+    class _AsyncBoomStream(httpx.AsyncByteStream):
+        def __init__(self, prefix: bytes, exc: Exception) -> None:
+            self._prefix = prefix
+            self._exc = exc
+
+        async def __aiter__(self):
+            yield self._prefix
+            raise self._exc
+
+        async def aclose(self) -> None:
+            return None
+
+    def responder(request):
+        state["calls"] += 1
+        if state["calls"] == 1:
+            return httpx.Response(
+                200,
+                stream=_AsyncBoomStream(
+                    b'data: {"type":"start","id":7}\n\n', httpx.RemoteProtocolError("dropped")
+                ),
+                headers={"content-type": "text/event-stream"},
+            )
+        body = b'data: {"type":"exit","id":8,"exit_code":0}\n\n'
+        return httpx.Response(200, content=body, headers={"content-type": "text/event-stream"})
+
+    server.register("GET", f"/sessions/{sid}/stream", responder)
+
+    async def _no_sleep(_):
+        return None
+
+    monkeypatch.setattr("aod.resources.sessions.asyncio.sleep", _no_sleep)
+
+    async with async_client as c:
+        collected = []
+        async for event in c.sessions.stream_resumable(sid, max_retries=2):
+            collected.append(event)
+
+    assert [e.type for e in collected] == ["start", "exit"]
