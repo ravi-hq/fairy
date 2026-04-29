@@ -63,9 +63,9 @@ Three calls to go from zero to a running agent:
 
 | Section | What you'll find |
 |---------|-----------------|
+| [Why Agent on Demand](api/why.md) | The case for agents-as-primitive — what becomes possible to build |
 | [Quickstart](api/quickstart.md) | Full minimum-viable flow with curl + Python SDK |
 | [Core Concepts](api/concepts.md) | Resources, versioning, state machines, metadata semantics |
-| [Overview](api/product.md) | What problems Agent on Demand solves |
 | [API Reference](api/reference.md) | Interactive Stoplight Elements explorer |
 | [Python SDK](sdks/python.md) | `aod-sdk` — typed sync + async client on PyPI |
 | [TypeScript SDK](sdks/typescript.md) | `@ravi-hq/aod-sdk` — typed async client on npm, browser-compatible |

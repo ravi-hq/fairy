@@ -1,17 +1,21 @@
 # Agent on Demand
 
-A REST API for running AI coding agents on [Sprites](https://sprites.dev) — lightweight,
-fast-booting cloud sandboxes. Define an agent (model + runtime + system prompt), wire up
-an environment (packages, env vars, setup script, network policy), then `POST /sessions`
-and stream the output over SSE. Multi-turn conversations resume in the same Sprite with
-the same filesystem.
+**A REST API that lets you spawn AI agents like database rows.** Define an agent, send
+it a prompt, stream what it does over SSE. Agent on Demand handles the sandbox, the
+secrets, the lifecycle, and multi-turn state. You ship the product.
 
-Three resources, one workflow: **agent → session → stream**.
+Build a kanban that opens its own PRs. A house-hunting app with a real-time research
+fleet. A support inbox that triages itself. Anywhere you want a non-deterministic,
+sandboxed process to do real work and stream the result into your UI — `POST /sessions`.
 
-**Hosted API:** https://aod.ravi.id — sign up, bring your own model API keys, start
-running sessions in minutes.
+Three resources, one workflow: **agent → session → stream**. Open source under
+Apache-2.0, runs on [Sprites](https://sprites.dev).
 
-**Full docs:** https://ravi-hq.github.io/agent-on-demand
+- **Try it now:** https://aod.ravi.id — bring your own model API keys, start running
+  sessions in minutes.
+- **See what to build:** https://ravi-hq.github.io/agent-on-demand/patterns/
+- **Read the why:** https://ravi-hq.github.io/agent-on-demand/api/why/
+- **Full docs:** https://ravi-hq.github.io/agent-on-demand
 
 ## Quickstart
 

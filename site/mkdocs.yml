@@ -30,9 +30,9 @@ theme:
 nav:
   - Home: index.md
   - Getting Started:
+    - Why Agent on Demand: api/why.md
     - Quickstart: api/quickstart.md
     - Core Concepts: api/concepts.md
-    - Overview: api/product.md
   - Reference:
     - API Reference: api/reference.md
     - Authentication: api/authentication.md
