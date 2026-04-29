@@ -463,6 +463,18 @@ paths:
             type: integer
             minimum: 0
           description: "Resume after this event id. Omit for full replay."
+        - name: Last-Event-ID
+          in: header
+          required: false
+          schema:
+            type: string
+            pattern: '^\d+$'
+          description: >
+            Standard SSE resume header. The HTML Living Standard defines
+            `Last-Event-ID` as an opaque string echoed back verbatim by
+            `EventSource`; this server emits and accepts it as a decimal
+            non-negative integer encoded as a string. Equivalent to
+            `since`. If both are present, `Last-Event-ID` wins.
       responses:
         "200":
           description: text/event-stream
@@ -567,7 +579,8 @@ components:
       type: object
       description: >
         `type` gates egress from the Sprite. For `limited`, `allowed_hosts` is
-        an allow-list of hostnames reachable from inside the Sprite.
+        an allow-list of hostnames reachable from inside the Sprite. `type`
+        is optional on requests and defaults to `unrestricted` server-side.
       properties:
         type:
           type: string
@@ -577,7 +590,6 @@ components:
           type: array
           items:
             type: string
-      required: [type]
 
     Packages:
       type: object
@@ -592,8 +604,10 @@ components:
     McpServer:
       type: object
       description: >
-        MCP server config. `type=url` requires `url`; `type=stdio` requires
-        `command`. Names must be unique within the agent.
+        MCP server config. `type=url` requires `url` (and optionally accepts
+        `headers`); `type=stdio` requires `command` (and optionally accepts
+        `args` and `env`). Names must be unique within the agent. Maximum 20
+        per agent.
       properties:
         name:
           type: string
@@ -602,8 +616,25 @@ components:
           enum: [url, stdio]
         url:
           type: string
+          description: Required when type is `url`.
+        headers:
+          type: object
+          additionalProperties:
+            type: string
+          description: Optional request headers when type is `url`.
         command:
           type: string
+          description: Required when type is `stdio`.
+        args:
+          type: array
+          items:
+            type: string
+          description: Optional argv when type is `stdio`.
+        env:
+          type: object
+          additionalProperties:
+            type: string
+          description: Optional environment overrides when type is `stdio`.
       required: [name, type]
 
     Skill:
@@ -727,6 +758,7 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Skill"
+          description: Maximum 20 per agent.
         mcp_servers:
           type: array
           items:
@@ -768,6 +800,9 @@ components:
         metadata:
           type: object
           additionalProperties: true
+          description: >
+            Merged onto existing metadata at the key level. Pass `{"k": ""}` to
+            delete the key `k`; other keys in the payload are upserted.
 
     AgentVersion:
       type: object
@@ -858,8 +893,11 @@ components:
         env_vars:
           type: object
           description: >
-            Encrypted at rest; never returned in responses. Values of empty
-            string on a PUT delete the key (see `test_metadata_merge_semantics`).
+            Encrypted at rest; never returned in responses. Unlike `metadata`,
+            an `env_vars` payload on PUT *fully replaces* the existing map —
+            it does not merge per-key. Empty-string values are stored as-is
+            (the variable is exported with an empty value); to remove a key,
+            omit it from the payload.
           additionalProperties:
             type: string
         setup_script:
@@ -880,6 +918,11 @@ components:
           $ref: "#/components/schemas/Packages"
         env_vars:
           type: object
+          description: >
+            Encrypted at rest; never returned in responses. A PUT *fully
+            replaces* the existing map — it does not merge per-key.
+            Empty-string values are stored as-is (the variable is exported
+            with an empty value); to remove a key, omit it from the payload.
           additionalProperties:
             type: string
         setup_script:
