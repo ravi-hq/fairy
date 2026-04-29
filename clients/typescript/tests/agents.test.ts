@@ -49,6 +49,22 @@ describe("agents", () => {
     expect(server.requests[0]?.body).toEqual({ version: 1, name: "renamed" });
   });
 
+  it("forwards environment_id=null to detach an env", async () => {
+    const server = new MockServer();
+    const agentId = "a1";
+    server.json(
+      "PUT",
+      `/agents/${agentId}`,
+      200,
+      makeAgent({ id: agentId, version: 2, environment_id: null }),
+    );
+    await newClient(server).agents.update(agentId, {
+      version: 1,
+      environment_id: null,
+    });
+    expect(server.requests[0]?.body).toEqual({ version: 1, environment_id: null });
+  });
+
   it("surfaces 409 as ConflictError on stale version", async () => {
     const server = new MockServer();
     server.json("PUT", "/agents/a1", 409, { detail: "stale version" });
