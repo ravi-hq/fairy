@@ -116,6 +116,55 @@ class GithubSkill(_Model):
 SkillInput = InlineSkill | GithubSkill | dict[str, Any]
 
 
+# Mirrors `skill_validation.py` on the server. Validating client-side
+# means callers see a typed exception immediately rather than a 422
+# from the wire.
+SKILL_NAME_RE = r"^[a-z0-9][a-z0-9-]{0,63}$"
+GITHUB_SOURCE_RE = r"^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$"
+MAX_SKILL_CONTENT_BYTES = 64 * 1024
+MAX_SKILL_DESCRIPTION_LEN = 1024
+SKILL_HEREDOC_DELIMITER = "SKILL_EOF"
+
+
+class InlineSkill(_Model):
+    """A skill whose content is shipped in-band.
+
+    The server materializes `content` to `<skills_root>/<name>/SKILL.md`
+    via a bash heredoc at provision time; `content` must therefore not
+    contain the heredoc delimiter `SKILL_EOF`. Same regex and size cap
+    as `skill_validation.py` on the server.
+    """
+
+    name: str = Field(pattern=SKILL_NAME_RE, max_length=64)
+    description: str = Field(max_length=MAX_SKILL_DESCRIPTION_LEN)
+    content: str
+
+    @field_validator("content")
+    @classmethod
+    def _validate_content(cls, v: str) -> str:
+        if len(v.encode("utf-8")) > MAX_SKILL_CONTENT_BYTES:
+            raise ValueError(f"content exceeds {MAX_SKILL_CONTENT_BYTES} bytes")
+        if SKILL_HEREDOC_DELIMITER in v:
+            raise ValueError(f"content must not contain {SKILL_HEREDOC_DELIMITER!r}")
+        return v
+
+
+class GithubSkill(_Model):
+    """A skill installed from a GitHub repo at provision time.
+
+    Omit `name` to install every `SKILL.md` the repo exposes; provide
+    `name` to install just one.
+    """
+
+    type: Literal["github"] = "github"
+    description: str = Field(max_length=MAX_SKILL_DESCRIPTION_LEN)
+    source: str = Field(pattern=GITHUB_SOURCE_RE)
+    name: str | None = Field(default=None, pattern=SKILL_NAME_RE, max_length=64)
+
+
+SkillInput = InlineSkill | GithubSkill | dict[str, Any]
+
+
 class Networking(_Model):
     """Networking config on an environment.
 
