@@ -61,6 +61,19 @@ try {
 | `fetch`     | `globalThis.fetch`              | Inject a custom fetch for tests or proxies.                |
 | `timeoutMs` | `30000`                         | Per-request timeout. Streaming requests use `AbortSignal`. |
 
+## Feature summary
+
+| Capability | Where it lives |
+|------------|----------------|
+| Typed resources | `client.agents`, `client.environments`, `client.sessions` |
+| Typed models | `Agent`, `Environment`, `Session`, `SessionAck`, `SessionTurn`, `StreamEvent`, … |
+| Typed error hierarchy | `AodHTTPError` → `NotFoundError`, `ConflictError`, `ValidationError`, `RateLimitError`, `AuthError`, `ServerError` |
+| Multi-turn | `client.sessions.prompt(sessionId, { prompt })` → `SessionAck` |
+| Session teardown | `client.sessions.terminate(sessionId)`, `client.sessions.delete(sessionId)` |
+| Turn history | `client.sessions.turns(sessionId)` → `SessionTurn[]` |
+| SSE stream (`AsyncIterable`, `close()`) | `client.sessions.stream(sessionId, { since?, signal? })` |
+| Version history | `client.agents.versions(agentId)` / `client.environments.versions(environmentId)` |
+
 ## Errors
 
 Non-2xx responses throw a typed subclass of `AodHTTPError`. All share `.statusCode`, `.detail`, `.method`, `.url`:
