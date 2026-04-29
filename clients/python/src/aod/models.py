@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal
+from typing import Any, Literal, Union
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -59,7 +59,10 @@ class McpServer(_Model):
     env: dict[str, str] | None = None
 
 
-McpServerInput = McpServerUrl | McpServerStdio | dict[str, Any]
+# Module-level runtime expression — `from __future__ import annotations` only
+# defers evaluation of *annotations*, not assignments. Use `Union` so this
+# stays import-safe on Python <3.10 even though we currently floor at 3.11.
+McpServerInput = Union[McpServerUrl, McpServerStdio, dict[str, Any]]
 
 
 class Networking(_Model):

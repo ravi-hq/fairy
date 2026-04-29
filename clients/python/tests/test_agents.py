@@ -199,7 +199,10 @@ def test_create_with_mixed_typed_and_dict_mcp_servers(client, server, make_agent
         ],
     )
 
-    assert len(server.requests[-1].body["mcp_servers"]) == 2
+    assert server.requests[-1].body["mcp_servers"] == [
+        {"name": "a", "type": "url", "url": "https://a/mcp"},
+        {"name": "b", "type": "stdio", "command": "b"},
+    ]
 
 
 def test_typed_mcp_url_optional_headers(client, server, make_agent):
@@ -217,6 +220,23 @@ def test_typed_mcp_url_optional_headers(client, server, make_agent):
 
     sent = server.requests[-1].body["mcp_servers"][0]
     assert sent["headers"] == {"X-Token": "secret"}
+
+
+def test_typed_mcp_stdio_optional_env(client, server, make_agent):
+    created = make_agent()
+    server.json("POST", "/agents", 201, created)
+
+    client.agents.create(
+        name="x",
+        model="m",
+        runtime="r",
+        mcp_servers=[
+            McpServerStdio(name="local", command="my-mcp-server", env={"K": "v"}),
+        ],
+    )
+
+    sent = server.requests[-1].body["mcp_servers"][0]
+    assert sent["env"] == {"K": "v"}
 
 
 def test_update_accepts_typed_mcp_servers(client, server, make_agent):
