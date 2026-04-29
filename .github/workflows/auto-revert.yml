@@ -54,7 +54,7 @@ jobs:
     # avoids noisy failures on forks and during initial setup.
     if: ${{ vars.RENDER_SERVICE_ID_API != '' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           # Full history so `git revert <sha>` can find arbitrary old commits.
           fetch-depth: 0
