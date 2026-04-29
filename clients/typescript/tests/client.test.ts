@@ -68,7 +68,9 @@ describe("Client", () => {
     await client.health();
     expect(server.requests[0]?.path).toBe("/health");
   });
+});
 
+describe("module exports", () => {
   // Catches the easy mistake of bumping `package.json` without bumping the
   // exported `VERSION` constant (the README's release checklist requires both,
   // and the publish workflow only checks the tag against `package.json`).
