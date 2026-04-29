@@ -107,6 +107,63 @@ describe("stream", () => {
     await stream.close();
   });
 
+  it("aborts the underlying fetch when the iteration ends without close()", async () => {
+    // Pre-fix, breaking out of `for await` only released the reader's lock —
+    // the fetch's underlying connection stayed open until socket idle-out.
+    // Pin: the iterator's finally aborts the controller, which propagates
+    // the abort to the request signal observed by the server.
+    const server = new MockServer();
+    const sid = uuid();
+    let abortObserved = false;
+    server.register("GET", `/sessions/${sid}/stream`, (req) => {
+      req.signal.addEventListener("abort", () => {
+        abortObserved = true;
+      });
+      const body =
+        'data: {"type":"start"}\n\n' +
+        'data: {"type":"output","id":1,"stream":"stdout","data":"hi"}\n\n';
+      return new Response(body, {
+        status: 200,
+        headers: { "content-type": "text/event-stream" },
+      });
+    });
+    const stream = await newClient(server).sessions.stream(sid);
+    for await (const event of stream) {
+      if (event.type === "output") break;
+    }
+    expect(abortObserved).toBe(true);
+  });
+
+  it("aborts the fetch even when response.text() throws on the error branch", async () => {
+    // Pin: if reading the error body throws, the outer try/finally still
+    // fires onDone() (and therefore controller.abort()). Without the outer
+    // finally, the throw would skip the abort and leak the connection.
+    const server = new MockServer();
+    const sid = uuid();
+    let abortObserved = false;
+    server.register("GET", `/sessions/${sid}/stream`, (req) => {
+      req.signal.addEventListener("abort", () => {
+        abortObserved = true;
+      });
+      const response = new Response(null, {
+        status: 503,
+        headers: { "content-type": "application/json" },
+      });
+      Object.defineProperty(response, "text", {
+        value: () => Promise.reject(new Error("body read failed")),
+      });
+      return response;
+    });
+    const stream = await newClient(server).sessions.stream(sid);
+    const iterate = async () => {
+      for await (const _ of stream) {
+        // drain
+      }
+    };
+    await expect(iterate()).rejects.toThrow("body read failed");
+    expect(abortObserved).toBe(true);
+  });
+
   it("ignores non-data lines", async () => {
     const server = new MockServer();
     const sid = uuid();
