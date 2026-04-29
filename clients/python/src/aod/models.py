@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Any, Literal, Union
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class _Model(BaseModel):
@@ -117,8 +117,29 @@ SkillInput = InlineSkill | GithubSkill | dict[str, Any]
 
 
 class Networking(_Model):
-    type: NetworkingType
+    """Networking config on an environment.
+
+    Used for both request and response — the server defaults `type` to
+    `"unrestricted"` when absent, and so does this class. Pass to
+    `environments.create/update(..., networking=...)` or accept it from
+    a fetched `Environment.networking`.
+    """
+
+    type: NetworkingType = "unrestricted"
     allowed_hosts: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _limited_requires_hosts(self) -> Networking:
+        # Server-side, `type="limited"` with empty allowed_hosts builds a
+        # policy with only a `*` deny rule — i.e. blocks all egress
+        # silently. Reject at SDK construction so callers see the mistake
+        # before it ships.
+        if self.type == "limited" and not self.allowed_hosts:
+            raise ValueError("allowed_hosts must be non-empty when type is 'limited'")
+        return self
+
+
+NetworkingInput = Networking | dict[str, Any]
 
 
 class SessionResource(_Model):
