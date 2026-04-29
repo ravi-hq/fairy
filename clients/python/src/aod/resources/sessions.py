@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from contextlib import asynccontextmanager, contextmanager
 from typing import Any
 from uuid import UUID
@@ -8,7 +8,14 @@ from uuid import UUID
 import httpx
 
 from .._http import check_response
-from ..models import Session, SessionAck, SessionTurn, StreamEvent
+from ..models import (
+    TERMINAL_EVENT_TYPES,
+    RunResult,
+    Session,
+    SessionAck,
+    SessionTurn,
+    StreamEvent,
+)
 from ..stream import aiter_sse, iter_sse
 
 
@@ -109,6 +116,49 @@ class Sessions:
         ) as response:
             yield iter_sse(response)
 
+    def run(
+        self,
+        *,
+        agent_id: str | UUID,
+        prompt: str,
+        environment_id: str | UUID | None = None,
+        timeout: int | None = None,
+        resources: list[dict[str, Any]] | None = None,
+        on_event: Callable[[StreamEvent], None] | None = None,
+        collect_events: bool = True,
+    ) -> RunResult:
+        """Create a session, stream until the first turn finishes, and
+        return the final session record (plus optionally the events).
+
+        Equivalent to `create() + stream()` + `get()` chained, with the
+        stream loop closed at the first terminal event (`exit`, `error`,
+        or `terminated`). The same constructor knobs as `create()` are
+        accepted; `on_event` is called for each event as it arrives,
+        useful for live progress.
+
+        Set `collect_events=False` to avoid retaining events in memory
+        for long sessions where the caller has already handled them via
+        `on_event`.
+        """
+        ack = self.create(
+            agent_id=agent_id,
+            prompt=prompt,
+            environment_id=environment_id,
+            timeout=timeout,
+            resources=resources,
+        )
+        events: list[StreamEvent] = []
+        with self.stream(ack.id) as stream:
+            for event in stream:
+                if on_event is not None:
+                    on_event(event)
+                if collect_events:
+                    events.append(event)
+                if event.type in TERMINAL_EVENT_TYPES:
+                    break
+        session = self.get(ack.id)
+        return RunResult(session=session, events=events)
+
 
 class AsyncSessions:
     def __init__(self, client: httpx.AsyncClient) -> None:
@@ -181,3 +231,41 @@ class AsyncSessions:
             headers={"Accept": "text/event-stream"},
         ) as response:
             yield aiter_sse(response)
+
+    async def run(
+        self,
+        *,
+        agent_id: str | UUID,
+        prompt: str,
+        environment_id: str | UUID | None = None,
+        timeout: int | None = None,
+        resources: list[dict[str, Any]] | None = None,
+        on_event: Callable[[StreamEvent], Awaitable[None] | None] | None = None,
+        collect_events: bool = True,
+    ) -> RunResult:
+        """Create a session, stream until the first turn finishes, and
+        return the final session record. See `Sessions.run` for the
+        semantics; `on_event` may be sync or async.
+        """
+        import inspect
+
+        ack = await self.create(
+            agent_id=agent_id,
+            prompt=prompt,
+            environment_id=environment_id,
+            timeout=timeout,
+            resources=resources,
+        )
+        events: list[StreamEvent] = []
+        async with self.stream(ack.id) as stream:
+            async for event in stream:
+                if on_event is not None:
+                    result = on_event(event)
+                    if inspect.isawaitable(result):
+                        await result
+                if collect_events:
+                    events.append(event)
+                if event.type in TERMINAL_EVENT_TYPES:
+                    break
+        session = await self.get(ack.id)
+        return RunResult(session=session, events=events)
