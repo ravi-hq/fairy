@@ -69,10 +69,10 @@ try {
 | Typed models | `Agent`, `Environment`, `Session`, `SessionAck`, `SessionTurn`, `StreamEvent`, … |
 | Typed error hierarchy | `AodHTTPError` → `NotFoundError`, `ConflictError`, `ValidationError`, `RateLimitError`, `AuthError`, `ServerError` |
 | Multi-turn | `client.sessions.prompt(sessionId, { prompt })` → `SessionAck` |
-| Session lifecycle | `client.sessions.terminate(id)`, `client.sessions.delete(id)` |
+| Session teardown | `client.sessions.terminate(sessionId)`, `client.sessions.delete(sessionId)` |
 | Turn history | `client.sessions.turns(sessionId)` → `SessionTurn[]` |
 | SSE stream (`AsyncIterable`, `close()`) | `client.sessions.stream(sessionId, { since?, signal? })` |
-| Version history | `client.agents.versions(agentId)` / `client.environments.versions(envId)` |
+| Version history | `client.agents.versions(agentId)` / `client.environments.versions(environmentId)` |
 
 ## Errors
 
