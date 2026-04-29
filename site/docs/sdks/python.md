@@ -40,6 +40,7 @@ with Client(token="aod_...") as client:
 | Typed resources | `client.agents`, `client.environments`, `client.sessions` |
 | Typed models | `Agent`, `Environment`, `Session`, `SessionAck`, `SessionTurn`, `StreamEvent`, … |
 | Typed error hierarchy | `AodError` → `NotFoundError`, `ConflictError`, `ValidationError`, `RateLimitError`, `AuthError`, `ServerError` |
+| Version history (agents + environments) | `client.agents.versions(agent_id)` / `client.environments.versions(environment_id)` → typed snapshots (descending, newest first) |
 | Session teardown | `client.sessions.terminate(session_id)`, `client.sessions.delete(session_id)` |
 | SSE stream (context manager, typed events) | `client.sessions.stream(session_id, since=None)` |
 | Turn history (prompt, status, timestamps) | `client.sessions.turns(session_id)` → `list[SessionTurn]` |

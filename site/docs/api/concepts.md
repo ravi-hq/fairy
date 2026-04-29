@@ -81,6 +81,8 @@ You must echo the current version in every `PUT` body:
 - **Stale** → `409 {"detail": "Version mismatch: expected 3, got 2"}`. Re-fetch and retry.
 - **No-op** → if all values are identical to the current state, version is not bumped.
 
+Retrieve the full snapshot history with `GET /agents/{id}/versions` or `GET /environments/{id}/versions` (returns an array of full snapshots in descending version order — newest first). In Python: `client.agents.versions(agent_id)` / `client.environments.versions(environment_id)`.
+
 Sessions do not have a `version`.
 
 ## Metadata merge semantics (agents only)
