@@ -41,7 +41,9 @@ with Client(token="aod_...") as client:
 | Typed models | `Agent`, `Environment`, `Session`, `SessionAck`, `SessionTurn`, `StreamEvent`, … |
 | Typed error hierarchy | `AodError` → `NotFoundError`, `ConflictError`, `ValidationError`, `RateLimitError`, `AuthError`, `ServerError` |
 | Version history (agents + environments) | `client.agents.versions(agent_id)` / `client.environments.versions(environment_id)` → typed snapshots (descending, newest first) |
+| Session teardown | `client.sessions.terminate(session_id)`, `client.sessions.delete(session_id)` |
 | SSE stream (context manager, typed events) | `client.sessions.stream(session_id, since=None)` |
+| Turn history (prompt, status, timestamps) | `client.sessions.turns(session_id)` → `list[SessionTurn]` |
 | Claude `stream-json` pretty-printer | `aod.pretty.claude.ClaudeFormatter` (optional, runtime-scoped) |
 
 ## Errors
@@ -108,6 +110,47 @@ with client.sessions.stream(session_id) as events:
 ```
 
 Other runtimes emit plain text — no formatter needed.
+
+## Multi-turn sessions
+
+After a session reaches `completed`, call `client.sessions.prompt()` to send a follow-up. The agent resumes in the same Sprite with the same filesystem and conversation history.
+
+```python
+from aod import Client, ConflictError
+
+with Client() as client:
+    # Turn 1
+    ack = client.sessions.create(agent_id=agent_id, prompt="List the Python files here.")
+    turn1 = ack.current_turn
+    with client.sessions.stream(ack.id) as events:
+        for event in events:
+            if event.type == "output" and event.extra.get("turn") == turn1:
+                print(event.extra["data"], end="")
+            elif event.type in ("exit", "error", "terminated", "stale"):
+                break
+
+    # Turn 2 — only valid once session is `completed`
+    try:
+        ack2 = client.sessions.prompt(ack.id, prompt="Now summarise what each file does.")
+    except ConflictError as e:
+        detail = str(e.detail)
+        if "failed" in detail or "terminated" in detail:
+            # session ended — start a new one (or surface to the caller)
+            raise
+        # session is pending or running — wait and retry, e.g.:
+        #   time.sleep(2); ack2 = client.sessions.prompt(ack.id, prompt=...)
+        raise
+
+    turn2 = ack2.current_turn
+    with client.sessions.stream(ack.id) as events:
+        for event in events:
+            if event.type == "output" and event.extra.get("turn") == turn2:
+                print(event.extra["data"], end="")
+            elif event.type in ("exit", "error", "terminated", "stale"):
+                break
+```
+
+`prompt()` returns a `SessionAck` with the updated `current_turn`. Only `completed` sessions accept a prompt — `running`, `pending`, `failed`, and `terminated` all raise `ConflictError` (409). See [Core Concepts → Session state machine](../api/concepts.md#session-state-machine).
 
 ## Async
 
