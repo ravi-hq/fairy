@@ -9,24 +9,28 @@ export function createStreamHandle(
   response: Response,
   url: string,
   controller: AbortController,
+  onClose: () => void = () => {},
 ): StreamHandle {
   // Releasing the reader's lock leaves the response body unconsumed; the
   // socket can outlive the for-await loop unless we abort the fetch. Run
   // abort on every iteration-end path (natural completion, break, throw,
-  // or explicit close) and guard it with an idempotency flag.
-  let aborted = false;
-  const abortOnce = () => {
-    if (aborted) return;
-    aborted = true;
+  // or explicit close) and guard it with an idempotency flag. `onClose`
+  // is the caller-supplied cleanup (e.g. removing the abort listener
+  // from an external signal) that must also fire exactly once.
+  let closed = false;
+  const closeOnce = () => {
+    if (closed) return;
+    closed = true;
     controller.abort();
+    onClose();
   };
-  const iterator = iterateSSE(response, url, abortOnce);
+  const iterator = iterateSSE(response, url, closeOnce);
   return {
     [Symbol.asyncIterator]() {
       return iterator;
     },
     async close() {
-      abortOnce();
+      closeOnce();
       try {
         await iterator.return?.(undefined);
       } catch {

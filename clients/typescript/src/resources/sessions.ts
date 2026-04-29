@@ -1,4 +1,4 @@
-import type { HttpClient } from "../http.js";
+import { linkSignal, type HttpClient } from "../http.js";
 import { createStreamHandle, type StreamHandle } from "../stream.js";
 import type {
   Session,
@@ -101,13 +101,13 @@ export class Sessions {
     opts: SessionStreamOptions = {},
   ): Promise<StreamHandle> {
     const controller = new AbortController();
-    const signal = linkSignal(controller, opts.signal);
+    const { signal, cleanup } = linkSignal(controller, opts.signal);
     const query = opts.since !== undefined ? { since: opts.since } : undefined;
     const { response, url } = await this.http.rawStream(
       `/sessions/${sessionId}/stream`,
       { query, signal },
     );
-    return createStreamHandle(response, url, controller);
+    return createStreamHandle(response, url, controller, cleanup);
   }
 }
 
@@ -117,21 +117,4 @@ function stripUndefined<T extends object>(obj: T): Partial<T> {
     if (v !== undefined) out[k] = v;
   }
   return out as Partial<T>;
-}
-
-function linkSignal(
-  controller: AbortController,
-  external?: AbortSignal,
-): AbortSignal {
-  if (!external) return controller.signal;
-  if (external.aborted) {
-    controller.abort(external.reason);
-    return controller.signal;
-  }
-  external.addEventListener(
-    "abort",
-    () => controller.abort(external.reason),
-    { once: true },
-  );
-  return controller.signal;
 }

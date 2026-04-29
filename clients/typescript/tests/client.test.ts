@@ -46,6 +46,40 @@ describe("Client", () => {
     expect(server.requests[0]?.headers["authorization"]).toBe("Bearer aod_test");
   });
 
+  it("removes its abort listener from the external signal after each request", async () => {
+    // Pre-fix, every completed request left a closure-capturing `abort`
+    // listener on the external signal. Long-lived signals (e.g. a global
+    // cancel-all controller) accumulated listeners — and the per-request
+    // AbortControllers they pinned — across the lifetime of the signal.
+    const server = new MockServer();
+    server.json("GET", "/agents", 200, { data: [] });
+    const real = new AbortController();
+    let added = 0;
+    let removed = 0;
+    const fakeSignal = {
+      aborted: false,
+      reason: undefined,
+      addEventListener: (type: string, listener: EventListener, opts?: AddEventListenerOptions) => {
+        added++;
+        real.signal.addEventListener(type, listener, opts);
+      },
+      removeEventListener: (type: string, listener: EventListener) => {
+        removed++;
+        real.signal.removeEventListener(type, listener);
+      },
+    } as unknown as AbortSignal;
+    const client = new Client({
+      baseUrl: "http://mock",
+      token: "aod_test",
+      fetch: server.fetch,
+    });
+    await client.agents.list({ signal: fakeSignal });
+    await client.agents.list({ signal: fakeSignal });
+    await client.agents.list({ signal: fakeSignal });
+    expect(added).toBe(3);
+    expect(removed).toBe(3);
+  });
+
   it("returns health payload", async () => {
     const server = new MockServer();
     server.json("GET", "/health", 200, { status: "ok" });
