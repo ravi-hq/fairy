@@ -57,6 +57,16 @@ class RuntimeTraceEmitter:
     """
 
     def __init__(self, parent_span: Span, runtime: str, tracer: Tracer):
+        # `runtime` must be the string name (e.g. "claude"), not a `Runtime`
+        # object. The original wiring passed `spec.runtime` directly, which
+        # is the Runtime instance, so `_ADAPTERS.get(...)` silently returned
+        # None and the emitter became a no-op in prod. Catching it here
+        # keeps the next refactor from regressing the same way.
+        if not isinstance(runtime, str):
+            raise TypeError(
+                f"runtime must be the runtime name string, got "
+                f"{type(runtime).__name__}; pass spec.runtime.name."
+            )
         self._parent = parent_span
         self._tracer = tracer
         self._adapter = _ADAPTERS.get(runtime)
