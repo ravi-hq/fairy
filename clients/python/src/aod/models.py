@@ -25,8 +25,19 @@ class McpServer(_Model):
 
 
 class Networking(_Model):
-    type: NetworkingType
+    """Networking config on an environment.
+
+    Used for both request and response — the server defaults `type` to
+    `"unrestricted"` when absent, and so does this class. Pass to
+    `environments.create/update(..., networking=...)` or accept it from
+    a fetched `Environment.networking`.
+    """
+
+    type: NetworkingType = "unrestricted"
     allowed_hosts: list[str] = Field(default_factory=list)
+
+
+NetworkingInput = Networking | dict[str, Any]
 
 
 class SessionResource(_Model):

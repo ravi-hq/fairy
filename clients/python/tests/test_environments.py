@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from aod import ConflictError, Environment
+from aod import ConflictError, Environment, Networking
 
 
 def test_list(client, server, make_environment):
@@ -113,4 +113,43 @@ def test_create_with_packages_and_networking(client, server, make_environment):
         "packages": {"apt": ["jq", "curl"], "npm": ["typescript"]},
         "setup_script": "echo hi",
         "networking": {"type": "limited", "allowed_hosts": ["api.github.com"]},
+    }
+
+
+def test_create_with_typed_networking(client, server, make_environment):
+    server.json("POST", "/environments", 201, make_environment())
+    client.environments.create(
+        name="prod",
+        networking=Networking(type="limited", allowed_hosts=["api.github.com"]),
+    )
+    assert server.requests[-1].body["networking"] == {
+        "type": "limited",
+        "allowed_hosts": ["api.github.com"],
+    }
+
+
+def test_typed_networking_defaults_to_unrestricted():
+    """Default matches the server: env created without networking is unrestricted."""
+    n = Networking()
+    assert n.type == "unrestricted"
+    assert n.allowed_hosts == []
+
+
+def test_create_with_dict_networking_still_works(client, server, make_environment):
+    server.json("POST", "/environments", 201, make_environment())
+    client.environments.create(name="x", networking={"type": "unrestricted"})
+    assert server.requests[-1].body["networking"] == {"type": "unrestricted"}
+
+
+def test_update_accepts_typed_networking(client, server, make_environment):
+    env = make_environment(version=2)
+    server.json("PUT", f"/environments/{env['id']}", 200, env)
+    client.environments.update(
+        env["id"],
+        version=1,
+        networking=Networking(type="limited", allowed_hosts=["x.example"]),
+    )
+    assert server.requests[-1].body["networking"] == {
+        "type": "limited",
+        "allowed_hosts": ["x.example"],
     }

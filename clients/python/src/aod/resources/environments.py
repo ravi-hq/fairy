@@ -4,9 +4,18 @@ from typing import Any
 from uuid import UUID
 
 import httpx
+from pydantic import BaseModel
 
 from .._http import check_response
-from ..models import Environment, EnvironmentVersion
+from ..models import Environment, EnvironmentVersion, NetworkingInput
+
+
+def _normalize_networking(networking: NetworkingInput | None) -> dict[str, Any] | None:
+    if networking is None:
+        return None
+    if isinstance(networking, BaseModel):
+        return networking.model_dump(exclude_none=True)
+    return networking
 
 
 def _create_body(
@@ -15,7 +24,7 @@ def _create_body(
     packages: dict[str, list[str]] | None = None,
     env_vars: dict[str, str] | None = None,
     setup_script: str | None = None,
-    networking: dict[str, Any] | None = None,
+    networking: NetworkingInput | None = None,
 ) -> dict[str, Any]:
     body: dict[str, Any] = {"name": name}
     if packages is not None:
@@ -24,8 +33,9 @@ def _create_body(
         body["env_vars"] = env_vars
     if setup_script is not None:
         body["setup_script"] = setup_script
-    if networking is not None:
-        body["networking"] = networking
+    normalized = _normalize_networking(networking)
+    if normalized is not None:
+        body["networking"] = normalized
     return body
 
 
@@ -36,7 +46,7 @@ def _update_body(
     packages: dict[str, list[str]] | None = None,
     env_vars: dict[str, str] | None = None,
     setup_script: str | None = None,
-    networking: dict[str, Any] | None = None,
+    networking: NetworkingInput | None = None,
 ) -> dict[str, Any]:
     body: dict[str, Any] = {"version": version}
     if name is not None:
@@ -47,8 +57,9 @@ def _update_body(
         body["env_vars"] = env_vars
     if setup_script is not None:
         body["setup_script"] = setup_script
-    if networking is not None:
-        body["networking"] = networking
+    normalized = _normalize_networking(networking)
+    if normalized is not None:
+        body["networking"] = normalized
     return body
 
 
@@ -67,7 +78,7 @@ class Environments:
         packages: dict[str, list[str]] | None = None,
         env_vars: dict[str, str] | None = None,
         setup_script: str | None = None,
-        networking: dict[str, Any] | None = None,
+        networking: NetworkingInput | None = None,
     ) -> Environment:
         body = _create_body(
             name=name,
@@ -94,7 +105,7 @@ class Environments:
         packages: dict[str, list[str]] | None = None,
         env_vars: dict[str, str] | None = None,
         setup_script: str | None = None,
-        networking: dict[str, Any] | None = None,
+        networking: NetworkingInput | None = None,
     ) -> Environment:
         body = _update_body(
             version=version,
@@ -136,7 +147,7 @@ class AsyncEnvironments:
         packages: dict[str, list[str]] | None = None,
         env_vars: dict[str, str] | None = None,
         setup_script: str | None = None,
-        networking: dict[str, Any] | None = None,
+        networking: NetworkingInput | None = None,
     ) -> Environment:
         body = _create_body(
             name=name,
@@ -163,7 +174,7 @@ class AsyncEnvironments:
         packages: dict[str, list[str]] | None = None,
         env_vars: dict[str, str] | None = None,
         setup_script: str | None = None,
-        networking: dict[str, Any] | None = None,
+        networking: NetworkingInput | None = None,
     ) -> Environment:
         body = _update_body(
             version=version,
