@@ -41,57 +41,59 @@ async function* iterateSSE(
   url: string,
   onDone: () => void,
 ): AsyncGenerator<StreamEvent, void, unknown> {
-  if (response.status >= 400) {
-    const text = await response.text();
-    let parsed: unknown = text || null;
-    if (text) {
-      try {
-        parsed = JSON.parse(text);
-      } catch {
-        parsed = text;
-      }
-    }
-    onDone();
-    raiseForStatus(response.status, parsed, "GET", url);
-    return;
-  }
-
-  if (!response.body) {
-    onDone();
-    return;
-  }
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder("utf-8");
-  let buffer = "";
-
+  // Outer try/finally ensures onDone() runs on every exit path — including
+  // when response.text() throws on the >=400 branch, which would otherwise
+  // leak the underlying fetch.
   try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
+    if (response.status >= 400) {
+      const text = await response.text();
+      let parsed: unknown = text || null;
+      if (text) {
+        try {
+          parsed = JSON.parse(text);
+        } catch {
+          parsed = text;
+        }
+      }
+      raiseForStatus(response.status, parsed, "GET", url);
+      return;
+    }
 
-      let newlineIndex: number;
-      while ((newlineIndex = buffer.indexOf("\n")) !== -1) {
-        const rawLine = buffer.slice(0, newlineIndex);
-        buffer = buffer.slice(newlineIndex + 1);
-        const line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
-        const event = parseDataLine(line);
+    if (!response.body) return;
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder("utf-8");
+    let buffer = "";
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        let newlineIndex: number;
+        while ((newlineIndex = buffer.indexOf("\n")) !== -1) {
+          const rawLine = buffer.slice(0, newlineIndex);
+          buffer = buffer.slice(newlineIndex + 1);
+          const line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
+          const event = parseDataLine(line);
+          if (event) yield event;
+        }
+      }
+
+      buffer += decoder.decode();
+      if (buffer.length > 0) {
+        const event = parseDataLine(buffer);
         if (event) yield event;
       }
-    }
-
-    buffer += decoder.decode();
-    if (buffer.length > 0) {
-      const event = parseDataLine(buffer);
-      if (event) yield event;
+    } finally {
+      try {
+        reader.releaseLock();
+      } catch {
+        // reader already released
+      }
     }
   } finally {
-    try {
-      reader.releaseLock();
-    } catch {
-      // reader already released
-    }
     onDone();
   }
 }
