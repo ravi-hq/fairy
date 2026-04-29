@@ -5,6 +5,10 @@ from typing import TYPE_CHECKING, Literal
 
 from agent_on_demand.runtimes.claude_command import build_claude_command
 from agent_on_demand.runtimes.claude_config import render_claude_mcp_config
+from agent_on_demand.runtimes.claude_otel import (
+    build_claude_otel_env,
+    build_claude_otel_static_env,
+)
 
 if TYPE_CHECKING:
     from agent_on_demand.session_service.backends import SessionHandle
@@ -43,3 +47,14 @@ class ClaudeRuntime:
             "/home/sprite/.claude.json",
             json.dumps({"mcpServers": config}, indent=2),
         )
+
+    def otel_env(
+        self,
+        spec: "SessionSpec",
+        traceparent: str | None,
+        tracestate: str | None,
+    ) -> dict[str, str]:
+        return build_claude_otel_env(spec, traceparent, tracestate)
+
+    def static_env(self, spec: "SessionSpec") -> list[tuple[str, str]]:
+        return build_claude_otel_static_env()

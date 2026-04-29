@@ -21,6 +21,7 @@ from agent_on_demand.models import AgentSession, AgentSessionLog
 
 from .log_sink import LogChunkSink
 from .provisioning import STAGE_RUNTIME_START, emit_stage_event
+from .tracing import inject_carrier
 from .turn.argv import build_turn_argv
 from .turn.outcome import compute_final_status
 
@@ -82,7 +83,19 @@ class TurnExecutor:
         # Built before thread spawn so any raise surfaces as a task-level
         # failure (procrastinate logging + alerting) rather than getting
         # swallowed into result_holder as a session-level error.
-        argv = build_turn_argv(self._spec.runtime, self._spec, self._mode)
+        #
+        # `extra_env` carries the W3C trace context plus any OTel exporter
+        # config the runtime wants Claude (or any other CLI) to see for the
+        # turn. The carrier is captured here, while we are still inside the
+        # `session.execute_turn` span, so the in-Sprite `claude_code.interaction`
+        # span parents under it.
+        carrier = inject_carrier()
+        extra_env = self._spec.runtime.otel_env(
+            self._spec,
+            carrier.get("traceparent"),
+            carrier.get("tracestate"),
+        )
+        argv = build_turn_argv(self._spec.runtime, self._spec, self._mode, extra_env=extra_env)
 
         cmd_thread = threading.Thread(target=self._run_command, args=(argv,), daemon=True)
         cmd_thread.start()

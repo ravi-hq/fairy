@@ -38,3 +38,14 @@ class GeminiRuntime:
             "/home/sprite/.gemini/settings.json",
             json.dumps({"mcpServers": config}, indent=2),
         )
+
+    def otel_env(
+        self,
+        spec: "SessionSpec",
+        traceparent: str | None,
+        tracestate: str | None,
+    ) -> dict[str, str]:
+        return {}
+
+    def static_env(self, spec: "SessionSpec") -> list[tuple[str, str]]:
+        return []
