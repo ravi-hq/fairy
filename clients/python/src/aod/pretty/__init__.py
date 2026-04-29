@@ -69,12 +69,15 @@ class GenericFormatter:
                 yield line
 
     def flush(self) -> Iterator[str]:
-        if self._buf.strip():
-            yield self._buf
+        # Match feed()'s \r-stripping so a trailing "dangling\r" (no \n)
+        # doesn't smuggle a stray carriage return into the last line.
+        tail = self._buf.rstrip("\r")
+        if tail.strip():
+            yield tail
         self._buf = ""
 
 
-def formatter_for(runtime: str) -> Formatter:
+def formatter_for(runtime: str | None = None) -> Formatter:
     """Return the formatter that knows how to read `runtime`'s stdout.
 
     Currently pattern-matches `runtime` against the registry of typed
@@ -84,7 +87,7 @@ def formatter_for(runtime: str) -> Formatter:
 
     Match rules (substring on the runtime name, lowercase):
       - "claude" → `ClaudeFormatter`
-      - everything else → `GenericFormatter`
+      - everything else (including `None`) → `GenericFormatter`
     """
     name = (runtime or "").lower()
     if "claude" in name:

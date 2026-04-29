@@ -21,6 +21,11 @@ def test_formatter_for_unknown_returns_generic():
     assert isinstance(formatter_for(""), GenericFormatter)
 
 
+def test_formatter_for_none_returns_generic():
+    assert isinstance(formatter_for(None), GenericFormatter)
+    assert isinstance(formatter_for(), GenericFormatter)
+
+
 def test_generic_formatter_yields_stdout_lines():
     fmt = GenericFormatter()
     lines = list(fmt.consume(_output("first line\nsecond line\n")))
@@ -39,6 +44,15 @@ def test_generic_formatter_flush_emits_unterminated():
     assert list(fmt.flush()) == ["dangling"]
 
 
+def test_generic_formatter_flush_strips_trailing_carriage_return():
+    # feed() strips \r off complete lines; flush() must do the same so a
+    # trailing "dangling\r" (no \n) doesn't smuggle a stray CR into the
+    # last yielded line. Regression guard for the bug fixed in this PR.
+    fmt = GenericFormatter()
+    list(fmt.consume(_output("dangling\r")))
+    assert list(fmt.flush()) == ["dangling"]
+
+
 def test_generic_formatter_skips_stderr():
     fmt = GenericFormatter()
     assert list(fmt.consume(_output("err\n", stream="stderr"))) == []
@@ -51,6 +65,15 @@ def test_generic_formatter_skips_non_output_events():
 
 
 def test_formatter_protocol_satisfied_by_both():
-    """Both shipping formatters duck-type as Formatter."""
+    """Both shipping formatters duck-type as Formatter.
+
+    NOTE: `@runtime_checkable` Protocols only check method *presence*, not
+    signatures or return types — so this guard catches a missing method but
+    not a method whose signature drifted. Real signature drift is caught by
+    mypy on `clients/python/` (see `[tool.mypy]` in pyproject.toml). There
+    is currently no CI job invoking mypy on the SDK package; until one is
+    added, run `uv run mypy` locally inside `clients/python/` before
+    landing changes here.
+    """
     assert isinstance(ClaudeFormatter(), Formatter)
     assert isinstance(GenericFormatter(), Formatter)
