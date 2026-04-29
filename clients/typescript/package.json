@@ -46,7 +46,8 @@
     "node": ">=18"
   },
   "scripts": {
-    "build": "tsup",
+    "build": "tsup && npm run check:dual-types",
+    "check:dual-types": "node -e \"['dist/index.js','dist/index.cjs','dist/index.d.ts','dist/index.d.cts'].forEach(f=>require('fs').accessSync(f))\"",
     "dev": "tsup --watch",
     "test": "vitest run",
     "test:watch": "vitest",
