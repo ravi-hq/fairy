@@ -95,7 +95,7 @@ describe("Client", () => {
       timeoutMs: 50,
     });
     const start = Date.now();
-    await expect(client.agents.list()).rejects.toBeDefined();
+    await expect(client.agents.list()).rejects.toMatchObject({ name: "AbortError" });
     expect(Date.now() - start).toBeLessThan(2000);
   });
 
