@@ -17,6 +17,8 @@ export interface RequestOptions {
 }
 
 const DEFAULT_TIMEOUT_MS = 30_000;
+// Keep in sync with `VERSION` in index.ts and `version` in package.json on release.
+const USER_AGENT = "aod-sdk-ts/0.1.1";
 
 export class HttpClient {
   readonly baseUrl: string;
@@ -40,6 +42,7 @@ export class HttpClient {
   buildHeaders(extra?: Record<string, string>): Headers {
     const headers = new Headers({
       Authorization: `Bearer ${this.token}`,
+      "User-Agent": USER_AGENT,
     });
     if (extra) {
       for (const [k, v] of Object.entries(extra)) {

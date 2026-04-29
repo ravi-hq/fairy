@@ -56,6 +56,18 @@ describe("Client", () => {
     await expect(client.health()).resolves.toEqual({ status: "ok" });
   });
 
+  it("sets a User-Agent identifying the SDK", async () => {
+    const server = new MockServer();
+    server.json("GET", "/health", 200, { status: "ok" });
+    const client = new Client({
+      baseUrl: "http://mock",
+      token: "aod_test",
+      fetch: server.fetch,
+    });
+    await client.health();
+    expect(server.requests[0]?.headers["user-agent"]).toMatch(/^aod-sdk-ts\/[\d.]+/);
+  });
+
   it("strips trailing slash from baseUrl", async () => {
     const server = new MockServer();
     server.json("GET", "/health", 200, { status: "ok" });
