@@ -3,6 +3,7 @@ from django.dispatch import receiver
 
 from agent_on_demand import session_service
 from agent_on_demand.models import AgentSession
+from agent_on_demand.session_service.tracing import inject_carrier
 
 
 @receiver(pre_delete, sender=AgentSession)
@@ -13,4 +14,8 @@ def delete_sprite_on_session_delete(sender, instance, **kwargs):
     handle = instance.backend_handle
     if not handle:
         return
-    session_service.destroy_session_task.defer(user_id=instance.user_id, handle=handle)
+    session_service.destroy_session_task.defer(
+        user_id=instance.user_id,
+        handle=handle,
+        _otel_carrier=inject_carrier(),
+    )

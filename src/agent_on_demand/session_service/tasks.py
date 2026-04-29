@@ -49,12 +49,14 @@ from .provisioning import (
     resume_session,
 )
 from .specs import build_spec_for_session
+from .tracing import inject_carrier, traced_task
 from .turn_executor import TurnExecutor
 
 logger = logging.getLogger(__name__)
 
 
 @procrastinate_app.task(queue="sessions", name="provision_session", pass_context=False)
+@traced_task("provision_session")
 def provision_session_task(
     *,
     session_id: str,
@@ -149,6 +151,7 @@ def _provision_session_inner(
         prompt=prompt,
         mode=mode,
         timeout=timeout,
+        _otel_carrier=inject_carrier(),
     )
 
 
@@ -209,6 +212,7 @@ def _fail_pending_turn(session: AgentSession, turn: SessionTurn, message: str) -
 
 
 @procrastinate_app.task(queue="sessions", name="execute_turn", pass_context=False)
+@traced_task("execute_turn")
 def execute_turn(
     *,
     session_id: str,
@@ -287,6 +291,7 @@ def _execute_turn_inner(
 
 
 @procrastinate_app.task(queue="sessions", name="destroy_session", pass_context=False)
+@traced_task("destroy_session")
 def destroy_session_task(*, user_id: int, handle: str) -> None:
     """Delete a backend session on the worker. Best-effort — failures are
     logged, not retried, matching the pre-existing `destroy_session` contract.
