@@ -87,7 +87,8 @@ route table. Authentication: `Authorization: Bearer <token>`.
   `DELETE /environments/{id}/delete`, `GET /environments/{id}/versions`
 - `POST /sessions`, `GET /sessions`, `GET /sessions/{id}`,
   `POST /sessions/{id}/prompt`, `POST /sessions/{id}/terminate`,
-  `DELETE /sessions/{id}/delete`, `GET /sessions/{id}/stream` (SSE)
+  `DELETE /sessions/{id}/delete`, `GET /sessions/{id}/stream` (SSE),
+  `GET /sessions/{id}/turns`
 
 ## Runtimes
 
