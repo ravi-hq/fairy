@@ -36,6 +36,7 @@ export function createStreamHandle(
       } catch {
         // iterator already finished or errored — nothing to do
       }
+      cleanupOnce();
     },
   };
 }
