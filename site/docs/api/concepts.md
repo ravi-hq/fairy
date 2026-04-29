@@ -32,7 +32,7 @@ A **session** is one execution of an agent inside a Sprite. Sessions are:
 - **Async** — `POST /sessions` returns `202` immediately; the agent runs in the background.
 - **Streamable** — `GET /sessions/{id}/stream` delivers output as Server-Sent Events.
 - **Multi-turn** — after `completed`, you can `POST /sessions/{id}/prompt` to continue in the same Sprite with the same filesystem and runtime history. (`failed` and `terminated` sessions cannot be continued.)
-- **Auditable** — `GET /sessions/{id}/turns` returns the full turn history: each turn's prompt, status, exit code, and timestamps.
+- **Auditable** — `GET /sessions/{id}/turns` returns the full turn history: each turn's prompt, status, exit code, and timestamps (`started_at` / `ended_at` are nullable until the turn reaches that state).
 
 ## Session state machine
 
