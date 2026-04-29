@@ -33,7 +33,7 @@ jobs:
       - run: uv sync --all-extras
       - run: uv run python -m scripts.validate_openapi --export site/docs/api/openapi.json
       - run: uv run mkdocs build --config-file site/mkdocs.yml --site-dir ${{ github.workspace }}/_site
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: ${{ github.workspace }}/_site
       - id: deployment
