@@ -125,6 +125,45 @@ If the `id` is not a non-negative integer, the server returns `400`.
       "$BASE/sessions/<session-uuid>/stream"
     ```
 
+=== "TypeScript (aod-sdk)"
+
+    The [`@ravi-hq/aod-sdk`](../sdks/typescript.md) package handles SSE parsing, heartbeats, and `Last-Event-ID` resume. `stream()` returns a `StreamHandle` — an `AsyncIterable<StreamEvent>` with a `close()` method.
+
+    `event.extra` is typed as `Record<string, unknown>` — narrow on `event.type` and cast the payload to the documented shape (or use a runtime guard) before reading fields.
+
+    This example targets Node.js; in a browser, replace `process.stdout.write` with a UI update (e.g., appending to a DOM node).
+
+    ```ts
+    import { Client } from "@ravi-hq/aod-sdk";
+
+    const client = new Client({ token: "aod_..." });
+
+    const stream = await client.sessions.stream(sessionId);
+    try {
+      for await (const event of stream) {
+        if (event.type === "output") {
+          const { data } = event.extra as { data?: string };
+          process.stdout.write(data ?? "");
+        } else if (event.type === "stage") {
+          const { stage, state } = event.extra as { stage?: string; state?: string };
+          console.log(`[${stage} ${state}]`);
+        } else if (["exit", "error", "terminated", "stale"].includes(event.type)) {
+          console.log(`\n[${event.type}]`);
+          break;
+        }
+      }
+    } finally {
+      await stream.close();
+    }
+    ```
+
+    Pass `since` to resume after a previously-seen event, or `signal` to cancel from outside:
+
+    ```ts
+    const stream = await client.sessions.stream(sessionId, { since: 42 });
+    // or: { signal: abortController.signal }
+    ```
+
 === "Python (aod-sdk)"
 
     The [`aod-sdk`](../sdks/python.md) package handles SSE parsing, heartbeats, and `Last-Event-ID` resume for you. Events are typed `StreamEvent` objects; everything beyond `type` and `id` lands in `event.extra`.
@@ -149,39 +188,6 @@ If the `id` is not a non-negative integer, the server returns `400`.
     ```python
     with client.sessions.stream(session_id, since=42) as events:
         ...
-    ```
-
-=== "TypeScript (aod-sdk)"
-
-    The [`@ravi-hq/aod-sdk`](../sdks/typescript.md) package handles SSE parsing, heartbeats, and `Last-Event-ID` resume. `stream()` returns a `StreamHandle` — an `AsyncIterable<StreamEvent>` with a `close()` method.
-
-    ```ts
-    import { Client } from "@ravi-hq/aod-sdk";
-
-    const client = new Client({ token: "aod_..." });
-
-    const stream = await client.sessions.stream(sessionId);
-    try {
-      for await (const event of stream) {
-        if (event.type === "output") {
-          process.stdout.write(event.extra.data ?? "");
-        } else if (event.type === "stage") {
-          console.log(`[${event.extra.stage} ${event.extra.state}]`);
-        } else if (["exit", "error", "terminated", "stale"].includes(event.type)) {
-          console.log(`\n[${event.type}]`);
-          break;
-        }
-      }
-    } finally {
-      await stream.close();
-    }
-    ```
-
-    Pass `since` to resume after a previously-seen event, or `signal` to cancel from outside:
-
-    ```ts
-    const stream = await client.sessions.stream(sessionId, { since: 42 });
-    // or: { signal: abortController.signal }
     ```
 
 === "Python (raw)"
