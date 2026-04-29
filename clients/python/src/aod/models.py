@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class _Model(BaseModel):
@@ -35,6 +35,16 @@ class Networking(_Model):
 
     type: NetworkingType = "unrestricted"
     allowed_hosts: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _limited_requires_hosts(self) -> Networking:
+        # Server-side, `type="limited"` with empty allowed_hosts builds a
+        # policy with only a `*` deny rule — i.e. blocks all egress
+        # silently. Reject at SDK construction so callers see the mistake
+        # before it ships.
+        if self.type == "limited" and not self.allowed_hosts:
+            raise ValueError("allowed_hosts must be non-empty when type is 'limited'")
+        return self
 
 
 NetworkingInput = Networking | dict[str, Any]

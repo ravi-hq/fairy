@@ -4,16 +4,15 @@ from typing import Any
 from uuid import UUID
 
 import httpx
-from pydantic import BaseModel
 
 from .._http import check_response
-from ..models import Environment, EnvironmentVersion, NetworkingInput
+from ..models import Environment, EnvironmentVersion, Networking, NetworkingInput
 
 
 def _normalize_networking(networking: NetworkingInput | None) -> dict[str, Any] | None:
     if networking is None:
         return None
-    if isinstance(networking, BaseModel):
+    if isinstance(networking, Networking):
         return networking.model_dump(exclude_none=True)
     return networking
 

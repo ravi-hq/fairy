@@ -128,6 +128,28 @@ def test_create_with_typed_networking(client, server, make_environment):
     }
 
 
+def test_networking_default_wire_format(client, server, make_environment):
+    """`Networking()` with all defaults serializes to a complete payload —
+    callers shouldn't have to guess what the server will see.
+    """
+    server.json("POST", "/environments", 201, make_environment())
+    client.environments.create(name="prod", networking=Networking())
+    assert server.requests[-1].body["networking"] == {
+        "type": "unrestricted",
+        "allowed_hosts": [],
+    }
+
+
+def test_typed_networking_limited_requires_hosts():
+    """`Networking(type="limited")` with no hosts is a silent block-all
+    on the server — fail at SDK construction instead.
+    """
+    with pytest.raises(ValueError, match="allowed_hosts must be non-empty"):
+        Networking(type="limited")
+    with pytest.raises(ValueError, match="allowed_hosts must be non-empty"):
+        Networking(type="limited", allowed_hosts=[])
+
+
 def test_typed_networking_defaults_to_unrestricted():
     """Default matches the server: env created without networking is unrestricted."""
     n = Networking()
