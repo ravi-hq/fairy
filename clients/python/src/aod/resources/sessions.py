@@ -6,10 +6,25 @@ from typing import Any
 from uuid import UUID
 
 import httpx
+from pydantic import BaseModel
 
 from .._http import check_response
-from ..models import Session, SessionAck, SessionTurn, StreamEvent
+from ..models import GithubRepoResourceInput, Session, SessionAck, SessionTurn, StreamEvent
 from ..stream import aiter_sse, iter_sse
+
+
+def _normalize_resources(
+    resources: list[GithubRepoResourceInput] | None,
+) -> list[dict[str, Any]] | None:
+    if resources is None:
+        return None
+    out: list[dict[str, Any]] = []
+    for entry in resources:
+        if isinstance(entry, BaseModel):
+            out.append(entry.model_dump(exclude_none=True))
+        else:
+            out.append(entry)
+    return out
 
 
 def _create_body(
@@ -18,15 +33,16 @@ def _create_body(
     prompt: str,
     environment_id: str | UUID | None = None,
     timeout: int | None = None,
-    resources: list[dict[str, Any]] | None = None,
+    resources: list[GithubRepoResourceInput] | None = None,
 ) -> dict[str, Any]:
     body: dict[str, Any] = {"agent_id": str(agent_id), "prompt": prompt}
     if environment_id is not None:
         body["environment_id"] = str(environment_id)
     if timeout is not None:
         body["timeout"] = timeout
-    if resources is not None:
-        body["resources"] = resources
+    normalized = _normalize_resources(resources)
+    if normalized is not None:
+        body["resources"] = normalized
     return body
 
 
@@ -56,7 +72,7 @@ class Sessions:
         prompt: str,
         environment_id: str | UUID | None = None,
         timeout: int | None = None,
-        resources: list[dict[str, Any]] | None = None,
+        resources: list[GithubRepoResourceInput] | None = None,
     ) -> SessionAck:
         body = _create_body(
             agent_id=agent_id,
@@ -125,7 +141,7 @@ class AsyncSessions:
         prompt: str,
         environment_id: str | UUID | None = None,
         timeout: int | None = None,
-        resources: list[dict[str, Any]] | None = None,
+        resources: list[GithubRepoResourceInput] | None = None,
     ) -> SessionAck:
         body = _create_body(
             agent_id=agent_id,
