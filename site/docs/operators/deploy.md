@@ -44,6 +44,25 @@ DJANGO_DEBUG=false
 DJANGO_ALLOWED_HOSTS=aod.example.com
 ```
 
+### Per-user concurrent-session overrides
+
+`DEFAULT_MAX_CONCURRENT_SESSIONS` sets the cap for every user. To raise or lower
+the cap for a specific user, write a `UserQuota` row from the Django shell:
+
+```python
+from agent_on_demand.models import UserQuota
+from django.contrib.auth.models import User
+
+user = User.objects.get(username="alice")
+quota, _ = UserQuota.objects.get_or_create(user=user)
+quota.max_concurrent_sessions = 10  # set to None to fall back to DEFAULT_MAX_CONCURRENT_SESSIONS
+quota.save()
+```
+
+`UserQuota.max_concurrent_sessions = None` (the default for newly-created rows)
+falls back to `DEFAULT_MAX_CONCURRENT_SESSIONS`, so resetting an override is a
+field assignment — not a row delete.
+
 ## Installation
 
 ```bash
