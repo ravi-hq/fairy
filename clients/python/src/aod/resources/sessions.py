@@ -166,8 +166,28 @@ class Sessions:
             timeout=timeout,
             resources=resources,
         )
+        return self.wait_for_completion(
+            ack.id, on_event=on_event, collect_events=collect_events
+        )
+
+    def wait_for_completion(
+        self,
+        session_id: str | UUID,
+        *,
+        since: int | None = None,
+        on_event: Callable[[StreamEvent], None] | None = None,
+        collect_events: bool = True,
+    ) -> RunResult:
+        """Stream an existing session until the first terminal event
+        (`exit`, `error`, `terminated`), then return its final record.
+
+        Useful when sessions are kicked off elsewhere (different process,
+        another caller, prior `create()` you didn't await) and you want
+        to block on completion. Pass `since=<event id>` to resume from
+        a known cursor instead of replaying the full log.
+        """
         events: list[StreamEvent] = []
-        with self.stream(ack.id) as stream:
+        with self.stream(session_id, since=since) as stream:
             for event in stream:
                 if on_event is not None:
                     on_event(event)
@@ -175,7 +195,7 @@ class Sessions:
                     events.append(event)
                 if event.type in TERMINAL_EVENT_TYPES:
                     break
-        session = self.get(ack.id)
+        session = self.get(session_id)
         return RunResult(session=session, events=events)
 
 
@@ -273,8 +293,25 @@ class AsyncSessions:
             timeout=timeout,
             resources=resources,
         )
+        return await self.wait_for_completion(
+            ack.id, on_event=on_event, collect_events=collect_events
+        )
+
+    async def wait_for_completion(
+        self,
+        session_id: str | UUID,
+        *,
+        since: int | None = None,
+        on_event: Callable[[StreamEvent], Awaitable[None] | None] | None = None,
+        collect_events: bool = True,
+    ) -> RunResult:
+        """See `Sessions.wait_for_completion` — async variant. `on_event`
+        may be sync or async.
+        """
+        import inspect
+
         events: list[StreamEvent] = []
-        async with self.stream(ack.id) as stream:
+        async with self.stream(session_id, since=since) as stream:
             async for event in stream:
                 if on_event is not None:
                     result = on_event(event)
@@ -284,5 +321,5 @@ class AsyncSessions:
                     events.append(event)
                 if event.type in TERMINAL_EVENT_TYPES:
                     break
-        session = await self.get(ack.id)
+        session = await self.get(session_id)
         return RunResult(session=session, events=events)
