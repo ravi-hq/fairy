@@ -695,6 +695,26 @@ def test_drain_emits_runtime_output_span_event_per_chunk(user):
 
 
 @pytest.mark.django_db
+def test_drain_feeds_chunks_to_trace_emitter(user):
+    """The drain loop should hand each chunk to the trace emitter so it
+    can line-buffer + parse stream-json into structured spans."""
+    session, turn = _make_session_and_turn(user)
+    fed: list[tuple[str, bytes]] = []
+
+    class FakeEmitter:
+        def feed(self, stream, data):
+            fed.append((stream, bytes(data)))
+
+    sink = LogChunkSink(session, turn, span=None, trace_emitter=FakeEmitter())
+    sink.stdout_writer.write(b"out chunk")
+    sink.stderr_writer.write(b"err chunk")
+    sink.put_sentinel()
+    sink.drain()
+
+    assert fed == [("stdout", b"out chunk"), ("stderr", b"err chunk")]
+
+
+@pytest.mark.django_db
 def test_drain_buffers_chunk_before_emitting_span_event(user):
     """If span.add_event raises (custom exporter, ended span on a buggy SDK,
     etc.) the chunk must already be in the buffer — otherwise it's silently

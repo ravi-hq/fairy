@@ -18,9 +18,11 @@ from django.utils import timezone
 
 from agent_on_demand.analytics import capture as posthog_capture
 from agent_on_demand.models import AgentSession, AgentSessionLog
+from agent_on_demand.observability import get_tracer
 
 from .log_sink import LogChunkSink
 from .provisioning import STAGE_RUNTIME_START, emit_stage_event
+from .runtime_trace import RuntimeTraceEmitter
 from .turn.argv import build_turn_argv
 from .turn.outcome import compute_final_status
 
@@ -66,7 +68,8 @@ class TurnExecutor:
         self._mode = mode
         self._timeout = timeout
         self._span = span
-        self._sink = LogChunkSink(session, turn, span=span)
+        self._trace_emitter = RuntimeTraceEmitter(span, spec.runtime, get_tracer())
+        self._sink = LogChunkSink(session, turn, span=span, trace_emitter=self._trace_emitter)
         self._result_holder: list = []
 
     def run(self) -> None:
@@ -89,6 +92,7 @@ class TurnExecutor:
 
         self._sink.drain()
         self._sink.report_drops()
+        self._trace_emitter.finish()
 
         cmd_thread.join(timeout=CMD_THREAD_JOIN_TIMEOUT)
         if cmd_thread.is_alive():

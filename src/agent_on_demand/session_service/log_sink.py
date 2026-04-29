@@ -26,6 +26,8 @@ from agent_on_demand.models import AgentSession, AgentSessionLog, SessionTurn
 if TYPE_CHECKING:
     from opentelemetry.trace import Span
 
+    from .runtime_trace import RuntimeTraceEmitter
+
 logger = logging.getLogger(__name__)
 
 _SENTINEL = object()
@@ -90,10 +92,12 @@ class LogChunkSink:
         session: AgentSession,
         turn: SessionTurn,
         span: Span | None = None,
+        trace_emitter: RuntimeTraceEmitter | None = None,
     ):
         self._session = session
         self._turn = turn
         self._span = span
+        self._trace_emitter = trace_emitter
         self._queue: queue.Queue = queue.Queue(maxsize=QUEUE_MAXSIZE)
         self._buffer: list[AgentSessionLog] = []
         self.stdout_writer = TaggingQueueWriter(self._queue, "stdout")
@@ -126,6 +130,8 @@ class LogChunkSink:
                 )
             )
             self._record_chunk_event(chunk)
+            if self._trace_emitter is not None:
+                self._trace_emitter.feed(chunk.stream, chunk.data)
             if len(self._buffer) >= FLUSH_SIZE:
                 self._flush_buffer()
         self._flush_buffer()
