@@ -8,7 +8,7 @@ import json
 import pytest
 from django.contrib.auth.models import User
 
-from agent_on_demand.runtimes.claude import ClaudeRuntime
+from agent_on_demand.runtimes.claude import CLAUDE_CODE_VERSION, ClaudeRuntime
 from agent_on_demand.session_service.specs import McpServerSpec, SessionSpec
 from tests.fakes.sprite import RecordingSprite
 
@@ -41,6 +41,21 @@ def test_skills_root():
 
 def test_providers():
     assert ClaudeRuntime().providers == {"anthropic"}
+
+
+def test_install_runs_npm_global():
+    """Sprite base image pins claude to 2.1.92, which predates the
+    Traces (beta) `TRACEPARENT` propagation. install() must upgrade
+    via npm so `claude_code.interaction` parents under our worker span.
+    """
+    sprite = RecordingSprite("s")
+    ClaudeRuntime().install(sprite)
+    assert len(sprite.commands) == 1
+    argv = sprite.commands[0].argv
+    assert argv[0] == "bash"
+    assert argv[1] == "-lc"
+    assert f"@anthropic-ai/claude-code@{CLAUDE_CODE_VERSION}" in argv[2]
+    assert "npm install -g" in argv[2]
 
 
 @pytest.mark.django_db
