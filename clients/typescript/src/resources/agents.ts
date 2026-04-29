@@ -20,7 +20,8 @@ export interface AgentUpdateParams {
   runtime?: string;
   system?: string;
   description?: string;
-  environment_id?: string;
+  // Pass `null` to detach the current environment from the agent.
+  environment_id?: string | null;
   skills?: Record<string, unknown>[];
   mcp_servers?: McpServer[];
   metadata?: Record<string, unknown>;
