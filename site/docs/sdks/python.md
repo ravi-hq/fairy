@@ -40,7 +40,9 @@ with Client(token="aod_...") as client:
 | Typed resources | `client.agents`, `client.environments`, `client.sessions` |
 | Typed models | `Agent`, `Environment`, `Session`, `SessionAck`, `SessionTurn`, `StreamEvent`, … |
 | Typed error hierarchy | `AodError` → `NotFoundError`, `ConflictError`, `ValidationError`, `RateLimitError`, `AuthError`, `ServerError` |
+| Session teardown | `client.sessions.terminate(session_id)`, `client.sessions.delete(session_id)` |
 | SSE stream (context manager, typed events) | `client.sessions.stream(session_id, since=None)` |
+| Turn history (prompt, status, timestamps) | `client.sessions.turns(session_id)` → `list[SessionTurn]` |
 | Claude `stream-json` pretty-printer | `aod.pretty.claude.ClaudeFormatter` (optional, runtime-scoped) |
 
 ## Errors
