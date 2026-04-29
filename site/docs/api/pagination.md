@@ -41,7 +41,7 @@ curl -H "Authorization: Bearer $TOKEN" "$BASE/agents"
       "id": "3f2a1b4c-...",
       "type": "agent",
       "name": "code-reviewer",
-      "model": "claude-sonnet-4-6",
+      "model": "anthropic/claude-sonnet-4-6",
       "runtime": "claude",
       "version": 2,
       "created_at": "2026-04-17T14:00:00.000000+00:00",

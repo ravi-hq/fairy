@@ -31,7 +31,7 @@ A **session** is one execution of an agent inside a Sprite. Sessions are:
 
 - **Async** — `POST /sessions` returns `202` immediately; the agent runs in the background.
 - **Streamable** — `GET /sessions/{id}/stream` delivers output as Server-Sent Events.
-- **Multi-turn** — after `completed` or `failed`, you can `POST /sessions/{id}/prompt` to continue in the same Sprite with the same filesystem and runtime history.
+- **Multi-turn** — after `completed`, you can `POST /sessions/{id}/prompt` to continue in the same Sprite with the same filesystem and runtime history. (`failed` and `terminated` sessions cannot be continued.)
 
 ## Session state machine
 
@@ -42,26 +42,29 @@ A **session** is one execution of an agent inside a Sprite. Sessions are:
                 ┌─────────┐
                 │ pending │◄──────────────────────────────┐
                 └────┬────┘                               │
-                     │ background execution starts        │ POST /sessions/{id}/prompt
-                     ▼                                    │ (allowed; resets to pending)
+                     │ worker picks it up                 │ POST /sessions/{id}/prompt
+                     ▼                                    │ (resets to pending)
                 ┌─────────┐                               │
-                │ running │───────────────────────────────┘
-                └────┬────┘
-       ┌─────────────┼──────────────┐
-       │             │              │
-       ▼             ▼              ▼
- ┌──────────┐  ┌────────┐  ┌──────────────┐
- │completed │  │ failed │  │  terminated  │◄── POST /sessions/{id}/terminate
- └──────────┘  └────────┘  └──────────────┘
+                │ running │                               │
+                └────┬────┘                               │
+       ┌─────────────┼──────────────┐                     │
+       │             │              │                     │
+       ▼             ▼              ▼                     │
+ ┌──────────┐  ┌────────┐  ┌──────────────┐              │
+ │completed │  │ failed │  │  terminated  │◄─ POST …/terminate
+ └────┬─────┘  └────────┘  └──────────────┘
+      │
+      └──────────────────────────────────────────────────┘
+        POST /sessions/{id}/prompt (allowed from completed)
 ```
 
-- `pending` → execution has been accepted but hasn't started yet.
-- `running` → the agent CLI is executing inside the Sprite.
-- `completed` → runtime exited with code 0.
-- `failed` → runtime exited non-zero, or an unhandled exception occurred. `exit_code` may be `null` for the exception case.
+- `pending` → accepted, not yet executing. Prompts are accepted but state stays `pending`.
+- `running` → agent CLI is executing inside the Sprite. Prompts return `409`.
+- `completed` → runtime exited with code 0. Prompts accepted; session resets to `pending`.
+- `failed` → runtime exited non-zero, or an unhandled exception. Cannot be continued; `POST /prompt` returns `409`.
 - `terminated` → stopped by `POST /sessions/{id}/terminate`. Cannot be continued.
 
-After `completed` or `failed`, you may continue the session with `POST /sessions/{id}/prompt`. After `terminated`, you cannot.
+Only `pending` and `completed` sessions accept `POST /sessions/{id}/prompt`. `running`, `failed`, and `terminated` all return `409`.
 
 ## Optimistic concurrency (agents and environments)
 

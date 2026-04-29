@@ -16,10 +16,11 @@
             <span class="grad">in one request.</span>
           </h1>
           <p class="lede">
-            Agent on Demand is a REST API for running Claude Code, Codex and
-            Gemini CLI on fresh, sandboxed cloud machines. Define an agent,
-            wire up an environment, <code>POST /sessions</code>, stream the
-            output over SSE. Multi-turn when you need it.
+            Agent on Demand is a REST API for running Claude Code, Codex,
+            Gemini CLI, and opencode on fresh, sandboxed cloud machines.
+            Define an agent, wire up an environment,
+            <code>POST /sessions</code>, stream the output over SSE.
+            Multi-turn when you need it.
           </p>
           <div class="landing-ctas">
             {% if user.is_authenticated %}
@@ -42,20 +43,22 @@
             <span class="tdot"></span><span class="tdot"></span><span class="tdot"></span>
             <span class="terminal-title">aod.ravi.id · live session</span>
           </div>
-<pre class="terminal-body"><span class="c-mute">$</span> <span class="c-cmd">curl -N https://aod.ravi.id/sessions/s_4f2c/stream \
+<pre class="terminal-body"><span class="c-mute">$</span> <span class="c-cmd">curl -N https://aod.ravi.id/sessions/…/stream \
     -H "Authorization: Bearer $AOD_KEY"</span>
 
-<span class="c-evt">event:</span> session.started
-<span class="c-evt">data:</span>  <span class="c-str">{"id":"s_4f2c","agent":"claude-sonnet-4-6"}</span>
+<span class="c-evt">data:</span> <span class="c-str">{"type":"start","runtime":"claude","session_id":"…"}</span>
 
-<span class="c-evt">event:</span> turn.chunk
-<span class="c-evt">data:</span>  <span class="c-str">{"text":"Reading src/payments.py…"}</span>
+<span class="c-mute">id: 1</span>
+<span class="c-evt">data:</span> <span class="c-str">{"type":"stage","id":1,"stage":"create_sprite","state":"done","duration_ms":3820}</span>
 
-<span class="c-evt">event:</span> turn.chunk
-<span class="c-evt">data:</span>  <span class="c-str">{"text":"Applying refactor across 3 files…"}</span>
+<span class="c-mute">id: 2</span>
+<span class="c-evt">data:</span> <span class="c-str">{"type":"output","id":2,"stream":"stdout","data":"Reading src/payments.py…","turn":1}</span>
 
-<span class="c-evt">event:</span> turn.completed
-<span class="c-evt">data:</span>  <span class="c-str">{"status":"ok","files_changed":3,"tokens":41_208}</span><span class="caret">▍</span></pre>
+<span class="c-mute">id: 3</span>
+<span class="c-evt">data:</span> <span class="c-str">{"type":"output","id":3,"stream":"stdout","data":"Refactored 3 files, 142 lines changed.","turn":1}</span>
+
+<span class="c-mute">id: 4</span>
+<span class="c-evt">data:</span> <span class="c-str">{"type":"exit","id":4,"code":0}</span><span class="caret">▍</span></pre>
         </div>
       </div>
     </section>
@@ -66,7 +69,7 @@
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/><circle cx="9" cy="10" r="1.2" fill="currentColor"/><circle cx="15" cy="10" r="1.2" fill="currentColor"/></svg>
         </div>
         <h3>Agents</h3>
-        <p>Runtime + model. Claude Code, Codex, Gemini CLI. Optional MCP servers, system prompts. Versioned with optimistic concurrency.</p>
+        <p>Runtime + model. Claude Code, Codex, Gemini CLI, opencode. Optional MCP servers, system prompts. Versioned with optimistic concurrency.</p>
       </div>
       <div class="feature">
         <div class="feature-icon">
@@ -86,18 +89,24 @@
 
     <section class="landing-container landing-code">
       <div class="section-head">
-        <h2>Five lines. One session.</h2>
-        <p class="muted">The whole API fits on a postcard. Create it, prompt it, stream it.</p>
+        <h2>Three calls. One session.</h2>
+        <p class="muted">The whole API fits on a napkin. Create it, prompt it, stream it.</p>
       </div>
 <pre class="code-block"><span class="c-mute"># 1. Create an agent (runtime + model)</span>
 <span class="c-cmd">curl -X POST https://aod.ravi.id/agents</span> \
   -H <span class="c-str">"Authorization: Bearer $AOD_KEY"</span> \
-  -d <span class="c-str">'{"name":"refactor-bot","model":"claude-sonnet-4-6"}'</span>
+  -H <span class="c-str">"Content-Type: application/json"</span> \
+  -d <span class="c-str">'{"name":"refactor-bot","model":"anthropic/claude-sonnet-4-6","runtime":"claude"}'</span>
 
-<span class="c-mute"># 2. Start a session and stream the output</span>
-<span class="c-cmd">curl -N https://aod.ravi.id/sessions</span> \
+<span class="c-mute"># 2. Start a session</span>
+<span class="c-cmd">curl -X POST https://aod.ravi.id/sessions</span> \
   -H <span class="c-str">"Authorization: Bearer $AOD_KEY"</span> \
-  -d <span class="c-str">'{"agent_id":"…","environment_id":"…","prompt":"refactor payments.py"}'</span>
+  -H <span class="c-str">"Content-Type: application/json"</span> \
+  -d <span class="c-str">'{"agent_id":"&lt;id&gt;","prompt":"refactor payments.py"}'</span>
+
+<span class="c-mute"># 3. Stream the output (SSE)</span>
+<span class="c-cmd">curl -N https://aod.ravi.id/sessions/&lt;id&gt;/stream</span> \
+  -H <span class="c-str">"Authorization: Bearer $AOD_KEY"</span>
 </pre>
     </section>
 
@@ -107,6 +116,7 @@
         <div class="runtime-chip">claude</div>
         <div class="runtime-chip">codex</div>
         <div class="runtime-chip">gemini</div>
+        <div class="runtime-chip">opencode</div>
         <div class="runtime-chip runtime-chip-muted">+ your PR welcome</div>
       </div>
     </section>

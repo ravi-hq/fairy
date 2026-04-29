@@ -20,7 +20,7 @@ from aod import Client
 with Client(token="aod_...") as client:
     agent = client.agents.create(
         name="demo",
-        model="claude-sonnet-4-6",
+        model="anthropic/claude-sonnet-4-6",
         runtime="claude",
     )
     ack = client.sessions.create(agent_id=agent.id, prompt="Say hello.")
@@ -62,7 +62,7 @@ Mapping matches the [Errors reference](../api/errors.md):
 
 | Status | Exception | When |
 | ------ | --------- | ---- |
-| 401/403 | `AuthError` | Missing or invalid token |
+| 401 | `AuthError` | Missing or invalid token |
 | 404 | `NotFoundError` | Resource missing (or not owned by caller) |
 | 409 | `ConflictError` | Archived row, terminal session, or stale `version` |
 | 422 | `ValidationError` | Server-side pydantic validation failure |

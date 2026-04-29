@@ -1,6 +1,6 @@
 # Agent on Demand
 
-Agent on Demand is a REST API for running AI coding agents on [Sprites](https://fly.io/docs/machines/). It manages three resources:
+Agent on Demand is a REST API for running AI coding agents on [Sprites](https://sprites.dev). It manages three resources:
 
 - **Agents** — reusable templates that define the model, runtime, system prompt, MCP servers, and skills for an AI coding agent.
 - **Environments** — Sprite sandbox configurations: packages to install, environment variables to export, a setup script, and a network policy.
@@ -22,7 +22,7 @@ Three calls to go from zero to a running agent:
     AGENT_ID=$(curl -s -X POST "$BASE/agents" \
       -H "Authorization: Bearer $TOKEN" \
       -H "Content-Type: application/json" \
-      -d '{"name":"hello","model":"claude-sonnet-4-6","runtime":"claude"}' | jq -r .id)
+      -d '{"name":"hello","model":"anthropic/claude-sonnet-4-6","runtime":"claude"}' | jq -r .id)
 
     # 2. Start a session.
     SESS_ID=$(curl -s -X POST "$BASE/sessions" \
@@ -46,7 +46,7 @@ Three calls to go from zero to a running agent:
     # Client() reads AOD_API_URL and AOD_API_TOKEN from the environment.
     with Client(base_url="http://localhost:8777", token="aod_...") as client:
         agent = client.agents.create(
-            name="hello", model="claude-sonnet-4-6", runtime="claude"
+            name="hello", model="anthropic/claude-sonnet-4-6", runtime="claude"
         )
         ack = client.sessions.create(
             agent_id=agent.id, prompt="Say hello.", timeout=120
@@ -68,6 +68,7 @@ Three calls to go from zero to a running agent:
 | [Overview](api/product.md) | What problems Agent on Demand solves |
 | [API Reference](api/reference.md) | Interactive Stoplight Elements explorer |
 | [Python SDK](sdks/python.md) | `aod-sdk` — typed sync + async client on PyPI |
+| [TypeScript SDK](sdks/typescript.md) | `@ravi-hq/aod-sdk` — typed async client on npm, browser-compatible |
 | [Authentication](api/authentication.md) | Bearer tokens, 401 shapes |
 | [Streaming](api/streaming.md) | SSE event types, reconnect, replay |
 | [Errors](api/errors.md) | Every status code and when it fires |

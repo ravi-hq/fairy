@@ -57,9 +57,10 @@ All of these return `409`:
 | `POST /sessions` | Agent is archived | `"Cannot create session with archived agent"` |
 | `POST /sessions` | Environment is archived | `"Cannot create session with archived environment"` |
 | `POST /sessions/{id}/prompt` | Session is running | `"Session is already running"` |
+| `POST /sessions/{id}/prompt` | Session has failed | `"Session has failed and cannot be resumed. Start a new session."` |
 | `POST /sessions/{id}/prompt` | Session is terminated | `"Session has been terminated"` |
 | `POST /sessions/{id}/terminate` | Session already terminated | `"Session is already terminated"` |
-| `DELETE /sessions/{id}/delete` | Session is running | `"Cannot delete a running session"` |
+| `DELETE /sessions/{id}/delete` | Session is active (pending or running) | `"Cannot delete an active session"` |
 
 ## Notes
 
