@@ -135,6 +135,78 @@ Pass `since: lastSeenId` to resume after a disconnect. Pass `signal: abortContro
 
 Event types: `start`, `turn_start`, `output`, `stage`, `exit`, `error`, `terminated`, `stale`. Everything except `type` and `id` lands in `event.extra`. See [Streaming reference](../api/streaming.md) for the full event schema.
 
+## Multi-turn sessions
+
+After a session reaches `completed`, call `client.sessions.prompt()` to send a follow-up. The agent resumes in the same Sprite with the same filesystem and conversation history.
+
+```ts
+import { Client, ConflictError } from "@ravi-hq/aod-sdk";
+import type { SessionAck } from "@ravi-hq/aod-sdk";
+
+const client = new Client({ token: "aod_..." });
+
+// Turn 1
+const ack = await client.sessions.create({
+  agent_id: agentId,
+  prompt: "List the TypeScript files here.",
+});
+const turn1 = ack.current_turn;
+const stream1 = await client.sessions.stream(ack.id);
+try {
+  for await (const event of stream1) {
+    if (event.type === "output" && event.extra.turn === turn1) {
+      process.stdout.write((event.extra.data as string) ?? "");
+    } else if (
+      event.type === "exit" ||
+      event.type === "error" ||
+      event.type === "terminated" ||
+      event.type === "stale"
+    ) {
+      break;
+    }
+  }
+} finally {
+  await stream1.close();
+}
+
+// Turn 2 — only valid once session is `completed`
+let ack2: SessionAck;
+try {
+  ack2 = await client.sessions.prompt(ack.id, {
+    prompt: "Now summarise what each file does.",
+  });
+} catch (err) {
+  if (err instanceof ConflictError) {
+    // session is pending, running, failed, or terminated — inspect err.detail
+    // and either retry (pending/running) or start a new session (failed/terminated)
+    throw err;
+  } else {
+    throw err;
+  }
+}
+
+const turn2 = ack2.current_turn;
+const stream2 = await client.sessions.stream(ack.id);
+try {
+  for await (const event of stream2) {
+    if (event.type === "output" && event.extra.turn === turn2) {
+      process.stdout.write((event.extra.data as string) ?? "");
+    } else if (
+      event.type === "exit" ||
+      event.type === "error" ||
+      event.type === "terminated" ||
+      event.type === "stale"
+    ) {
+      break;
+    }
+  }
+} finally {
+  await stream2.close();
+}
+```
+
+`prompt()` returns a `SessionAck` with the updated `current_turn`. Only `completed` sessions accept a prompt — `running`, `pending`, `failed`, and `terminated` all throw `ConflictError` (409). See [Core Concepts → Session state machine](../api/concepts.md#session-state-machine).
+
 ## Browser use
 
 The SDK has no Node-only dependencies — it uses built-in `fetch`, `ReadableStream`, and `AbortController`. Pass `baseUrl` and `token` explicitly in browser code; the `AOD_API_URL` / `AOD_API_TOKEN` env fallbacks are Node-only.
