@@ -41,7 +41,7 @@ curl -N -H "Authorization: Bearer $TOKEN" "$BASE/sessions/$SESS_ID/stream"
 
 Official client libraries for common runtimes:
 
-- **Python** ([`aod-sdk`](https://pypi.org/p/aod-sdk)): sync + async, typed SSE stream, pydantic models — `pip install aod-sdk`
+- **Python** ([`aod-sdk`](https://pypi.org/project/aod-sdk/)): sync + async, typed SSE stream, pydantic models — `pip install aod-sdk`
 - **TypeScript/Node** ([`@ravi-hq/aod-sdk`](https://www.npmjs.com/package/@ravi-hq/aod-sdk)): zero-dep, async-iterable SSE stream — `npm install @ravi-hq/aod-sdk`
 
 See [`clients/python/`](clients/python/) and [`clients/typescript/`](clients/typescript/) for source and full API surface.
