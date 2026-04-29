@@ -40,6 +40,7 @@ with Client(token="aod_...") as client:
 | Typed resources | `client.agents`, `client.environments`, `client.sessions` |
 | Typed models | `Agent`, `Environment`, `Session`, `SessionAck`, `SessionTurn`, `StreamEvent`, … |
 | Typed error hierarchy | `AodError` → `NotFoundError`, `ConflictError`, `ValidationError`, `RateLimitError`, `AuthError`, `ServerError` |
+| Version history (agents + environments) | `client.agents.versions(agent_id)` / `client.environments.versions(env_id)` → typed snapshots |
 | SSE stream (context manager, typed events) | `client.sessions.stream(session_id, since=None)` |
 | Claude `stream-json` pretty-printer | `aod.pretty.claude.ClaudeFormatter` (optional, runtime-scoped) |
 
