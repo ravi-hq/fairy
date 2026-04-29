@@ -67,6 +67,20 @@ def _stream_params(since: int | None) -> dict[str, Any]:
     return {"since": since} if since is not None else {}
 
 
+def _stream_headers(since: int | None) -> dict[str, str]:
+    """Build the request headers for `GET /sessions/{id}/stream`.
+
+    `Last-Event-ID` is the standard SSE resume header. The server reads
+    either it or the `?since=` query parameter; sending the header too
+    makes resume work transparently when an intermediary strips query
+    params (some SSE-aware proxies do).
+    """
+    headers = {"Accept": "text/event-stream"}
+    if since is not None:
+        headers["Last-Event-ID"] = str(since)
+    return headers
+
+
 class Sessions:
     def __init__(self, client: httpx.Client) -> None:
         self._client = client
@@ -131,7 +145,7 @@ class Sessions:
             "GET",
             f"/sessions/{session_id}/stream",
             params=_stream_params(since),
-            headers={"Accept": "text/event-stream"},
+            headers=_stream_headers(since),
         ) as response:
             yield iter_sse(response)
 
@@ -267,7 +281,7 @@ class AsyncSessions:
             "GET",
             f"/sessions/{session_id}/stream",
             params=_stream_params(since),
-            headers={"Accept": "text/event-stream"},
+            headers=_stream_headers(since),
         ) as response:
             yield aiter_sse(response)
 
