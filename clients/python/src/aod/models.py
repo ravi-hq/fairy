@@ -132,6 +132,50 @@ class SessionResource(_Model):
     mount_path: str | None = None
 
 
+# Mirrors `github_resource_validation.py` on the server.
+GITHUB_URL_RE = r"^https://github\.com/[\w.-]+/[\w.-]+(\.git)?$"
+
+
+class GithubRepoResource(_Model):
+    """Request shape for a github_repository resource on a session.
+
+    Use this in `sessions.create(..., resources=[...])` for fast-fail
+    validation and to expose `authorization_token` on the typed path.
+    Plain dicts continue to work too. The server validates this same
+    shape (`github_resource_validation.py`).
+
+    `mount_path` defaults server-side to `/workspace/<repo-name>` when
+    omitted. Setting it requires an absolute path that is not `/` or
+    `/home/sprite` (those would shadow the Sprite's working directory).
+    """
+
+    type: Literal["github_repository"] = "github_repository"
+    url: str = Field(pattern=GITHUB_URL_RE)
+    mount_path: str | None = None
+    authorization_token: str | None = Field(
+        default=None,
+        description="GitHub PAT for private repos. Never echoed back on any response.",
+    )
+
+    @field_validator("mount_path")
+    @classmethod
+    def _validate_mount_path(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        if not v.startswith("/"):
+            raise ValueError("mount_path must be an absolute path")
+        # Strip a trailing slash so `/home/sprite/` is treated the same
+        # as `/home/sprite`. The server's reserved-path set today does
+        # not normalize the trailing slash, so the SDK fails fast where
+        # the server might accept; treat that gap as a server bug.
+        if v.rstrip("/") in {"", "/home/sprite"}:
+            raise ValueError("mount_path must not be the Sprite root")
+        return v
+
+
+GithubRepoResourceInput = GithubRepoResource | dict[str, Any]
+
+
 class Agent(_Model):
     id: UUID
     type: Literal["agent"] = "agent"
