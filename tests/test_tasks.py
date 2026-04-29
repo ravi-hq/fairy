@@ -695,6 +695,29 @@ def test_drain_emits_runtime_output_span_event_per_chunk(user):
 
 
 @pytest.mark.django_db
+def test_drain_buffers_chunk_before_emitting_span_event(user):
+    """If span.add_event raises (custom exporter, ended span on a buggy SDK,
+    etc.) the chunk must already be in the buffer — otherwise it's silently
+    lost with no drop counter or posthog event. The drain loop intentionally
+    buffers first, then emits."""
+    session, turn = _make_session_and_turn(user)
+
+    class RaisingSpan:
+        def add_event(self, name, attributes=None):
+            raise RuntimeError("exporter blew up")
+
+    sink = LogChunkSink(session, turn, span=RaisingSpan())
+    sink.stdout_writer.write(b"persisted")
+    sink.put_sentinel()
+
+    with pytest.raises(RuntimeError, match="exporter blew up"):
+        sink.drain()
+
+    assert len(sink._buffer) == 1
+    assert sink._buffer[0].data == "persisted"
+
+
+@pytest.mark.django_db
 def test_drain_without_span_does_not_raise(user):
     """LogChunkSink must tolerate a missing span — span is None when callers
     construct the sink outside a traced task (none today, but the constructor
