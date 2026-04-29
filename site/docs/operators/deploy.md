@@ -7,13 +7,16 @@ This guide covers running your own Agent on Demand instance in production.
 - Python 3.11 or later
 - [uv](https://github.com/astral-sh/uv) (recommended) or pip
 - A [Sprites](https://sprites.dev) account and API token
-- A database (SQLite for development; see note below for production)
+- **PostgreSQL 14+** — required for both dev and production. Procrastinate
+  (the job queue that drives session execution) only supports Postgres.
 
 !!! note "Database"
-    The default configuration uses SQLite (`agent_on_demand.db` in the project root).
-    For production deployments with multiple processes or replicas, set
-    `DATABASE_URL` to a Postgres DSN (e.g. `postgres://user:pass@host:5432/aod`).
-    The setting is parsed by `dj-database-url` and overrides the SQLite default.
+    The default `DATABASE_URL` points at a local Postgres container started by
+    `make db-up` (`docker compose up -d db`). For production, override
+    `DATABASE_URL` with your own Postgres DSN
+    (e.g. `postgres://user:pass@host:5432/aod`). SQLite is **not** a supported
+    backend — it's only wired up for the unit-test suite, which stubs the
+    job queue. Sessions enqueued against SQLite will never execute.
 
 ## Environment variables
 
@@ -26,7 +29,7 @@ sourced from `src/config/settings.py`:
 | `FIELD_ENCRYPTION_KEY` | Yes (prod) | Falls back to `DJANGO_SECRET_KEY` | KEK for encrypted `UserSpritesKey` / `UserRuntimeKey` rows — **durable; rotating requires a re-encrypt migration** |
 | `DJANGO_DEBUG` | No | `true` | Set to `false` in production |
 | `DJANGO_ALLOWED_HOSTS` | No | `*` | Comma-separated list of allowed host headers |
-| `DATABASE_URL` | No | SQLite file in project root | Database DSN parsed by `dj-database-url` (e.g. `postgres://user:pass@host:5432/aod`) |
+| `DATABASE_URL` | Yes | `postgres://agent_on_demand:agent_on_demand@localhost:5460/agent_on_demand` (matches `make db-up`) | Postgres DSN parsed by `dj-database-url`. Postgres is required — SQLite is only used by the test suite. |
 | `SPRITES_BASE_URL` | No | `https://api.sprites.dev` | Override the Sprites API base URL |
 | `SPRITE_NAME_PREFIX` | No | `aod` | Prefix applied to all Sprite names created by this instance |
 | `DEFAULT_TIMEOUT` | No | `600` | Default session timeout in seconds |
@@ -81,22 +84,53 @@ Authorization: Bearer aod_<your-token>
 
 ## Running in production
 
-Agent on Demand ships a WSGI entry point at `config.wsgi:application`. Any WSGI-compatible
-server works:
+Agent on Demand is a **two-process deploy**: a web service that accepts HTTP
+and enqueues jobs, plus a worker service that executes them. Both processes
+share one Postgres database. Skip the worker and every `POST /sessions` will
+succeed but the session row will stay `pending` forever — no Sprite is ever
+created.
+
+### Web service (ASGI)
+
+The session-stream endpoint is async, so the web service must run under ASGI.
+The ASGI entry point is `config.asgi:application`:
 
 ```bash
-# gunicorn (recommended)
-pip install gunicorn
-gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 4
-
-# uvicorn in WSGI mode
 pip install uvicorn
-uvicorn config.wsgi:application --host 0.0.0.0 --port 8000
+uvicorn config.asgi:application --host 0.0.0.0 --port 8000 --workers 3
 ```
 
+This matches the production deployment in `render.yaml`. Gunicorn also works
+if you front it with an ASGI worker class such as `uvicorn.workers.UvicornWorker`:
+
+```bash
+pip install gunicorn uvicorn
+gunicorn config.asgi:application \
+  -k uvicorn.workers.UvicornWorker \
+  --bind 0.0.0.0:8000 --workers 3
+```
+
+A WSGI entry point exists at `config.wsgi:application` for tooling that
+expects one, but the `GET /sessions/{id}/stream` SSE endpoint will not work
+under a sync WSGI worker — use ASGI.
+
+### Worker service
+
+Run the Procrastinate worker as a separate long-lived process:
+
+```bash
+uv run python manage.py procrastinate worker --concurrency 4
+```
+
+The worker shells out to the Sprites API to provision sandboxes and stream
+agent output back into the database, so it needs the same `DATABASE_URL`,
+`FIELD_ENCRYPTION_KEY`, and `SPRITES_BASE_URL` as the web service. See
+`render.yaml` for a working two-service config.
+
 !!! note
-    The `make dev` target (`uv run python manage.py runserver 0.0.0.0:8777`) is
-    for local development only — do not use Django's development server in
+    The `make dev` target (`uvicorn config.asgi:application --reload --port 8777`)
+    runs only the web side. Pair it with `make worker` in a second terminal
+    for a complete local environment. Django's `runserver` is not used in
     production.
 
 ## Sprites credentials
