@@ -156,6 +156,64 @@ def test_stream_passes_since_param(client, server):
 
     assert collected[0].type == "start"
     assert server.requests[-1].params.get("since") == ["42"]
+    # Standard SSE resume header — sent alongside ?since= so resume works
+    # even if an intermediary strips query params.
+    assert server.requests[-1].headers.get("last-event-id") == "42"
+
+
+def test_stream_no_since_omits_last_event_id(client, server):
+    sid = str(uuid4())
+
+    def responder(request):
+        import httpx
+
+        body = b'data: {"type":"start"}\n\n'
+        return httpx.Response(200, content=body, headers={"content-type": "text/event-stream"})
+
+    server.register("GET", f"/sessions/{sid}/stream", responder)
+
+    with client.sessions.stream(sid) as events:
+        list(events)
+
+    assert "last-event-id" not in {k.lower() for k in server.requests[-1].headers}
+
+
+@pytest.mark.asyncio
+async def test_async_stream_sends_last_event_id(async_client, server):
+    sid = str(uuid4())
+
+    def responder(request):
+        import httpx
+
+        body = b'data: {"type":"start"}\n\n'
+        return httpx.Response(200, content=body, headers={"content-type": "text/event-stream"})
+
+    server.register("GET", f"/sessions/{sid}/stream", responder)
+
+    async with async_client.sessions.stream(sid, since=7) as events:
+        async for _ in events:
+            break
+
+    assert server.requests[-1].headers.get("last-event-id") == "7"
+
+
+@pytest.mark.asyncio
+async def test_async_stream_no_since_omits_last_event_id(async_client, server):
+    sid = str(uuid4())
+
+    def responder(request):
+        import httpx
+
+        body = b'data: {"type":"start"}\n\n'
+        return httpx.Response(200, content=body, headers={"content-type": "text/event-stream"})
+
+    server.register("GET", f"/sessions/{sid}/stream", responder)
+
+    async with async_client.sessions.stream(sid) as events:
+        async for _ in events:
+            break
+
+    assert "last-event-id" not in {k.lower() for k in server.requests[-1].headers}
 
 
 def test_create_with_typed_github_resource(client, server):
