@@ -10,13 +10,62 @@ from __future__ import annotations
 
 import logging
 import os
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from opentelemetry.context import Context
+    from opentelemetry.sdk.trace import ReadableSpan, Span, SpanProcessor
 
 logger = logging.getLogger(__name__)
 
 HONEYCOMB_OTLP_ENDPOINT = "https://api.honeycomb.io"
 TRACER_NAME = "agent_on_demand"
+PSYCOPG_INSTRUMENTATION_SCOPE = "opentelemetry.instrumentation.psycopg"
 
 _otel_initialized = False
+
+
+def _make_orphan_psycopg_filter(wrapped: SpanProcessor) -> SpanProcessor:
+    """Wrap `wrapped` so orphan psycopg CLIENT spans are dropped before export.
+
+    The Procrastinate worker loop (poll / heartbeat / LISTEN / abort-poll, plus
+    the unnamed BEGIN/COMMIT statements that surface as `name="<dbname>_xxxx"`)
+    runs outside any task span. Auto-instrumented psycopg turns each statement
+    into a single-span trace, which floods Honeycomb (~7.3k orphan spans/hour)
+    while carrying no debugging signal. Real in-task SQL is parented by the
+    per-task span set up around `execute_turn`, so anything still parentless
+    at this point is polling we don't want.
+    """
+    from opentelemetry.sdk.trace import SpanProcessor
+    from opentelemetry.trace import SpanKind
+
+    class _OrphanPsycopgFilter(SpanProcessor):
+        def on_start(
+            self, span: Span, parent_context: Context | None = None
+        ) -> None:
+            wrapped.on_start(span, parent_context)
+
+        def on_end(self, span: ReadableSpan) -> None:
+            if _is_orphan_psycopg_client_span(span):
+                return
+            wrapped.on_end(span)
+
+        def shutdown(self) -> None:
+            wrapped.shutdown()
+
+        def force_flush(self, timeout_millis: int = 30000) -> bool:
+            return wrapped.force_flush(timeout_millis)
+
+    def _is_orphan_psycopg_client_span(span: ReadableSpan) -> bool:
+        if span.kind != SpanKind.CLIENT:
+            return False
+        scope = span.instrumentation_scope
+        if scope is None or scope.name != PSYCOPG_INSTRUMENTATION_SCOPE:
+            return False
+        parent = span.parent
+        return parent is None or not parent.is_valid
+
+    return _OrphanPsycopgFilter()
 
 
 def init_otel(service_name: str | None = None) -> None:
@@ -47,14 +96,13 @@ def init_otel(service_name: str | None = None) -> None:
     headers = {"x-honeycomb-team": api_key}
 
     tracer_provider = TracerProvider(resource=resource)
-    tracer_provider.add_span_processor(
-        BatchSpanProcessor(
-            OTLPSpanExporter(
-                endpoint=f"{HONEYCOMB_OTLP_ENDPOINT}/v1/traces",
-                headers=headers,
-            )
+    batch_processor = BatchSpanProcessor(
+        OTLPSpanExporter(
+            endpoint=f"{HONEYCOMB_OTLP_ENDPOINT}/v1/traces",
+            headers=headers,
         )
     )
+    tracer_provider.add_span_processor(_make_orphan_psycopg_filter(batch_processor))
     trace.set_tracer_provider(tracer_provider)
 
     logger_provider = LoggerProvider(resource=resource)
