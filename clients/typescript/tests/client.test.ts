@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { Client, VERSION } from "../src/index.js";
@@ -78,5 +79,17 @@ describe("Client", () => {
     });
     await client.health();
     expect(server.requests[0]?.path).toBe("/health");
+  });
+});
+
+describe("module exports", () => {
+  // Catches the easy mistake of bumping `package.json` without bumping the
+  // exported `VERSION` constant (the README's release checklist requires both,
+  // and the publish workflow only checks the tag against `package.json`).
+  it("exports a VERSION matching package.json", () => {
+    const pkg = JSON.parse(
+      readFileSync(new URL("../package.json", import.meta.url), "utf-8"),
+    ) as { version: string };
+    expect(VERSION).toBe(pkg.version);
   });
 });
