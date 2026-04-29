@@ -4,9 +4,23 @@ from typing import Any
 from uuid import UUID
 
 import httpx
+from pydantic import BaseModel
 
 from .._http import check_response
-from ..models import Agent, AgentVersion
+from ..models import Agent, AgentVersion, SkillInput
+
+
+def _normalize_skills(skills: list[SkillInput] | None) -> list[dict[str, Any]] | None:
+    """Accept typed pydantic inputs or raw dicts, return wire form."""
+    if skills is None:
+        return None
+    out: list[dict[str, Any]] = []
+    for entry in skills:
+        if isinstance(entry, BaseModel):
+            out.append(entry.model_dump(exclude_none=True))
+        else:
+            out.append(entry)
+    return out
 
 
 def _create_body(
@@ -17,7 +31,7 @@ def _create_body(
     system: str | None = None,
     description: str | None = None,
     environment_id: str | UUID | None = None,
-    skills: list[dict[str, Any]] | None = None,
+    skills: list[SkillInput] | None = None,
     mcp_servers: list[dict[str, Any]] | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -28,8 +42,9 @@ def _create_body(
         body["description"] = description
     if environment_id is not None:
         body["environment_id"] = str(environment_id)
-    if skills is not None:
-        body["skills"] = skills
+    normalized_skills = _normalize_skills(skills)
+    if normalized_skills is not None:
+        body["skills"] = normalized_skills
     if mcp_servers is not None:
         body["mcp_servers"] = mcp_servers
     if metadata is not None:
@@ -46,7 +61,7 @@ def _update_body(
     system: str | None = None,
     description: str | None = None,
     environment_id: str | UUID | None = None,
-    skills: list[dict[str, Any]] | None = None,
+    skills: list[SkillInput] | None = None,
     mcp_servers: list[dict[str, Any]] | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -63,8 +78,9 @@ def _update_body(
         body["description"] = description
     if environment_id is not None:
         body["environment_id"] = str(environment_id)
-    if skills is not None:
-        body["skills"] = skills
+    normalized_skills = _normalize_skills(skills)
+    if normalized_skills is not None:
+        body["skills"] = normalized_skills
     if mcp_servers is not None:
         body["mcp_servers"] = mcp_servers
     if metadata is not None:
@@ -89,7 +105,7 @@ class Agents:
         system: str | None = None,
         description: str | None = None,
         environment_id: str | UUID | None = None,
-        skills: list[dict[str, Any]] | None = None,
+        skills: list[SkillInput] | None = None,
         mcp_servers: list[dict[str, Any]] | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> Agent:
@@ -120,7 +136,7 @@ class Agents:
         system: str | None = None,
         description: str | None = None,
         environment_id: str | UUID | None = None,
-        skills: list[dict[str, Any]] | None = None,
+        skills: list[SkillInput] | None = None,
         mcp_servers: list[dict[str, Any]] | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> Agent:
@@ -167,7 +183,7 @@ class AsyncAgents:
         system: str | None = None,
         description: str | None = None,
         environment_id: str | UUID | None = None,
-        skills: list[dict[str, Any]] | None = None,
+        skills: list[SkillInput] | None = None,
         mcp_servers: list[dict[str, Any]] | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> Agent:
@@ -198,7 +214,7 @@ class AsyncAgents:
         system: str | None = None,
         description: str | None = None,
         environment_id: str | UUID | None = None,
-        skills: list[dict[str, Any]] | None = None,
+        skills: list[SkillInput] | None = None,
         mcp_servers: list[dict[str, Any]] | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> Agent:
