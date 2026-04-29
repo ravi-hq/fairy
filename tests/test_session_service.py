@@ -97,12 +97,18 @@ class TestProvisionSessionOrder:
         script = fake_sprites.last_sprite().write_map()["/tmp/aod-provision.sh"]
         assert "/home/sprite/.codex" not in script
 
-    def test_single_bash_command_invokes_provision_script(self, user, fake_sprites):
+    def test_provisioning_issues_install_then_provision_script(self, user, fake_sprites):
         provision_session(user, _spec(user))
         sprite = fake_sprites.last_sprite()
-        # The whole provisioning phase uses exactly one sprite.command —
-        # invoking the provision script. No per-stage chmod / clone commands.
-        assert sprite.command_strings() == ["bash -l /tmp/aod-provision.sh"]
+        # Two sprite.command invocations during provisioning, in order:
+        # ClaudeRuntime.install runs `claude update` to upgrade past the
+        # base-image 2.1.92 (predates Traces (beta) TRACEPARENT support);
+        # the provision script bundles the rest. No per-stage chmod /
+        # clone commands.
+        assert sprite.command_strings() == [
+            "bash -lc claude update",
+            "bash -l /tmp/aod-provision.sh",
+        ]
 
     def test_env_file_contains_credential_and_session_id(self, user, fake_sprites):
         provision_session(user, _spec(user))

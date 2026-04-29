@@ -43,6 +43,22 @@ def test_providers():
     assert ClaudeRuntime().providers == {"anthropic"}
 
 
+def test_install_runs_claude_update():
+    """Sprite base image pins claude to 2.1.92, which predates the
+    Traces (beta) `TRACEPARENT` propagation. install() must run
+    `claude update` so `claude_code.interaction` parents under our
+    worker span. Delegating the version choice to `claude update` keeps
+    the upgrade channel consistent with what claude itself ships.
+    """
+    sprite = RecordingSprite("s")
+    ClaudeRuntime().install(sprite)
+    assert len(sprite.commands) == 1
+    argv = sprite.commands[0].argv
+    assert argv[0] == "bash"
+    assert argv[1] == "-lc"
+    assert argv[2] == "claude update"
+
+
 @pytest.mark.django_db
 def test_build_command_run(user):
     argv = ClaudeRuntime().build_command(_spec(user), "run")

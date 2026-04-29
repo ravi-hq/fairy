@@ -60,8 +60,9 @@ __all__ = [
 
 def install_runtime(handle: SessionHandle, spec: SessionSpec, session_id: str | None) -> None:
     """Run per-runtime `install` hook before the network policy locks things
-    down. For pre-baked runtimes (claude/codex/gemini) this is a no-op; for
-    meta-runtimes that fetch binaries, internet access is required here."""
+    down. For pre-baked runtimes (codex/gemini) this is a no-op; for
+    runtimes that fetch binaries (claude upgrades past the base-image pin,
+    opencode pulls from npm), internet access is required here."""
     with stage_timer(session_id, STAGE_INSTALL_RUNTIME):
         try:
             spec.runtime.install(handle)
