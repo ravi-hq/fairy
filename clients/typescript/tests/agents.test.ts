@@ -25,14 +25,14 @@ describe("agents", () => {
     server.json("POST", "/agents", 201, makeAgent({ name: "new" }));
     await newClient(server).agents.create({
       name: "new",
-      model: "claude-sonnet-4-5",
-      runtime: "claude-code",
+      model: "anthropic/claude-sonnet-4-6",
+      runtime: "claude",
       system: "be helpful",
     });
     expect(server.requests[0]?.body).toEqual({
       name: "new",
-      model: "claude-sonnet-4-5",
-      runtime: "claude-code",
+      model: "anthropic/claude-sonnet-4-6",
+      runtime: "claude",
       system: "be helpful",
     });
   });
