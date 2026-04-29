@@ -1,4 +1,5 @@
 import { raiseForStatus } from "./errors.js";
+import { VERSION } from "./version.js";
 
 export type FetchFn = typeof fetch;
 
@@ -17,8 +18,10 @@ export interface RequestOptions {
 }
 
 const DEFAULT_TIMEOUT_MS = 30_000;
-// Keep in sync with `VERSION` in index.ts and `version` in package.json on release.
-const USER_AGENT = "aod-sdk-ts/0.1.1";
+// Browsers strip `User-Agent` per the Fetch spec (forbidden header name); this
+// header is only observed by Node/Bun/Deno callers. A future browser-targeted
+// build should switch to a non-forbidden name like `X-Aod-Client`.
+const USER_AGENT = `aod-sdk-ts/${VERSION}`;
 
 export class HttpClient {
   readonly baseUrl: string;
