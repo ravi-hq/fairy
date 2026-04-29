@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import inspect
+import time
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from contextlib import asynccontextmanager, contextmanager
 from typing import Any
@@ -149,6 +151,56 @@ class Sessions:
         ) as response:
             yield iter_sse(response)
 
+    def stream_resumable(
+        self,
+        session_id: str | UUID,
+        *,
+        since: int | None = None,
+        max_retries: int = 3,
+        initial_backoff: float = 1.0,
+        backoff_multiplier: float = 2.0,
+        max_backoff: float = 30.0,
+    ) -> Iterator[StreamEvent]:
+        """Like `stream()`, but auto-reconnects on transient HTTP drops.
+
+        Catches `httpx.RemoteProtocolError` / `httpx.ReadError` /
+        `httpx.ConnectError` / `httpx.TimeoutException` (covers proxy
+        idle-timeout `ReadTimeout`s), sleeps with exponential backoff,
+        and reconnects using `since=<last seen event id>`. Each event
+        still ships exactly once because the server cursor advances on
+        the response side. Stops retrying after `max_retries`
+        *consecutive* failures and re-raises the last exception — any
+        successfully yielded event resets the failure counter.
+
+        Yields `StreamEvent`s directly (not a context manager) — caller
+        drives the loop.
+        """
+        cursor = since
+        attempt = 0
+        backoff = initial_backoff
+        while True:
+            try:
+                with self.stream(session_id, since=cursor) as events:
+                    for event in events:
+                        if event.id is not None:
+                            cursor = event.id
+                        yield event
+                        # Progress made — reset the consecutive-failure budget.
+                        attempt = 0
+                        backoff = initial_backoff
+                return
+            except (
+                httpx.RemoteProtocolError,
+                httpx.ReadError,
+                httpx.ConnectError,
+                httpx.TimeoutException,
+            ):
+                attempt += 1
+                if attempt > max_retries:
+                    raise
+                time.sleep(min(backoff, max_backoff))
+                backoff *= backoff_multiplier
+
     def run(
         self,
         *,
@@ -284,6 +336,45 @@ class AsyncSessions:
             headers=_stream_headers(since),
         ) as response:
             yield aiter_sse(response)
+
+    async def stream_resumable(
+        self,
+        session_id: str | UUID,
+        *,
+        since: int | None = None,
+        max_retries: int = 3,
+        initial_backoff: float = 1.0,
+        backoff_multiplier: float = 2.0,
+        max_backoff: float = 30.0,
+    ) -> AsyncIterator[StreamEvent]:
+        """See `Sessions.stream_resumable` — async variant. Yields events
+        directly (not a context manager); use `async for`.
+        """
+        cursor = since
+        attempt = 0
+        backoff = initial_backoff
+        while True:
+            try:
+                async with self.stream(session_id, since=cursor) as events:
+                    async for event in events:
+                        if event.id is not None:
+                            cursor = event.id
+                        yield event
+                        # Progress made — reset the consecutive-failure budget.
+                        attempt = 0
+                        backoff = initial_backoff
+                return
+            except (
+                httpx.RemoteProtocolError,
+                httpx.ReadError,
+                httpx.ConnectError,
+                httpx.TimeoutException,
+            ):
+                attempt += 1
+                if attempt > max_retries:
+                    raise
+                await asyncio.sleep(min(backoff, max_backoff))
+                backoff *= backoff_multiplier
 
     async def run(
         self,
