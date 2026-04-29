@@ -32,6 +32,34 @@ describe("sessions", () => {
     });
   });
 
+  it("forwards authorization_token on a private-repo resource", async () => {
+    const server = new MockServer();
+    const sid = uuid();
+    server.json("POST", "/sessions", 201, { id: sid, status: "pending" });
+    await newClient(server).sessions.create({
+      agent_id: "a1",
+      prompt: "do a thing",
+      resources: [
+        {
+          type: "github_repository",
+          url: "https://github.com/me/private",
+          authorization_token: "ghp_secret",
+        },
+      ],
+    });
+    expect(server.requests[0]?.body).toEqual({
+      agent_id: "a1",
+      prompt: "do a thing",
+      resources: [
+        {
+          type: "github_repository",
+          url: "https://github.com/me/private",
+          authorization_token: "ghp_secret",
+        },
+      ],
+    });
+  });
+
   it("409 on prompt to a terminal session", async () => {
     const server = new MockServer();
     server.json("POST", "/sessions/s1/prompt", 409, { detail: "terminal" });

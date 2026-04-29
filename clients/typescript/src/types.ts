@@ -30,7 +30,7 @@ export interface SessionResource {
 }
 
 export interface SessionResourceInput extends SessionResource {
-  token?: string | null;
+  authorization_token?: string | null;
 }
 
 export interface Agent {
