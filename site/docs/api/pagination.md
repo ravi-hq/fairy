@@ -21,6 +21,7 @@ Agent on Demand's list endpoints return all results in a single response — the
 | `GET /sessions` | All sessions owned by this token's user (including `completed`, `failed`, `terminated`), ordered by `-created_at` |
 | `GET /agents/{id}/versions` | All version snapshots for the agent, newest first |
 | `GET /environments/{id}/versions` | All version snapshots for the environment, newest first |
+| `GET /sessions/{id}/turns` | All turns for the session, ordered by `turn_number` ascending |
 
 ## Archived resources
 
