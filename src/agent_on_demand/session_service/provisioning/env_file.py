@@ -17,17 +17,30 @@ if TYPE_CHECKING:
     from agent_on_demand.session_service.specs import SessionSpec
 
 
-def build_env_file_body(spec: "SessionSpec", credentials: list[tuple[str, str]]) -> str:
+def build_env_file_body(
+    spec: "SessionSpec",
+    credentials: list[tuple[str, str]],
+    runtime_static_env: list[tuple[str, str]] | tuple[tuple[str, str], ...] = (),
+) -> str:
     """Render the body of /tmp/aod-env.
 
     `credentials` is a list of ``(env_var_name, value)`` pairs already
-    resolved from the ORM by the caller. Each value is ``shlex.quote``-d
-    before emission. Precedence: credentials → AOD_SESSION_ID → AOD_MODEL
-    → sorted ``spec.environment.env_vars`` (per-environment overrides
-    win). Body always ends with exactly one trailing newline.
+    resolved from the ORM by the caller. `runtime_static_env` is a list of
+    ``(env_var_name, value)`` pairs contributed by the runtime
+    (``Runtime.static_env``) — used for runtime-specific secrets that
+    must not appear in the per-turn argv shim string. Each value is
+    ``shlex.quote``-d before emission.
+
+    Precedence: credentials → runtime_static_env → AOD_SESSION_ID →
+    AOD_MODEL → sorted ``spec.environment.env_vars`` (per-environment
+    overrides win, so a user can opt out of a runtime-contributed var by
+    re-setting it in their environment). Body always ends with exactly
+    one trailing newline.
     """
     lines: list[str] = []
     for env_name, value in credentials:
+        lines.append(f"{env_name}={shlex.quote(value)}")
+    for env_name, value in runtime_static_env:
         lines.append(f"{env_name}={shlex.quote(value)}")
     # Falsy session_id / model mean "not set yet" and skip the line; a falsy
     # env_vars value is a deliberate user-supplied empty override and is

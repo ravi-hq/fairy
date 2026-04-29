@@ -46,3 +46,6 @@ class GeminiRuntime:
         tracestate: str | None,
     ) -> dict[str, str]:
         return {}
+
+    def static_env(self, spec: "SessionSpec") -> list[tuple[str, str]]:
+        return []

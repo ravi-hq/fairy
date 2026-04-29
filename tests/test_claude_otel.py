@@ -13,6 +13,7 @@ import pytest
 from agent_on_demand.runtimes.claude_otel import (
     HONEYCOMB_OTLP_ENDPOINT,
     build_claude_otel_env,
+    build_claude_otel_static_env,
 )
 
 
@@ -50,15 +51,32 @@ def test_returns_empty_when_api_key_empty_string():
 
 
 def test_uses_env_var_when_no_explicit_key(monkeypatch):
+    """The dict is non-empty when HONEYCOMB_API_KEY is set — gating fires
+    on the env var, not the explicit kwarg."""
     monkeypatch.setenv("HONEYCOMB_API_KEY", "key-from-env")
     env = build_claude_otel_env(_spec(), traceparent=None)
-    assert env["OTEL_EXPORTER_OTLP_HEADERS"] == "x-honeycomb-team=key-from-env"
+    assert env != {}
+    assert env["CLAUDE_CODE_ENABLE_TELEMETRY"] == "1"
 
 
-def test_explicit_key_overrides_env(monkeypatch):
+def test_explicit_key_takes_precedence_over_env(monkeypatch):
+    """An explicit ``honeycomb_api_key`` argument is what gates the
+    return — even if it differs from the env var."""
     monkeypatch.setenv("HONEYCOMB_API_KEY", "from-env")
     env = build_claude_otel_env(_spec(), traceparent=None, honeycomb_api_key="from-arg")
-    assert env["OTEL_EXPORTER_OTLP_HEADERS"] == "x-honeycomb-team=from-arg"
+    assert env != {}
+
+
+def test_dynamic_env_does_not_contain_api_key():
+    """Security pin: the per-turn dynamic env (which is rendered into
+    the bash shim string and persisted in argv) must not contain the
+    Honeycomb API key. The secret-bearing OTEL_EXPORTER_OTLP_HEADERS
+    line lives in /tmp/aod-env via build_claude_otel_static_env instead.
+    """
+    env = build_claude_otel_env(_spec(), traceparent=None, honeycomb_api_key="my-secret-key")
+    assert "OTEL_EXPORTER_OTLP_HEADERS" not in env
+    # The raw key must not appear in any value either.
+    assert all("my-secret-key" not in v for v in env.values())
 
 
 # ---------- exporter / endpoint ----------
@@ -166,7 +184,7 @@ def test_resource_attributes_skip_when_environment_missing():
     assert "aod.environment_id" not in env["OTEL_RESOURCE_ATTRIBUTES"]
 
 
-@pytest.mark.parametrize("forbidden", [" ", ",", ";", "\\", '"'])
+@pytest.mark.parametrize("forbidden", [" ", ",", ";", "\\", '"', "="])
 def test_resource_attributes_skip_unsafe_values(forbidden):
     """Per Claude Code monitoring docs, OTEL_RESOURCE_ATTRIBUTES values may
     not contain spaces, commas, semicolons, double quotes, or backslashes.
@@ -187,3 +205,34 @@ def test_resource_attributes_value_format_has_no_spaces():
     Spaces would break the OTEL parser silently (per the doc)."""
     env = build_claude_otel_env(_spec(), traceparent=None, honeycomb_api_key="k")
     assert " " not in env["OTEL_RESOURCE_ATTRIBUTES"]
+
+
+# ---------- static env (the secret slot) ----------
+
+
+def test_static_env_returns_empty_when_api_key_unset(monkeypatch):
+    monkeypatch.delenv("HONEYCOMB_API_KEY", raising=False)
+    assert build_claude_otel_static_env() == []
+
+
+def test_static_env_returns_empty_when_api_key_empty():
+    assert build_claude_otel_static_env(honeycomb_api_key="") == []
+
+
+def test_static_env_carries_honeycomb_header():
+    """The OTEL header line is what goes into /tmp/aod-env so the API
+    key never reaches the per-turn bash shim string."""
+    pairs = build_claude_otel_static_env(honeycomb_api_key="my-key")
+    assert pairs == [("OTEL_EXPORTER_OTLP_HEADERS", "x-honeycomb-team=my-key")]
+
+
+def test_static_env_uses_env_var_when_no_explicit_key(monkeypatch):
+    monkeypatch.setenv("HONEYCOMB_API_KEY", "from-env")
+    pairs = build_claude_otel_static_env()
+    assert pairs == [("OTEL_EXPORTER_OTLP_HEADERS", "x-honeycomb-team=from-env")]
+
+
+def test_static_env_explicit_key_takes_precedence_over_env(monkeypatch):
+    monkeypatch.setenv("HONEYCOMB_API_KEY", "from-env")
+    pairs = build_claude_otel_static_env(honeycomb_api_key="from-arg")
+    assert pairs == [("OTEL_EXPORTER_OTLP_HEADERS", "x-honeycomb-team=from-arg")]

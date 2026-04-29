@@ -222,3 +222,101 @@ def test_model_value_is_quoted_simple():
 def test_env_var_value_is_quoted_simple():
     body = build_env_file_body(_spec(environment=_env({"FOO": "bar"})), [])
     assert "FOO=bar\n" in body
+
+
+# ---------- runtime_static_env: precedence + quoting ----------
+#
+# `runtime_static_env` is the slot used by `Runtime.static_env(spec)` to
+# inject runtime-specific secrets (today: Claude's Honeycomb header) into
+# /tmp/aod-env without putting them in the per-turn argv shim string. It
+# sits between credentials and AOD_SESSION_ID so a user can opt out by
+# re-setting the same key in `Environment.env_vars` (which lands last and
+# wins under bash `set -a; source ...` semantics).
+
+
+def test_runtime_static_env_omitted_by_default():
+    """Default-empty: no runtime contribution → body is identical to
+    pre-extension behavior, so non-claude runtimes pay zero cost."""
+    body = build_env_file_body(_spec(), [])
+    assert body == "\n"
+
+
+def test_runtime_static_env_appended_after_credentials():
+    body = build_env_file_body(
+        _spec(),
+        [("CRED1", "v1")],
+        [("OTEL_EXPORTER_OTLP_HEADERS", "x-honeycomb-team=k")],
+    )
+    keys = [ln.split("=", 1)[0] for ln in body.rstrip("\n").splitlines()]
+    assert keys == ["CRED1", "OTEL_EXPORTER_OTLP_HEADERS"]
+
+
+def test_runtime_static_env_precedes_session_id():
+    body = build_env_file_body(
+        _spec(runtime_session_id="s1"),
+        [],
+        [("OTEL_EXPORTER_OTLP_HEADERS", "x-honeycomb-team=k")],
+    )
+    keys = [ln.split("=", 1)[0] for ln in body.rstrip("\n").splitlines()]
+    assert keys == ["OTEL_EXPORTER_OTLP_HEADERS", "AOD_SESSION_ID"]
+
+
+def test_runtime_static_env_precedes_env_vars():
+    """Per-environment env_vars override runtime contributions — pin so a
+    user can disable telemetry by setting OTEL_EXPORTER_OTLP_HEADERS=''
+    in their Environment without code changes."""
+    body = build_env_file_body(
+        _spec(environment=_env({"AKEY": "v"})),
+        [],
+        [("OTEL_EXPORTER_OTLP_HEADERS", "x-honeycomb-team=k")],
+    )
+    keys = [ln.split("=", 1)[0] for ln in body.rstrip("\n").splitlines()]
+    assert keys == ["OTEL_EXPORTER_OTLP_HEADERS", "AKEY"]
+
+
+def test_runtime_static_env_value_is_shell_quoted():
+    """The header value contains `=`, which would be a shell parsing
+    landmine without quoting. Pin so a refactor that drops the
+    `shlex.quote` is caught."""
+    body = build_env_file_body(
+        _spec(),
+        [],
+        [("OTEL_EXPORTER_OTLP_HEADERS", "x-honeycomb-team=hk_secret value")],
+    )
+    # shlex.quote wraps in single quotes when value contains spaces.
+    assert "OTEL_EXPORTER_OTLP_HEADERS='x-honeycomb-team=hk_secret value'\n" in body
+
+
+def test_runtime_static_env_full_body_order():
+    """Full ordering: credentials → runtime_static_env → AOD_SESSION_ID
+    → AOD_MODEL → env_vars (alphabetical)."""
+    body = build_env_file_body(
+        _spec(
+            runtime_session_id="s",
+            model="m",
+            environment=_env({"ZZZ": "z", "AAA": "a"}),
+        ),
+        [("CRED", "c")],
+        [("RUNTIME_STATIC", "rs")],
+    )
+    keys = [ln.split("=", 1)[0] for ln in body.rstrip("\n").splitlines()]
+    assert keys == [
+        "CRED",
+        "RUNTIME_STATIC",
+        "AOD_SESSION_ID",
+        "AOD_MODEL",
+        "AAA",
+        "ZZZ",
+    ]
+
+
+def test_runtime_static_env_preserves_caller_order():
+    """Multiple runtime entries land in the order the caller supplied —
+    no reordering or sort. Mirrors how `credentials` behaves."""
+    body = build_env_file_body(
+        _spec(),
+        [],
+        [("FIRST", "1"), ("SECOND", "2"), ("THIRD", "3")],
+    )
+    keys = [ln.split("=", 1)[0] for ln in body.rstrip("\n").splitlines()]
+    assert keys == ["FIRST", "SECOND", "THIRD"]
