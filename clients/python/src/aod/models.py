@@ -191,6 +191,9 @@ class Networking(_Model):
 NetworkingInput = Networking | dict[str, Any]
 
 
+NetworkingInput = Networking | dict[str, Any]
+
+
 class SessionResource(_Model):
     """A GitHub repo cloned into the Sprite for a session.
 
