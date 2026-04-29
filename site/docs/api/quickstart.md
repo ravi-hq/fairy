@@ -116,7 +116,8 @@ Response (`202 Accepted`):
   "status": "pending",
   "stream_url": "/sessions/<session-uuid>/stream",
   "environment_id": null,
-  "resources": []
+  "resources": [],
+  "current_turn": 1
 }
 ```
 
