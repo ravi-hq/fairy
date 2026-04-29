@@ -70,7 +70,7 @@ All of these return `409`:
 | `POST /sessions/{id}/prompt` | Session is running | `"Session is already running"` |
 | `POST /sessions/{id}/prompt` | Session has failed | `"Session has failed and cannot be resumed. Start a new session."` |
 | `POST /sessions/{id}/prompt` | Session is terminated | `"Session has been terminated"` |
-| `POST /sessions/{id}/prompt` | Session already has a pending turn (concurrent send race) | `"Session already has a pending turn"` |
+| `POST /sessions/{id}/prompt` | Session is in `pending` state (turn already queued) | `"Session already has a pending turn"` |
 | `POST /sessions/{id}/prompt` | Backend handle gone (Sprite cleaned up while session record exists) | `"Session backend is no longer available; start a new session."` |
 | `POST /sessions/{id}/terminate` | Session already terminated | `"Session is already terminated"` |
 | `DELETE /sessions/{id}/delete` | Session is active (pending or running) | `"Cannot delete an active session"` |
