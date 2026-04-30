@@ -1,0 +1,896 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Data Detective</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:         #0f1117;
+      --surface:    #1a1d27;
+      --surface2:   #222534;
+      --border:     #2e3146;
+      --accent:     #6c8bff;
+      --accent-dim: #3a4a8a;
+      --green:      #3ecf8e;
+      --amber:      #f6a623;
+      --red:        #ff6b6b;
+      --text:       #e2e4ef;
+      --muted:      #7b7f9e;
+      --font:       'Inter', system-ui, sans-serif;
+      --mono:       'JetBrains Mono', 'Fira Code', monospace;
+      --panel-w:    420px;
+      --radius:     10px;
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    /* ---------- Layout ---------- */
+    .app {
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* ---------- Left Panel ---------- */
+    .left-panel {
+      width: var(--panel-w);
+      min-width: var(--panel-w);
+      display: flex;
+      flex-direction: column;
+      border-right: 1px solid var(--border);
+      background: var(--surface);
+      overflow: hidden;
+    }
+
+    .panel-header {
+      padding: 18px 20px 14px;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+
+    .panel-header h1 {
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: -0.3px;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .panel-header p {
+      margin-top: 4px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .logo-icon {
+      font-size: 22px;
+    }
+
+    /* Dataset cards */
+    .dataset-list {
+      padding: 14px 14px 0;
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .dataset-card {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 12px 14px;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+      background: var(--surface2);
+      user-select: none;
+    }
+
+    .dataset-card:hover {
+      border-color: var(--accent-dim);
+    }
+
+    .dataset-card.selected {
+      border-color: var(--accent);
+      background: #1e2340;
+    }
+
+    .dataset-card .card-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .card-icon { font-size: 18px; }
+
+    .card-title {
+      font-weight: 600;
+      font-size: 13px;
+      color: var(--text);
+    }
+
+    .card-meta {
+      margin-left: auto;
+      font-size: 11px;
+      color: var(--muted);
+      background: var(--bg);
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+
+    .card-desc {
+      margin-top: 4px;
+      font-size: 11px;
+      color: var(--muted);
+      padding-left: 26px;
+    }
+
+    .card-cols {
+      margin-top: 5px;
+      padding-left: 26px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+    }
+
+    .col-pill {
+      font-size: 10px;
+      font-family: var(--mono);
+      background: var(--bg);
+      color: var(--accent);
+      border: 1px solid var(--accent-dim);
+      border-radius: 4px;
+      padding: 1px 5px;
+    }
+
+    /* Preview table */
+    .preview-section {
+      flex: 1;
+      overflow-y: auto;
+      padding: 10px 14px;
+    }
+
+    .preview-label {
+      font-size: 11px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      margin-bottom: 6px;
+      font-weight: 600;
+    }
+
+    .preview-table-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+    }
+
+    .preview-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 11px;
+      font-family: var(--mono);
+    }
+
+    .preview-table th {
+      background: var(--bg);
+      color: var(--muted);
+      padding: 6px 10px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+      font-weight: 600;
+      font-family: var(--font);
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+
+    .preview-table td {
+      padding: 5px 10px;
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+      color: var(--text);
+    }
+
+    .preview-table tr:last-child td { border-bottom: none; }
+    .preview-table tr:hover td { background: var(--surface2); }
+
+    /* Chat input */
+    .chat-area {
+      padding: 12px 14px 14px;
+      border-top: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+
+    .chat-hint {
+      font-size: 11px;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+
+    .chat-form {
+      display: flex;
+      gap: 6px;
+    }
+
+    .chat-input {
+      flex: 1;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 12px;
+      color: var(--text);
+      font-size: 13px;
+      font-family: var(--font);
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    .chat-input:focus { border-color: var(--accent); }
+    .chat-input::placeholder { color: var(--muted); }
+    .chat-input:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .chat-send {
+      background: var(--accent);
+      border: none;
+      border-radius: 8px;
+      padding: 8px 14px;
+      color: #fff;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+
+    .chat-send:hover { opacity: 0.85; }
+    .chat-send:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* ---------- Right Panel ---------- */
+    .right-panel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      background: var(--bg);
+    }
+
+    .right-header {
+      padding: 18px 24px 14px;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .right-header h2 {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--muted);
+      flex-shrink: 0;
+    }
+
+    .status-dot.streaming { background: var(--green); animation: pulse 1s infinite; }
+    .status-dot.done      { background: var(--green); }
+    .status-dot.idle      { background: var(--muted); }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.3; }
+    }
+
+    .stage-badges {
+      display: flex;
+      gap: 6px;
+      margin-left: auto;
+    }
+
+    .stage-badge {
+      font-size: 10px;
+      padding: 2px 7px;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      font-family: var(--mono);
+      transition: all 0.2s;
+    }
+
+    .stage-badge.active {
+      border-color: var(--green);
+      color: var(--green);
+      background: rgba(62,207,142,0.08);
+    }
+
+    /* Output area */
+    .output-scroll {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px 24px 30px;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    /* Empty state */
+    .empty-state {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: var(--muted);
+      gap: 12px;
+      text-align: center;
+    }
+
+    .empty-icon { font-size: 48px; opacity: 0.5; }
+
+    .empty-state h3 {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--muted);
+    }
+
+    .empty-state p {
+      font-size: 13px;
+      max-width: 280px;
+      line-height: 1.6;
+    }
+
+    /* Analysis block */
+    .analysis-block {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px 22px;
+    }
+
+    .analysis-block .block-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      font-weight: 700;
+      color: var(--accent);
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .analysis-text {
+      font-size: 14px;
+      line-height: 1.75;
+      color: var(--text);
+      white-space: pre-wrap;
+    }
+
+    .analysis-text .sentence {
+      display: block;
+      margin-bottom: 10px;
+      animation: fadeIn 0.3s ease;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(4px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .cursor {
+      display: inline-block;
+      width: 2px;
+      height: 1em;
+      background: var(--accent);
+      vertical-align: text-bottom;
+      animation: blink 0.8s infinite;
+      margin-left: 2px;
+    }
+
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0; }
+    }
+
+    /* Divider between initial + follow-ups */
+    .conversation-divider {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      font-weight: 600;
+    }
+
+    .conversation-divider::before,
+    .conversation-divider::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+
+    /* Follow-up turn */
+    .turn {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .turn-question {
+      background: var(--accent-dim);
+      border: 1px solid var(--accent);
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 13px;
+      color: #c5d0ff;
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+    }
+
+    .turn-question-icon {
+      flex-shrink: 0;
+      font-size: 14px;
+      margin-top: 1px;
+    }
+
+    .turn-answer {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px 18px;
+      font-size: 14px;
+      line-height: 1.75;
+      color: var(--text);
+      white-space: pre-wrap;
+    }
+
+    /* Typing hint after analysis completes */
+    .followup-hint {
+      background: var(--surface2);
+      border: 1px dashed var(--border);
+      border-radius: 8px;
+      padding: 14px 18px;
+      font-size: 13px;
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .followup-hint strong { color: var(--text); }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+
+    /* Highlight key numbers */
+    .num { color: var(--amber); font-family: var(--mono); font-size: 13px; }
+    .warn { color: var(--red); }
+    .ok   { color: var(--green); }
+  </style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ===== LEFT PANEL ===== -->
+  <div class="left-panel">
+    <div class="panel-header">
+      <h1><span class="logo-icon">🔍</span> Data Detective</h1>
+      <p>Select a dataset — the agent will narrate the story in the data.</p>
+    </div>
+
+    <div class="dataset-list" id="datasetList">
+      <!-- cards injected by JS -->
+    </div>
+
+    <div class="preview-section" id="previewSection" style="display:none">
+      <div class="preview-label">Preview — first 8 rows</div>
+      <div class="preview-table-wrap">
+        <table class="preview-table" id="previewTable"></table>
+      </div>
+    </div>
+
+    <div class="chat-area">
+      <div class="chat-hint" id="chatHint">Select a dataset to begin.</div>
+      <form class="chat-form" id="chatForm">
+        <input
+          class="chat-input"
+          id="chatInput"
+          type="text"
+          placeholder="Ask a follow-up question…"
+          autocomplete="off"
+          disabled
+        />
+        <button class="chat-send" id="chatSend" type="submit" disabled>Send</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ===== RIGHT PANEL ===== -->
+  <div class="right-panel">
+    <div class="right-header">
+      <div class="status-dot idle" id="statusDot"></div>
+      <h2 id="rightTitle">No dataset selected</h2>
+      <div class="stage-badges" id="stageBadges" style="display:none">
+        <div class="stage-badge" data-stage="create_sprite">create_sprite</div>
+        <div class="stage-badge" data-stage="provision_setup">provision_setup</div>
+        <div class="stage-badge" data-stage="runtime_start">runtime_start</div>
+      </div>
+    </div>
+
+    <div class="output-scroll" id="outputScroll">
+      <div class="empty-state" id="emptyState">
+        <div class="empty-icon">🕵️</div>
+        <h3>No analysis yet</h3>
+        <p>Pick one of the sample datasets on the left and watch the agent uncover the story hidden in the numbers.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ---------------------------------------------------------------------------
+// State
+// ---------------------------------------------------------------------------
+let datasets = [];
+let selectedDataset = null;
+let analysisComplete = false;
+let isStreaming = false;
+let conversationTurns = 0;
+
+// ---------------------------------------------------------------------------
+// Boot
+// ---------------------------------------------------------------------------
+async function init() {
+  const res = await fetch('/analysis/datasets');
+  const json = await res.json();
+  datasets = json.datasets;
+  renderCards();
+}
+
+// ---------------------------------------------------------------------------
+// Render dataset cards
+// ---------------------------------------------------------------------------
+function renderCards() {
+  const list = document.getElementById('datasetList');
+  list.innerHTML = '';
+  datasets.forEach(ds => {
+    const card = document.createElement('div');
+    card.className = 'dataset-card';
+    card.dataset.id = ds.id;
+    card.innerHTML = `
+      <div class="card-header">
+        <span class="card-icon">${ds.icon}</span>
+        <span class="card-title">${ds.title}</span>
+        <span class="card-meta">${ds.row_count} rows</span>
+      </div>
+      <div class="card-desc">${ds.description}</div>
+      <div class="card-cols">
+        ${ds.columns.map(c => `<span class="col-pill">${c}</span>`).join('')}
+      </div>
+    `;
+    card.addEventListener('click', () => selectDataset(ds));
+    list.appendChild(card);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Select a dataset
+// ---------------------------------------------------------------------------
+function selectDataset(ds) {
+  if (isStreaming) return;
+
+  selectedDataset = ds;
+  analysisComplete = false;
+  conversationTurns = 0;
+
+  // Update card selection
+  document.querySelectorAll('.dataset-card').forEach(c => {
+    c.classList.toggle('selected', c.dataset.id === ds.id);
+  });
+
+  // Show preview table
+  renderPreview(ds);
+
+  // Enable chat (but show disabled hint until analysis done)
+  document.getElementById('chatInput').disabled = true;
+  document.getElementById('chatSend').disabled = true;
+  document.getElementById('chatHint').textContent = 'Analysis in progress…';
+
+  // Update right panel header
+  document.getElementById('rightTitle').textContent = ds.title;
+  document.getElementById('stageBadges').style.display = 'flex';
+  resetStageBadges();
+
+  // Clear output and start streaming
+  clearOutput();
+  startAnalysisStream(ds.id);
+}
+
+// ---------------------------------------------------------------------------
+// Preview table
+// ---------------------------------------------------------------------------
+function renderPreview(ds) {
+  const section = document.getElementById('previewSection');
+  const table = document.getElementById('previewTable');
+  section.style.display = 'block';
+
+  const thead = ds.columns.map(c => `<th>${c}</th>`).join('');
+  const rows = ds.preview.map(row =>
+    '<tr>' + ds.columns.map(c => `<td>${row[c] ?? ''}</td>`).join('') + '</tr>'
+  ).join('');
+
+  table.innerHTML = `<thead><tr>${thead}</tr></thead><tbody>${rows}</tbody>`;
+}
+
+// ---------------------------------------------------------------------------
+// Clear right panel output
+// ---------------------------------------------------------------------------
+function clearOutput() {
+  const scroll = document.getElementById('outputScroll');
+  scroll.innerHTML = '';
+}
+
+// ---------------------------------------------------------------------------
+// Stage badges
+// ---------------------------------------------------------------------------
+function resetStageBadges() {
+  document.querySelectorAll('.stage-badge').forEach(b => b.classList.remove('active'));
+}
+
+function activateBadge(stage) {
+  const b = document.querySelector(`.stage-badge[data-stage="${stage}"]`);
+  if (b) b.classList.add('active');
+}
+
+// ---------------------------------------------------------------------------
+// Status dot
+// ---------------------------------------------------------------------------
+function setStatus(state) { // 'idle' | 'streaming' | 'done'
+  const dot = document.getElementById('statusDot');
+  dot.className = `status-dot ${state}`;
+}
+
+// ---------------------------------------------------------------------------
+// Analysis stream
+// ---------------------------------------------------------------------------
+async function startAnalysisStream(datasetId) {
+  isStreaming = true;
+  setStatus('streaming');
+
+  const scroll = document.getElementById('outputScroll');
+
+  // Create the analysis block
+  const block = document.createElement('div');
+  block.className = 'analysis-block';
+  block.innerHTML = `
+    <div class="block-label">
+      <span>🤖</span> Agent Analysis
+    </div>
+    <div class="analysis-text" id="analysisText"></div>
+  `;
+  scroll.appendChild(block);
+
+  const textEl = document.getElementById('analysisText');
+
+  // Cursor element
+  const cursor = document.createElement('span');
+  cursor.className = 'cursor';
+  textEl.appendChild(cursor);
+
+  const res = await fetch(`/analysis/stream/${datasetId}`);
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const parts = buffer.split('\n\n');
+    buffer = parts.pop(); // keep incomplete chunk
+
+    for (const part of parts) {
+      if (!part.startsWith('data: ')) continue;
+      const payload = JSON.parse(part.slice(6));
+      handleAnalysisEvent(payload, textEl, cursor);
+    }
+  }
+
+  // Done
+  cursor.remove();
+  isStreaming = false;
+  analysisComplete = true;
+  setStatus('done');
+
+  // Enable follow-up input
+  document.getElementById('chatInput').disabled = false;
+  document.getElementById('chatSend').disabled = false;
+  document.getElementById('chatHint').textContent = 'Analysis complete — ask a follow-up question.';
+
+  // Show follow-up hint in output
+  appendFollowupHint(scroll, selectedDataset);
+
+  scroll.scrollTop = scroll.scrollHeight;
+}
+
+function handleAnalysisEvent(payload, textEl, cursor) {
+  const { kind, data } = payload;
+
+  if (kind === 'stage') {
+    activateBadge(data);
+    return;
+  }
+
+  if (kind === 'output') {
+    const line = data.replace(/\n$/, '').trim();
+    if (!line) return;
+
+    const span = document.createElement('span');
+    span.className = 'sentence';
+    span.textContent = line;
+    textEl.insertBefore(span, cursor);
+
+    const scroll = document.getElementById('outputScroll');
+    scroll.scrollTop = scroll.scrollHeight;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Follow-up hint
+// ---------------------------------------------------------------------------
+function appendFollowupHint(scroll, ds) {
+  const hints = {
+    ecommerce: '"What caused the spike on March 12?" or "Why is the West region underperforming?"',
+    funnel:    '"Why is payment drop-off so high?" or "How bad is the mobile problem?"',
+    api:       '"What\'s wrong with /api/search?" or "What are the dead endpoints?"',
+  };
+
+  const hint = document.createElement('div');
+  hint.className = 'followup-hint';
+  hint.innerHTML = `
+    <span>💬</span>
+    <div><strong>Ask a follow-up.</strong> Try: <em>${hints[ds.id] || 'Ask anything about the data.'}</em></div>
+  `;
+  scroll.appendChild(hint);
+}
+
+// ---------------------------------------------------------------------------
+// Follow-up submission
+// ---------------------------------------------------------------------------
+document.getElementById('chatForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  if (!selectedDataset || !analysisComplete || isStreaming) return;
+
+  const input = document.getElementById('chatInput');
+  const question = input.value.trim();
+  if (!question) return;
+
+  input.value = '';
+  input.disabled = true;
+  document.getElementById('chatSend').disabled = true;
+  document.getElementById('chatHint').textContent = 'Agent is responding…';
+
+  isStreaming = true;
+  setStatus('streaming');
+  conversationTurns++;
+
+  const scroll = document.getElementById('outputScroll');
+
+  // Remove the hint if present (only on first follow-up)
+  const existingHint = scroll.querySelector('.followup-hint');
+  if (existingHint) existingHint.remove();
+
+  // Add divider on first follow-up
+  if (conversationTurns === 1) {
+    const divider = document.createElement('div');
+    divider.className = 'conversation-divider';
+    divider.textContent = 'Follow-up conversation';
+    scroll.appendChild(divider);
+  }
+
+  // Create turn block
+  const turn = document.createElement('div');
+  turn.className = 'turn';
+  turn.innerHTML = `
+    <div class="turn-question">
+      <span class="turn-question-icon">🧑</span>
+      <span>${escapeHtml(question)}</span>
+    </div>
+    <div class="turn-answer" id="turnAnswer${conversationTurns}"></div>
+  `;
+  scroll.appendChild(turn);
+  scroll.scrollTop = scroll.scrollHeight;
+
+  const answerEl = document.getElementById(`turnAnswer${conversationTurns}`);
+
+  // Cursor
+  const cursor = document.createElement('span');
+  cursor.className = 'cursor';
+  answerEl.appendChild(cursor);
+
+  // Stream response
+  const res = await fetch(`/analysis/followup/${selectedDataset.id}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ question }),
+  });
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const parts = buffer.split('\n\n');
+    buffer = parts.pop();
+
+    for (const part of parts) {
+      if (!part.startsWith('data: ')) continue;
+      const payload = JSON.parse(part.slice(6));
+      if (payload.kind === 'output') {
+        const line = payload.data.replace(/\n$/, '').trim();
+        if (!line) continue;
+        const span = document.createElement('span');
+        span.className = 'sentence';
+        span.textContent = line;
+        answerEl.insertBefore(span, cursor);
+        scroll.scrollTop = scroll.scrollHeight;
+      }
+    }
+  }
+
+  cursor.remove();
+  isStreaming = false;
+  setStatus('done');
+
+  // Re-enable input
+  input.disabled = false;
+  document.getElementById('chatSend').disabled = false;
+  document.getElementById('chatHint').textContent = 'Ask another follow-up question.';
+  input.focus();
+
+  scroll.scrollTop = scroll.scrollHeight;
+});
+
+// ---------------------------------------------------------------------------
+// Utility
+// ---------------------------------------------------------------------------
+function escapeHtml(str) {
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ---------------------------------------------------------------------------
+// Start
+// ---------------------------------------------------------------------------
+init();
+</script>
+</body>
+</html>
