@@ -462,18 +462,17 @@ def test_interrupt_session_not_found(client, auth_headers):
 
 
 @pytest.mark.django_db
-def test_interrupt_running_session_returns_202_and_sets_flag(
-    client, auth_headers, user, mocker
-):
+def test_interrupt_running_session_returns_202_and_sets_flag(client, auth_headers, user, mocker):
     """Happy path: a running session takes the interrupt, the row gets
     ``interrupt_requested=True``, and the worker task is enqueued."""
     session = AgentSession.objects.create(
-        user=user, runtime="claude", prompt="x", status="running",
+        user=user,
+        runtime="claude",
+        prompt="x",
+        status="running",
         backend_handle="sprite-123",
     )
-    defer = mocker.patch(
-        "agent_on_demand.session_service.interrupt_session_task.defer"
-    )
+    defer = mocker.patch("agent_on_demand.session_service.interrupt_session_task.defer")
 
     resp = client.post(f"/sessions/{session.id}/interrupt", **auth_headers)
 
@@ -492,7 +491,10 @@ def test_interrupt_pending_session_returns_202(client, auth_headers, user, mocke
     """A pending session is interruptible — the worker observes the flag
     pre-run and skips the turn."""
     session = AgentSession.objects.create(
-        user=user, runtime="claude", prompt="x", status="pending",
+        user=user,
+        runtime="claude",
+        prompt="x",
+        status="pending",
         backend_handle="sprite-pending",
     )
     mocker.patch("agent_on_demand.session_service.interrupt_session_task.defer")
@@ -507,7 +509,10 @@ def test_interrupt_pending_session_returns_202(client, auth_headers, user, mocke
 @pytest.mark.django_db
 def test_interrupt_completed_session_rejected(client, auth_headers, user):
     session = AgentSession.objects.create(
-        user=user, runtime="claude", prompt="x", status="completed",
+        user=user,
+        runtime="claude",
+        prompt="x",
+        status="completed",
     )
     resp = client.post(f"/sessions/{session.id}/interrupt", **auth_headers)
     assert resp.status_code == 409
@@ -517,7 +522,10 @@ def test_interrupt_completed_session_rejected(client, auth_headers, user):
 @pytest.mark.django_db
 def test_interrupt_terminated_session_rejected(client, auth_headers, user):
     session = AgentSession.objects.create(
-        user=user, runtime="claude", prompt="x", status="terminated",
+        user=user,
+        runtime="claude",
+        prompt="x",
+        status="terminated",
     )
     resp = client.post(f"/sessions/{session.id}/interrupt", **auth_headers)
     assert resp.status_code == 409
@@ -527,7 +535,10 @@ def test_interrupt_terminated_session_rejected(client, auth_headers, user):
 @pytest.mark.django_db
 def test_interrupt_failed_session_rejected(client, auth_headers, user):
     session = AgentSession.objects.create(
-        user=user, runtime="claude", prompt="x", status="failed",
+        user=user,
+        runtime="claude",
+        prompt="x",
+        status="failed",
     )
     resp = client.post(f"/sessions/{session.id}/interrupt", **auth_headers)
     assert resp.status_code == 409
@@ -539,27 +550,24 @@ def test_interrupt_other_user_returns_404(client, auth_headers, user):
     """Cross-user interrupt must look indistinguishable from missing —
     same contract as session detail/terminate/delete."""
     other = User.objects.create_user(username="other-int", password="x")
-    theirs = AgentSession.objects.create(
-        user=other, runtime="claude", prompt="x", status="running"
-    )
+    theirs = AgentSession.objects.create(user=other, runtime="claude", prompt="x", status="running")
     resp = client.post(f"/sessions/{theirs.id}/interrupt", **auth_headers)
     assert resp.status_code == 404
 
 
 @pytest.mark.django_db
-def test_interrupt_without_backend_handle_skips_defer(
-    client, auth_headers, user, mocker
-):
+def test_interrupt_without_backend_handle_skips_defer(client, auth_headers, user, mocker):
     """A session whose Sprite was never recorded (e.g. test fixture) still
     accepts the interrupt request — the flag is set, but no worker task is
     deferred since there's nothing to kill remotely."""
     session = AgentSession.objects.create(
-        user=user, runtime="claude", prompt="x", status="running",
+        user=user,
+        runtime="claude",
+        prompt="x",
+        status="running",
         backend_handle="",
     )
-    defer = mocker.patch(
-        "agent_on_demand.session_service.interrupt_session_task.defer"
-    )
+    defer = mocker.patch("agent_on_demand.session_service.interrupt_session_task.defer")
 
     resp = client.post(f"/sessions/{session.id}/interrupt", **auth_headers)
 

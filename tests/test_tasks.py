@@ -744,14 +744,63 @@ def test_execute_turn_finalizes_as_interrupted_when_flag_set_during_run(user, mo
 
 
 @pytest.mark.django_db
+def test_execute_turn_clears_interrupt_flag_set_between_refresh_and_save(user, mocker):
+    """Race: the natural-completion path's `refresh_from_db` reads
+    ``interrupt_requested=False``, the view then commits ``True`` into
+    that exact window, and the worker's save runs.
+
+    The save MUST include `interrupt_requested` in `update_fields` and
+    overwrite the stale True with False. Otherwise the flag persists on
+    the (now ``completed``) session, and the next ``POST /prompt`` is
+    spuriously aborted as ``interrupted`` by the pre-run guard.
+
+    Models the third-party commit by writing ``True`` to the DB *between*
+    the refresh and the save, via a `pre_save` signal on `AgentSession`.
+    """
+    from django.db.models.signals import pre_save
+
+    session, turn = _make_session_and_turn(user)
+    _patch_sprite(mocker, "success")
+
+    fired = [False]
+
+    def race_in_view_commit(sender, instance, **kwargs):
+        # Only fire on the finalize save (after status flipped to running).
+        if instance.pk == session.pk and instance.status == "completed" and not fired[0]:
+            fired[0] = True
+            # Simulate the view committing True after the worker's
+            # refresh but before its save.
+            AgentSession.objects.filter(pk=instance.pk).update(interrupt_requested=True)
+
+    pre_save.connect(race_in_view_commit, sender=AgentSession)
+    try:
+        execute_turn(
+            session_id=str(session.id),
+            turn_id=turn.id,
+            prompt="hi",
+            mode="run",
+            timeout=10.0,
+        )
+    finally:
+        pre_save.disconnect(race_in_view_commit, sender=AgentSession)
+
+    assert fired[0], "test sentinel never fired — race not actually exercised"
+    session.refresh_from_db()
+    turn.refresh_from_db()
+    # Session completed naturally; the stale True written by the racing
+    # view must have been cleared by the worker's save.
+    assert session.status == "completed"
+    assert session.interrupt_requested is False
+    assert turn.status == "completed"
+
+
+@pytest.mark.django_db
 def test_execute_turn_terminate_beats_interrupt(user, mocker):
     """If both flags fire concurrently — ``status=terminated`` wins. The
     Sprite is gone; the session must stay ``terminated`` rather than
     transitioning to ``completed``."""
     session, turn = _make_session_and_turn(user)
-    AgentSession.objects.filter(pk=session.pk).update(
-        status="terminated", interrupt_requested=True
-    )
+    AgentSession.objects.filter(pk=session.pk).update(status="terminated", interrupt_requested=True)
     _patch_sprite(mocker, "success")
 
     execute_turn(

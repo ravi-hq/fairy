@@ -32,7 +32,6 @@ if importlib.util.find_spec("django_migration_linter") is not None:
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ("fairy", "0021_drop_user_sprites_key"),
     ]

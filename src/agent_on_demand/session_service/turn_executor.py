@@ -156,9 +156,7 @@ class TurnExecutor:
             self._turn.save(update_fields=["status", "started_at", "ended_at"])
             self._session.status = "completed"
             self._session.interrupt_requested = False
-            self._session.save(
-                update_fields=["status", "interrupt_requested", "updated_at"]
-            )
+            self._session.save(update_fields=["status", "interrupt_requested", "updated_at"])
             return True
         return False
 
@@ -221,9 +219,7 @@ class TurnExecutor:
         # the SDK exit code is incidental. The session goes back to
         # `completed` (not `failed`) so the caller can immediately send
         # a new prompt against the same Sprite.
-        interrupted = (
-            self._session.interrupt_requested and self._session.status != "terminated"
-        )
+        interrupted = self._session.interrupt_requested and self._session.status != "terminated"
         if interrupted:
             final_status_for_session = "completed"
             final_status_for_turn = "interrupted"
@@ -234,18 +230,25 @@ class TurnExecutor:
         if self._session.status != "terminated":
             self._session.status = final_status_for_session
             self._session.exit_code = exit_code
-            if interrupted:
-                self._session.interrupt_requested = False
-                self._session.save(
-                    update_fields=[
-                        "status",
-                        "exit_code",
-                        "interrupt_requested",
-                        "updated_at",
-                    ]
-                )
-            else:
-                self._session.save(update_fields=["status", "exit_code", "updated_at"])
+            # Always clear `interrupt_requested` and include it in
+            # `update_fields`, even on the "natural completion" branch.
+            # Otherwise this race leaks: the refresh above reads False,
+            # the view then commits True before the save below, and
+            # because the save's `update_fields` skipped the column, the
+            # True survives in the DB. The next /prompt's pre-run guard
+            # would then see the stale True and abort the next (innocent)
+            # turn as `interrupted`. Resetting unconditionally costs one
+            # extra column in the UPDATE and closes the window — the
+            # in-memory False overwrites whatever the view wrote.
+            self._session.interrupt_requested = False
+            self._session.save(
+                update_fields=[
+                    "status",
+                    "exit_code",
+                    "interrupt_requested",
+                    "updated_at",
+                ]
+            )
 
         self._turn.status = final_status_for_turn
         self._turn.exit_code = exit_code

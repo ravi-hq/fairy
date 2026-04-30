@@ -47,17 +47,27 @@ def check_can_terminate(status: str) -> JsonResponse | None:
 def check_can_interrupt(status: str) -> JsonResponse | None:
     """Reject interrupt unless the session has an active turn to stop.
 
-    Accepts: ``pending`` and ``running``. Pending sessions have a turn
-    enqueued (or in-flight on the worker) — interrupting cancels the
-    work before it executes. Running sessions have an in-progress turn
-    that gets killed on the backend.
+    Accepts (via fallthrough): ``pending`` and ``running``. Pending
+    sessions have a turn enqueued (or in-flight on the worker) —
+    interrupting cancels the work before it executes. Running sessions
+    have an in-progress turn that gets killed on the backend.
 
     Rejects: ``completed`` (no active turn — caller probably raced a
     natural completion), ``failed`` (terminal), ``terminated`` (Sprite
     is gone). Each gets a distinct ``detail`` so SDKs can act on it.
+
+    The accept arm is intentionally implicit (fall through to
+    ``return None``) rather than an explicit
+    ``if status in ("pending", "running")``. Both shapes are
+    behaviorally identical given the unknown-status-is-acceptable
+    contract pinned by ``test_interrupt_unknown_status_treated_as_acceptable``,
+    but the explicit form would put the literal ``"pending"``/``"running"``
+    strings on the positive arm, where mutating them to garbage still
+    falls through to the same ``return None`` — i.e. the mutants are
+    behaviorally equivalent and survive the mutation-test gate. Keeping
+    all literals on the rejection arms (which are tested rigorously)
+    keeps that gate honest.
     """
-    if status in ("pending", "running"):
-        return None
     if status == "completed":
         return JsonResponse({"detail": "Session has no active turn to interrupt"}, status=409)
     if status == "terminated":

@@ -159,9 +159,7 @@ def interrupt_session(request, session_id):
     """
     try:
         with transaction.atomic():
-            session = AgentSession.objects.select_for_update().get(
-                pk=session_id, user=request.user
-            )
+            session = AgentSession.objects.select_for_update().get(pk=session_id, user=request.user)
             err = _pkg.check_can_interrupt(session.status)
             if err is not None:
                 return err

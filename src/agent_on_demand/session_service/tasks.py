@@ -300,9 +300,7 @@ def _execute_turn_inner(
 # Decorator order + `_otel_carrier`: see note on `provision_session_task` above.
 @procrastinate_app.task(queue="sessions", name="interrupt_session", pass_context=False)
 @traced_task("interrupt_session")
-def interrupt_session_task(
-    *, user_id: int, handle: str, _otel_carrier: dict | None = None
-) -> None:
+def interrupt_session_task(*, user_id: int, handle: str, _otel_carrier: dict | None = None) -> None:
     """Best-effort SIGTERM to the in-Sprite agent process for a session.
 
     `POST /sessions/{id}/interrupt` flips ``interrupt_requested`` on the
@@ -339,9 +337,7 @@ def interrupt_session_task(
             try:
                 session_handle.interrupt_running_commands()
             except Exception:
-                logger.exception(
-                    "interrupt_session_task: kill failed for handle %s", handle
-                )
+                logger.exception("interrupt_session_task: kill failed for handle %s", handle)
     finally:
         close_old_connections()
 

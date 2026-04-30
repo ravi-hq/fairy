@@ -154,9 +154,7 @@ class _SpritesHandle:
             if not s.is_active:
                 continue
             try:
-                _sprites_session.kill_session(
-                    self._sprite, s.id, signal="SIGTERM", timeout=5
-                )
+                _sprites_session.kill_session(self._sprite, s.id, signal="SIGTERM", timeout=5)
             except sprites.NotFoundError:
                 pass
             except sprites.SpriteError as e:
