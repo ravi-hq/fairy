@@ -1,0 +1,711 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Changelog Writer</title>
+  <style>
+    /* ── Reset & base ─────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:          #0d0f14;
+      --surface:     #161920;
+      --surface-2:   #1e2230;
+      --border:      #2a2f3d;
+      --text:        #e2e8f0;
+      --text-muted:  #6b7280;
+      --text-dim:    #94a3b8;
+      --accent:      #6366f1;
+
+      --green:       #22c55e;
+      --green-dim:   #16a34a;
+      --green-bg:    #052e16;
+      --green-border:#166534;
+
+      --blue:        #60a5fa;
+      --blue-dim:    #3b82f6;
+      --blue-bg:     #0c1a2e;
+      --blue-border: #1e3a5f;
+
+      --purple:      #c084fc;
+      --purple-dim:  #a855f7;
+      --purple-bg:   #1a0a2e;
+      --purple-border:#4c1d95;
+
+      --radius:      10px;
+      --mono:        'JetBrains Mono', 'Fira Code', 'Cascadia Code', ui-monospace, monospace;
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    /* ── Layout ───────────────────────────────────────────────────────── */
+    .app {
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 24px 20px 40px;
+      gap: 28px;
+    }
+
+    /* ── Header ───────────────────────────────────────────────────────── */
+    .header {
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+    }
+    .header h1 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: -0.02em;
+    }
+    .header .tagline {
+      color: var(--text-muted);
+      font-size: 0.875rem;
+    }
+
+    /* ── Input card ───────────────────────────────────────────────────── */
+    .input-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .input-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .input-row label {
+      font-size: 0.8rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      white-space: nowrap;
+    }
+
+    .quick-load-btns {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .btn-quick {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text-dim);
+      font-size: 0.8rem;
+      padding: 5px 12px;
+      cursor: pointer;
+      transition: border-color 0.15s, color 0.15s, background 0.15s;
+    }
+    .btn-quick:hover {
+      border-color: var(--accent);
+      color: var(--text);
+      background: #1e2038;
+    }
+    .btn-quick.active {
+      border-color: var(--accent);
+      background: #1e2038;
+      color: #a5b4fc;
+    }
+
+    .git-log-textarea {
+      width: 100%;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 0.8rem;
+      line-height: 1.7;
+      padding: 12px 14px;
+      resize: vertical;
+      min-height: 130px;
+      transition: border-color 0.15s;
+      outline: none;
+    }
+    .git-log-textarea:focus {
+      border-color: var(--accent);
+    }
+    .git-log-textarea::placeholder { color: var(--text-muted); }
+
+    .action-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .btn-write {
+      background: var(--accent);
+      border: none;
+      border-radius: 8px;
+      color: #fff;
+      font-size: 0.9rem;
+      font-weight: 600;
+      padding: 9px 24px;
+      cursor: pointer;
+      transition: opacity 0.15s, transform 0.1s;
+      white-space: nowrap;
+    }
+    .btn-write:hover:not(:disabled) { opacity: 0.88; transform: translateY(-1px); }
+    .btn-write:active:not(:disabled) { transform: translateY(0); }
+    .btn-write:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    .status-pill {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+    .status-pill.visible { opacity: 1; }
+
+    /* ── Output panels ────────────────────────────────────────────────── */
+    .panels {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+      align-items: start;
+    }
+
+    @media (max-width: 900px) {
+      .panels { grid-template-columns: 1fr; }
+    }
+
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      min-height: 420px;
+    }
+
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      gap: 8px;
+    }
+
+    .panel-title {
+      font-size: 0.8rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    /* Per-panel color theming */
+    .panel-changelog .panel-header { background: var(--green-bg); border-bottom-color: var(--green-border); }
+    .panel-changelog .panel-title  { color: var(--green); }
+    .panel-changelog .panel-header { border-top: 3px solid var(--green); }
+
+    .panel-blogpost .panel-header  { background: var(--blue-bg);   border-bottom-color: var(--blue-border); }
+    .panel-blogpost .panel-title   { color: var(--blue); }
+    .panel-blogpost .panel-header  { border-top: 3px solid var(--blue); }
+
+    .panel-tweetthread .panel-header { background: var(--purple-bg);  border-bottom-color: var(--purple-border); }
+    .panel-tweetthread .panel-title  { color: var(--purple); }
+    .panel-tweetthread .panel-header { border-top: 3px solid var(--purple); }
+
+    /* Status indicator: spinner → checkmark */
+    .panel-status {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.72rem;
+      color: var(--text-muted);
+    }
+
+    .spinner {
+      width: 10px; height: 10px;
+      border: 2px solid rgba(255,255,255,0.15);
+      border-top-color: rgba(255,255,255,0.6);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      flex-shrink: 0;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .checkmark {
+      width: 10px; height: 10px;
+      color: var(--green);
+      font-size: 11px;
+      line-height: 1;
+    }
+
+    /* Panel body — scrollable output */
+    .panel-body {
+      flex: 1;
+      padding: 16px;
+      overflow-y: auto;
+      font-size: 0.83rem;
+      line-height: 1.75;
+      min-height: 380px;
+      max-height: 520px;
+    }
+
+    /* Empty state */
+    .panel-empty {
+      color: var(--text-muted);
+      font-style: italic;
+      text-align: center;
+      padding-top: 60px;
+    }
+
+    /* ── CHANGELOG panel markdown-ish rendering ────────────────────── */
+    .panel-changelog .panel-body {
+      font-family: var(--mono);
+      font-size: 0.78rem;
+    }
+
+    .cl-h2  { color: var(--green); font-weight: 700; font-size: 0.9rem; margin: 4px 0 2px; }
+    .cl-h3  { color: #86efac; font-weight: 600; margin: 8px 0 2px; }
+    .cl-li  { padding-left: 4px; color: var(--text-dim); }
+    .cl-li::before { content: ''; }
+    .cl-blank { height: 4px; display: block; }
+    .cl-code { background: #1a2a1a; padding: 1px 4px; border-radius: 3px; font-size: 0.76rem; color: #86efac; }
+
+    /* ── Blog post panel ───────────────────────────────────────────── */
+    .panel-blogpost .panel-body {
+      font-size: 0.875rem;
+      color: var(--text-dim);
+    }
+
+    /* ── Tweet thread panel ────────────────────────────────────────── */
+    .panel-tweetthread .panel-body {
+      font-size: 0.85rem;
+    }
+
+    .tweet-bubble {
+      background: var(--surface-2);
+      border: 1px solid var(--purple-border);
+      border-radius: 8px;
+      padding: 10px 12px;
+      margin-bottom: 8px;
+      color: var(--text);
+      line-height: 1.6;
+    }
+
+    /* ── Cursor blink ──────────────────────────────────────────────── */
+    .cursor {
+      display: inline-block;
+      width: 2px;
+      height: 1em;
+      background: currentColor;
+      margin-left: 1px;
+      vertical-align: text-bottom;
+      animation: blink 1s step-end infinite;
+    }
+    @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0; } }
+
+    /* ── Fade-in for streamed lines ────────────────────────────────── */
+    .line-in {
+      animation: fadeSlide 0.2s ease-out;
+    }
+    @keyframes fadeSlide {
+      from { opacity: 0; transform: translateY(2px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+  </style>
+</head>
+<body>
+<div class="app">
+
+  <!-- Header -->
+  <header class="header">
+    <h1>Changelog Writer</h1>
+    <span class="tagline">Paste a git log — three agents write it three ways, simultaneously</span>
+  </header>
+
+  <!-- Input card -->
+  <section class="input-card">
+    <div class="input-row">
+      <label>Quick load:</label>
+      <div class="quick-load-btns" id="quickLoadBtns">
+        <!-- Populated by JS -->
+      </div>
+    </div>
+
+    <textarea
+      id="gitLog"
+      class="git-log-textarea"
+      rows="8"
+      placeholder="Paste a git log here, e.g.:&#10;a3f92c1 feat: add --watch flag&#10;b12e445 fix: crash on startup&#10;..."
+    ></textarea>
+
+    <div class="action-row">
+      <button class="btn-write" id="writeBtn" onclick="startStream()">
+        Write Changelog
+      </button>
+      <span class="status-pill" id="statusPill"></span>
+    </div>
+  </section>
+
+  <!-- Output panels -->
+  <section class="panels">
+    <div class="panel panel-changelog" id="panel-changelog">
+      <div class="panel-header">
+        <span class="panel-title">CHANGELOG.md</span>
+        <div class="panel-status" id="status-changelog">
+          <span class="panel-status-icon" id="icon-changelog"></span>
+          <span class="panel-status-label" id="label-changelog"></span>
+        </div>
+      </div>
+      <div class="panel-body" id="body-changelog">
+        <div class="panel-empty">Output will appear here</div>
+      </div>
+    </div>
+
+    <div class="panel panel-blogpost" id="panel-blogpost">
+      <div class="panel-header">
+        <span class="panel-title">Blog Post</span>
+        <div class="panel-status" id="status-blogpost">
+          <span class="panel-status-icon" id="icon-blogpost"></span>
+          <span class="panel-status-label" id="label-blogpost"></span>
+        </div>
+      </div>
+      <div class="panel-body" id="body-blogpost">
+        <div class="panel-empty">Output will appear here</div>
+      </div>
+    </div>
+
+    <div class="panel panel-tweetthread" id="panel-tweetthread">
+      <div class="panel-header">
+        <span class="panel-title">Tweet Thread</span>
+        <div class="panel-status" id="status-tweetthread">
+          <span class="panel-status-icon" id="icon-tweetthread"></span>
+          <span class="panel-status-label" id="label-tweetthread"></span>
+        </div>
+      </div>
+      <div class="panel-body" id="body-tweetthread">
+        <div class="panel-empty">Output will appear here</div>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<script>
+// ── State ────────────────────────────────────────────────────────────────
+let releases = [];
+let activeReleaseId = null;
+let activeEventSource = null;
+
+// Per-panel buffering (tweet thread groups lines into bubbles)
+const panelState = {
+  changelog:   { lines: [], buffer: '' },
+  blogpost:    { lines: [], buffer: '' },
+  tweetthread: { lines: [], tweets: [], currentTweet: '' },
+};
+
+// ── Bootstrap ────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', async () => {
+  try {
+    const res = await fetch('/changelog/releases');
+    const data = await res.json();
+    releases = data.releases;
+    renderQuickLoadBtns();
+    // Pre-load the first release
+    if (releases.length) selectRelease(releases[0].id);
+  } catch (e) {
+    console.error('Failed to load releases:', e);
+  }
+});
+
+// ── Quick-load buttons ───────────────────────────────────────────────────
+function renderQuickLoadBtns() {
+  const container = document.getElementById('quickLoadBtns');
+  container.innerHTML = '';
+  releases.forEach(r => {
+    const btn = document.createElement('button');
+    btn.className = 'btn-quick';
+    btn.textContent = r.label;
+    btn.dataset.id = r.id;
+    btn.onclick = () => selectRelease(r.id);
+    container.appendChild(btn);
+  });
+}
+
+function selectRelease(id) {
+  activeReleaseId = id;
+  const release = releases.find(r => r.id === id);
+  if (release) {
+    document.getElementById('gitLog').value = release.git_log;
+  }
+  document.querySelectorAll('.btn-quick').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.id === id);
+  });
+}
+
+// ── Stream control ───────────────────────────────────────────────────────
+function startStream() {
+  if (!activeReleaseId) {
+    setStatus('Select a release first');
+    return;
+  }
+
+  // Close any existing stream
+  if (activeEventSource) {
+    activeEventSource.close();
+    activeEventSource = null;
+  }
+
+  // Reset panels
+  resetPanels();
+  setWriteBtn(true);
+  setStatus('Three agents writing simultaneously…');
+  showPill(true);
+
+  const formats = ['changelog', 'blogpost', 'tweetthread'];
+  formats.forEach(f => setIndicator(f, 'running'));
+
+  const es = new EventSource(`/changelog/stream/${activeReleaseId}`);
+  activeEventSource = es;
+  let doneCount = 0;
+
+  es.onmessage = (e) => {
+    const event = JSON.parse(e.data);
+    const fmt = event.format;
+
+    if (event.type === 'stage' && event.data === 'starting') {
+      // agent session started — nothing to render yet
+      return;
+    }
+
+    if (event.type === 'output') {
+      appendLine(fmt, event.data);
+    }
+
+    if (event.type === 'exit') {
+      // Flush any remaining buffer
+      flushPanel(fmt);
+      setIndicator(fmt, 'done');
+      doneCount++;
+      if (doneCount === 3) {
+        es.close();
+        activeEventSource = null;
+        setWriteBtn(false);
+        setStatus('All three formats ready');
+      }
+    }
+
+    if (event.type === 'error') {
+      appendLine(fmt, `Error: ${event.data}`);
+      setIndicator(fmt, 'done');
+    }
+  };
+
+  es.onerror = () => {
+    es.close();
+    activeEventSource = null;
+    setWriteBtn(false);
+    setStatus('Stream disconnected');
+    formats.forEach(f => setIndicator(f, 'done'));
+  };
+}
+
+// ── Panel rendering ──────────────────────────────────────────────────────
+function resetPanels() {
+  ['changelog', 'blogpost', 'tweetthread'].forEach(fmt => {
+    const body = document.getElementById(`body-${fmt}`);
+    body.innerHTML = '';
+    panelState[fmt] = fmt === 'tweetthread'
+      ? { tweets: [], currentTweet: '' }
+      : { lines: [], buffer: '' };
+    setIndicator(fmt, 'idle');
+  });
+}
+
+function appendLine(fmt, rawLine) {
+  // rawLine arrives with a trailing \n from the server
+  const line = rawLine.replace(/\n$/, '');
+
+  if (fmt === 'changelog') {
+    renderChangelogLine(line);
+  } else if (fmt === 'blogpost') {
+    renderBlogLine(line);
+  } else if (fmt === 'tweetthread') {
+    renderTweetLine(line);
+  }
+
+  // Auto-scroll
+  const body = document.getElementById(`body-${fmt}`);
+  body.scrollTop = body.scrollHeight;
+}
+
+function flushPanel(fmt) {
+  if (fmt === 'tweetthread') {
+    const state = panelState.tweetthread;
+    if (state.currentTweet.trim()) {
+      commitTweet(state.currentTweet.trim());
+      state.currentTweet = '';
+    }
+  }
+  // Remove any trailing cursor element
+  const body = document.getElementById(`body-${fmt}`);
+  const cursor = body.querySelector('.cursor');
+  if (cursor) cursor.remove();
+}
+
+// ---- CHANGELOG rendering (markdown-ish) ---------------------------------
+function renderChangelogLine(line) {
+  const body = document.getElementById('body-changelog');
+  let el;
+
+  if (line.startsWith('## ')) {
+    el = document.createElement('div');
+    el.className = 'cl-h2 line-in';
+    el.textContent = line;
+  } else if (line.startsWith('### ')) {
+    el = document.createElement('div');
+    el.className = 'cl-h3 line-in';
+    el.textContent = line;
+  } else if (line.startsWith('- ')) {
+    el = document.createElement('div');
+    el.className = 'cl-li line-in';
+    // Inline code highlighting
+    el.innerHTML = '• ' + escapeAndHighlight(line.slice(2));
+  } else if (line === '') {
+    el = document.createElement('div');
+    el.className = 'cl-blank';
+  } else {
+    el = document.createElement('div');
+    el.className = 'line-in';
+    el.innerHTML = escapeAndHighlight(line);
+  }
+
+  body.appendChild(el);
+}
+
+function escapeAndHighlight(text) {
+  // Escape HTML then wrap backtick spans
+  const escaped = text
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return escaped.replace(/`([^`]+)`/g, '<span class="cl-code">$1</span>');
+}
+
+// ---- Blog post rendering ------------------------------------------------
+function renderBlogLine(line) {
+  const body = document.getElementById('body-blogpost');
+  const state = panelState.blogpost;
+
+  if (line === '') {
+    // Blank line = paragraph break
+    if (state.buffer.trim()) {
+      const p = document.createElement('p');
+      p.className = 'line-in';
+      p.style.marginBottom = '12px';
+      p.textContent = state.buffer.trim();
+      body.appendChild(p);
+      state.buffer = '';
+    }
+  } else {
+    // Accumulate lines into a paragraph buffer; show each line as it arrives
+    const span = document.createElement('div');
+    span.className = 'line-in';
+    span.style.color = 'var(--text-dim)';
+    span.textContent = line;
+    body.appendChild(span);
+  }
+}
+
+// ---- Tweet thread rendering ---------------------------------------------
+// Lines stream one-by-one; blank lines separate tweets.
+function renderTweetLine(line) {
+  const state = panelState.tweetthread;
+  const body = document.getElementById('body-tweetthread');
+
+  if (line === '') {
+    // Blank line = end of a tweet
+    if (state.currentTweet.trim()) {
+      commitTweet(state.currentTweet.trim());
+      state.currentTweet = '';
+    }
+  } else {
+    // Accumulate into current tweet buffer and show immediately
+    if (state.currentTweet === '') {
+      // Start a new in-progress bubble
+      const bubble = document.createElement('div');
+      bubble.className = 'tweet-bubble line-in';
+      bubble.id = `tweet-wip`;
+      bubble.textContent = line;
+      body.appendChild(bubble);
+    } else {
+      // Append to the in-progress bubble
+      const wip = document.getElementById('tweet-wip');
+      if (wip) {
+        wip.textContent += '\n' + line;
+      }
+    }
+    state.currentTweet += (state.currentTweet ? '\n' : '') + line;
+  }
+}
+
+function commitTweet(text) {
+  const body = document.getElementById('body-tweetthread');
+  // Replace the in-progress element (if any) with a permanent one
+  const old = document.getElementById('tweet-wip');
+  if (old) old.remove();
+
+  const bubble = document.createElement('div');
+  bubble.className = 'tweet-bubble line-in';
+  bubble.style.whiteSpace = 'pre-wrap';
+  bubble.textContent = text;
+  body.appendChild(bubble);
+}
+
+// ── UI helpers ───────────────────────────────────────────────────────────
+function setIndicator(fmt, state) {
+  const iconEl = document.getElementById(`icon-${fmt}`);
+  const labelEl = document.getElementById(`label-${fmt}`);
+
+  if (state === 'idle') {
+    iconEl.innerHTML = '';
+    labelEl.textContent = '';
+  } else if (state === 'running') {
+    iconEl.innerHTML = '<div class="spinner"></div>';
+    labelEl.textContent = 'writing…';
+  } else if (state === 'done') {
+    iconEl.innerHTML = '<span class="checkmark">✓</span>';
+    labelEl.textContent = 'done';
+  }
+}
+
+function setWriteBtn(disabled) {
+  const btn = document.getElementById('writeBtn');
+  btn.disabled = disabled;
+  btn.textContent = disabled ? 'Writing…' : 'Write Changelog';
+}
+
+function setStatus(text) {
+  document.getElementById('statusPill').textContent = text;
+}
+
+function showPill(show) {
+  document.getElementById('statusPill').classList.toggle('visible', show);
+}
+</script>
+</body>
+</html>
