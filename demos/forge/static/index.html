@@ -1,0 +1,1029 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Forge — team agents</title>
+  <style>
+    :root {
+      --bg:        #0d1117;
+      --surface:   #161b22;
+      --surface2:  #1c2128;
+      --border:    #30363d;
+      --text:      #e6edf3;
+      --muted:     #8b949e;
+      --accent:    #58a6ff;
+      --p1:        #f85149;
+      --p2:        #e3b341;
+      --p3:        #3fb950;
+      --font-mono: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+      --font-ui:   -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0; padding: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-ui);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    button {
+      font: inherit;
+      cursor: pointer;
+      background: var(--surface2);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 6px 12px;
+    }
+    button:hover { border-color: var(--accent); }
+    button.primary {
+      background: linear-gradient(180deg, #2d8bf0, #1f6fe6);
+      border-color: #1f6fe6;
+      color: #fff;
+    }
+    button.primary:hover { border-color: #4d9bff; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* --- Header / tabs --- */
+    header {
+      display: flex; align-items: center;
+      gap: 24px;
+      padding: 14px 28px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+      position: sticky; top: 0; z-index: 10;
+    }
+    .brand {
+      display: flex; align-items: center; gap: 10px;
+      font-weight: 600; letter-spacing: 0.2px;
+    }
+    .brand-mark {
+      width: 22px; height: 22px;
+      border-radius: 5px;
+      background: linear-gradient(135deg, #d2a8ff, #58a6ff);
+      display: grid; place-items: center;
+      color: #0d1117; font-weight: 800;
+    }
+    .tabs { display: flex; gap: 4px; margin-left: 12px; }
+    .tab {
+      padding: 6px 14px;
+      border-radius: 6px;
+      cursor: pointer;
+      color: var(--muted);
+      font-weight: 500;
+    }
+    .tab:hover { color: var(--text); background: var(--surface2); }
+    .tab.active { color: var(--text); background: var(--surface2); }
+    .header-spacer { flex: 1; }
+    .header-meta { color: var(--muted); font-size: 12px; }
+
+    main { padding: 24px 28px 64px; max-width: 1500px; margin: 0 auto; }
+
+    /* --- View transitions --- */
+    .view { display: none; }
+    .view.active { display: block; }
+
+    /* --- Library --- */
+    .library-header {
+      display: flex; align-items: baseline; justify-content: space-between;
+      margin-bottom: 18px;
+    }
+    .library-header h1 { margin: 0; font-size: 22px; font-weight: 600; }
+    .library-header .sub { color: var(--muted); font-size: 13px; }
+
+    .grid {
+      display: grid;
+      gap: 14px;
+      grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+      cursor: pointer;
+      display: flex; flex-direction: column;
+      gap: 12px;
+      transition: border-color 0.12s, transform 0.12s;
+    }
+    .card:hover { border-color: var(--accent); transform: translateY(-1px); }
+
+    .card-top {
+      display: flex; justify-content: space-between; gap: 8px;
+    }
+    .card-name {
+      font-family: var(--font-mono);
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .badge-version {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      align-self: flex-start;
+    }
+    .card-desc {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+      min-height: 38px;
+    }
+    .card-meta {
+      display: flex; align-items: center; gap: 12px;
+      font-size: 12px; color: var(--muted);
+    }
+    .avatar {
+      width: 22px; height: 22px;
+      border-radius: 50%;
+      background: var(--surface2);
+      display: grid; place-items: center;
+      font-size: 10px; font-weight: 700;
+      color: #0d1117;
+    }
+    .stat { display: flex; align-items: center; gap: 4px; }
+    .stat .num { color: var(--text); font-weight: 500; }
+
+    .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+    .chip {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 11px;
+      border: 1px solid var(--border);
+      background: var(--surface2);
+      color: var(--muted);
+    }
+
+    /* --- Detail view --- */
+    .detail-header {
+      display: flex; justify-content: space-between; align-items: flex-start;
+      margin-bottom: 18px;
+      gap: 16px;
+    }
+    .detail-back {
+      color: var(--muted); cursor: pointer; font-size: 13px;
+      margin-bottom: 8px;
+    }
+    .detail-back:hover { color: var(--text); }
+    .detail-title {
+      font-family: var(--font-mono);
+      font-size: 22px;
+      font-weight: 600;
+    }
+    .detail-sub { color: var(--muted); margin-top: 4px; font-size: 13px; }
+    .detail-actions { display: flex; gap: 8px; }
+
+    .detail-cols {
+      display: grid;
+      grid-template-columns: 1fr 1fr 320px;
+      gap: 14px;
+    }
+    @media (max-width: 1100px) {
+      .detail-cols { grid-template-columns: 1fr; }
+    }
+
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px 16px;
+    }
+    .panel h3 {
+      margin: 0 0 10px;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: var(--muted);
+      font-weight: 600;
+    }
+
+    .system-prompt {
+      width: 100%;
+      background: var(--bg);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px 12px;
+      font-family: var(--font-mono);
+      font-size: 12.5px;
+      line-height: 1.55;
+      resize: vertical;
+      min-height: 180px;
+    }
+    .system-prompt[readonly] { background: var(--bg); cursor: default; }
+
+    .toggle-row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 6px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .toggle-row:last-child { border-bottom: none; }
+    .toggle-name {
+      font-family: var(--font-mono); font-size: 13px;
+    }
+    .switch {
+      position: relative; width: 32px; height: 18px;
+      border-radius: 9px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+    }
+    .switch.on { background: rgba(63, 185, 80, 0.3); border-color: var(--p3); }
+    .switch::after {
+      content: '';
+      position: absolute;
+      top: 2px; left: 2px;
+      width: 12px; height: 12px;
+      border-radius: 50%;
+      background: var(--muted);
+      transition: left 0.12s;
+    }
+    .switch.on::after { left: 16px; background: var(--p3); }
+
+    .done-when {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px 12px;
+      font-family: var(--font-mono);
+      font-size: 12.5px;
+      color: var(--text);
+    }
+
+    /* --- Test panel --- */
+    .test-input {
+      width: 100%;
+      background: var(--bg);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px 12px;
+      font: inherit;
+      margin-bottom: 8px;
+    }
+    .test-input:focus { outline: none; border-color: var(--accent); }
+
+    .stream {
+      background: #010409;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-family: var(--font-mono);
+      font-size: 12.5px;
+      line-height: 1.55;
+      padding: 12px;
+      min-height: 280px;
+      max-height: 460px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .stream-empty { color: var(--muted); font-style: italic; }
+    .ev { display: block; padding: 1px 0; }
+    .ev .lbl {
+      display: inline-block;
+      width: 64px;
+      color: var(--muted);
+      text-transform: uppercase;
+      font-size: 10.5px;
+      letter-spacing: 0.5px;
+    }
+    .ev.stage   { color: var(--muted); }
+    .ev.stage .lbl { color: var(--accent); }
+    .ev.tool    { color: var(--text); }
+    .ev.tool .lbl { color: var(--p2); }
+    .ev.thought { color: var(--muted); font-style: italic; }
+    .ev.thought .lbl { color: var(--muted); font-style: normal; }
+    .ev.output  { color: var(--text); }
+    .ev.output .lbl { color: var(--p3); }
+    .ev.result  { color: var(--p3); }
+    .ev.result .lbl { color: var(--p3); }
+    .ev.exit    { color: var(--muted); border-top: 1px dashed var(--border); margin-top: 6px; padding-top: 6px; }
+    .ev.exit .lbl { color: var(--muted); }
+    .result-block {
+      background: var(--surface2);
+      border-left: 2px solid var(--p3);
+      padding: 8px 10px;
+      margin: 6px 0;
+      border-radius: 0 4px 4px 0;
+      color: var(--text);
+      white-space: pre-wrap;
+    }
+
+    /* --- Right rail --- */
+    .rail-list { display: flex; flex-direction: column; gap: 8px; }
+    .rail-item {
+      padding: 8px 10px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 12.5px;
+    }
+    .rail-item .row1 {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 2px;
+    }
+    .rail-item .v { font-family: var(--font-mono); color: var(--accent); }
+    .rail-item .when { color: var(--muted); font-size: 11.5px; }
+    .rail-item .note { color: var(--muted); }
+    .rail-item .who {
+      font-family: var(--font-mono); color: var(--text);
+    }
+
+    /* --- Audit --- */
+    .audit-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 14px;
+      margin-bottom: 18px;
+    }
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px 16px;
+    }
+    .stat-card .label {
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      font-size: 11px;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+    .stat-card .value {
+      font-family: var(--font-mono);
+      font-size: 24px;
+      font-weight: 600;
+    }
+    .stat-card .delta { color: var(--muted); font-size: 12px; margin-top: 4px; }
+
+    .audit-cols {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+    @media (max-width: 900px) {
+      .audit-cols { grid-template-columns: 1fr; }
+    }
+
+    table.audit {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    table.audit th {
+      text-align: left;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 6px 8px;
+      border-bottom: 1px solid var(--border);
+    }
+    table.audit td {
+      padding: 8px;
+      border-bottom: 1px solid var(--border);
+      font-family: var(--font-mono);
+    }
+    table.audit tr:last-child td { border-bottom: none; }
+    table.audit td.who, table.audit td.agent { color: var(--text); }
+    table.audit td.runs { color: var(--accent); text-align: right; }
+    table.audit td.cost { color: var(--p2); text-align: right; }
+
+    .bar-row {
+      display: grid;
+      grid-template-columns: 200px 1fr 60px;
+      gap: 10px;
+      align-items: center;
+      padding: 4px 0;
+      font-size: 13px;
+    }
+    .bar-row .name { font-family: var(--font-mono); color: var(--text); }
+    .bar-row .num  { font-family: var(--font-mono); color: var(--accent); text-align: right; }
+    .bar-track {
+      height: 8px;
+      background: var(--surface2);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    .bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #58a6ff, #d2a8ff);
+    }
+
+    .activity {
+      max-height: 360px;
+      overflow-y: auto;
+    }
+    .activity .row {
+      display: grid;
+      grid-template-columns: 56px 1fr auto auto;
+      gap: 10px;
+      padding: 6px 8px;
+      border-bottom: 1px solid var(--border);
+      font-size: 12.5px;
+      align-items: center;
+    }
+    .activity .row:last-child { border-bottom: none; }
+    .activity .ts { color: var(--muted); font-family: var(--font-mono); }
+    .activity .summary { color: var(--text); }
+    .activity .summary .who { color: var(--text); font-weight: 500; }
+    .activity .summary .agent { font-family: var(--font-mono); color: var(--accent); }
+    .activity .cost { color: var(--p2); font-family: var(--font-mono); }
+    .activity .dur { color: var(--muted); font-family: var(--font-mono); }
+    .activity .row.tests-failed .summary .agent { color: var(--p1); }
+
+    /* --- Modal --- */
+    .modal-backdrop {
+      position: fixed; inset: 0;
+      background: rgba(1, 4, 9, 0.7);
+      display: none;
+      align-items: center; justify-content: center;
+      z-index: 100;
+    }
+    .modal-backdrop.open { display: flex; }
+    .modal {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      width: 600px; max-width: calc(100vw - 32px);
+      max-height: calc(100vh - 64px);
+      overflow-y: auto;
+      padding: 22px 24px;
+    }
+    .modal h2 { margin: 0 0 4px; font-size: 18px; }
+    .modal .sub { color: var(--muted); margin-bottom: 16px; font-size: 13px; }
+    .modal label { display: block; color: var(--muted); font-size: 12px; margin: 12px 0 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+
+    /* --- Snackbar --- */
+    .snackbar {
+      position: fixed; bottom: 24px; left: 50%;
+      transform: translateX(-50%) translateY(80px);
+      background: var(--surface2);
+      border: 1px solid var(--p3);
+      color: var(--text);
+      padding: 10px 18px;
+      border-radius: 6px;
+      transition: transform 0.2s ease;
+      z-index: 200;
+      font-size: 13px;
+    }
+    .snackbar.show { transform: translateX(-50%) translateY(0); }
+
+    /* --- Misc --- */
+    .row-flex { display: flex; align-items: center; gap: 10px; }
+    .muted { color: var(--muted); }
+    .mono { font-family: var(--font-mono); }
+    .small { font-size: 12px; }
+    .nowrap { white-space: nowrap; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <div class="brand-mark">F</div>
+      <div>Forge</div>
+      <div class="muted small" style="margin-left: 6px;">team agents</div>
+    </div>
+    <div class="tabs">
+      <div class="tab active" data-view="library">Library</div>
+      <div class="tab" data-view="audit">Audit</div>
+    </div>
+    <div class="header-spacer"></div>
+    <div class="header-meta">ravi-hq · agent-on-demand</div>
+  </header>
+
+  <main>
+    <!-- Library -->
+    <section id="view-library" class="view active">
+      <div class="library-header">
+        <div>
+          <h1>Team library</h1>
+          <div class="sub">6 published agents · last updated 4 min ago</div>
+        </div>
+        <button>+ New agent</button>
+      </div>
+      <div id="grid" class="grid"></div>
+    </section>
+
+    <!-- Detail -->
+    <section id="view-detail" class="view">
+      <div class="detail-back" id="detail-back">&larr; Back to library</div>
+      <div class="detail-header">
+        <div>
+          <div class="detail-title" id="d-name"></div>
+          <div class="detail-sub" id="d-sub"></div>
+        </div>
+        <div class="detail-actions">
+          <button id="btn-fork">Fork</button>
+          <button>Publish v<span id="d-next-version"></span></button>
+        </div>
+      </div>
+
+      <div class="detail-cols">
+        <!-- Definition -->
+        <div>
+          <div class="panel">
+            <h3>System prompt</h3>
+            <textarea class="system-prompt" id="d-prompt" readonly></textarea>
+          </div>
+          <div class="panel" style="margin-top: 12px;">
+            <h3>Tools</h3>
+            <div id="d-tools"></div>
+          </div>
+          <div class="panel" style="margin-top: 12px;">
+            <h3>Done when</h3>
+            <div class="done-when" id="d-donewhen"></div>
+          </div>
+        </div>
+
+        <!-- Test -->
+        <div>
+          <div class="panel">
+            <h3>Test run</h3>
+            <input id="t-prompt" class="test-input" type="text" />
+            <div class="row-flex" style="margin-bottom: 10px;">
+              <button class="primary" id="btn-run">Run test</button>
+              <span class="muted small" id="t-status">idle</span>
+            </div>
+            <div class="stream" id="t-stream">
+              <div class="stream-empty">No run yet. Click "Run test" to provision a Sprite and stream live output.</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right rail -->
+        <div>
+          <div class="panel">
+            <h3>Version history</h3>
+            <div class="rail-list" id="d-versions"></div>
+          </div>
+          <div class="panel" style="margin-top: 12px;">
+            <h3>Forks</h3>
+            <div class="rail-list" id="d-forks"></div>
+          </div>
+          <div class="panel" style="margin-top: 12px;">
+            <h3>Recent runs</h3>
+            <div class="rail-list" id="d-recent"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Audit -->
+    <section id="view-audit" class="view">
+      <div class="library-header">
+        <div>
+          <h1>Audit</h1>
+          <div class="sub" id="audit-window"></div>
+        </div>
+      </div>
+
+      <div class="audit-grid">
+        <div class="stat-card">
+          <div class="label">Total runs</div>
+          <div class="value" id="a-runs"></div>
+          <div class="delta">+18% vs last week</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Total cost</div>
+          <div class="value" id="a-cost"></div>
+          <div class="delta">$0.29 average per run</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Active agents</div>
+          <div class="value">6</div>
+          <div class="delta">2 in fork queue</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Tests-failed exits</div>
+          <div class="value" style="color: var(--p1);">3</div>
+          <div class="delta">all from dependency-bumper</div>
+        </div>
+      </div>
+
+      <div class="audit-cols">
+        <div class="panel">
+          <h3>Top spending agents</h3>
+          <div id="a-by-agent"></div>
+        </div>
+        <div class="panel">
+          <h3>Top spending humans</h3>
+          <table class="audit">
+            <thead>
+              <tr><th>Who</th><th style="text-align: right;">Runs</th><th style="text-align: right;">Cost</th></tr>
+            </thead>
+            <tbody id="a-by-human"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="panel" style="margin-top: 14px;">
+        <h3>Recent activity</h3>
+        <div class="activity" id="a-activity"></div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Fork modal -->
+  <div class="modal-backdrop" id="fork-modal">
+    <div class="modal">
+      <h2>Fork agent</h2>
+      <div class="sub">Forks copy the current system prompt + tools. Edits stay private until you publish.</div>
+      <label>Name</label>
+      <input class="test-input" id="f-name" type="text" />
+      <label>System prompt</label>
+      <textarea class="system-prompt" id="f-prompt"></textarea>
+      <label>Tools</label>
+      <div id="f-tools"></div>
+      <div class="modal-actions">
+        <button id="f-cancel">Cancel</button>
+        <button class="primary" id="f-save">Save fork</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="snackbar" id="snackbar"></div>
+
+  <script>
+    // --- State ----------------------------------------------------------
+    const state = {
+      agents: [],          // library summaries
+      currentAgent: null,  // full detail object
+      currentRun: null,    // { run_id, eventSource }
+      forkTools: {},       // tool_name -> bool
+    };
+
+    // --- Helpers --------------------------------------------------------
+    function el(tag, attrs = {}, ...children) {
+      const e = document.createElement(tag);
+      for (const [k, v] of Object.entries(attrs)) {
+        if (k === 'class') e.className = v;
+        else if (k === 'style') e.setAttribute('style', v);
+        else if (k.startsWith('on') && typeof v === 'function') e.addEventListener(k.slice(2), v);
+        else if (v !== null && v !== undefined) e.setAttribute(k, v);
+      }
+      for (const c of children) {
+        if (c == null) continue;
+        e.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
+      }
+      return e;
+    }
+
+    function snack(msg) {
+      const s = document.getElementById('snackbar');
+      s.textContent = msg;
+      s.classList.add('show');
+      setTimeout(() => s.classList.remove('show'), 2400);
+    }
+
+    function fmtMoney(n) {
+      return '$' + n.toFixed(2);
+    }
+
+    // --- View switching -------------------------------------------------
+    function showView(name) {
+      document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+      document.getElementById('view-' + name).classList.add('active');
+      document.querySelectorAll('.tab').forEach(t => {
+        t.classList.toggle('active', t.dataset.view === name);
+      });
+    }
+
+    document.querySelectorAll('.tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        const view = tab.dataset.view;
+        showView(view);
+        if (view === 'audit') loadAudit();
+      });
+    });
+
+    // --- Library --------------------------------------------------------
+    async function loadLibrary() {
+      const r = await fetch('/api/agents');
+      const data = await r.json();
+      state.agents = data.agents;
+      renderLibrary();
+    }
+
+    function renderLibrary() {
+      const grid = document.getElementById('grid');
+      grid.innerHTML = '';
+      for (const a of state.agents) {
+        const card = el('div', { class: 'card', onclick: () => openDetail(a.id) },
+          el('div', { class: 'card-top' },
+            el('div', { class: 'card-name' }, a.name),
+            el('div', { class: 'badge-version' }, 'v' + a.version),
+          ),
+          el('div', { class: 'card-desc' }, a.description),
+          el('div', { class: 'card-meta' },
+            el('div', { class: 'avatar', style: `background: ${a.owner.color};` }, a.owner.initials),
+            el('span', {}, a.owner.name),
+          ),
+          el('div', { class: 'chips' },
+            ...a.tools.map(t => el('div', { class: 'chip' }, t))
+          ),
+          el('div', { class: 'card-meta', style: 'margin-top: auto; padding-top: 8px; border-top: 1px solid var(--border);' },
+            el('div', { class: 'stat' }, '▶︎ ', el('span', { class: 'num' }, a.stats.runs_per_week.toLocaleString()), ' runs/wk'),
+            el('div', { class: 'stat' }, '★ ', el('span', { class: 'num' }, a.stats.rating.toFixed(1)), ` (${a.stats.rating_count})`),
+            el('div', { class: 'stat' }, '⎇ ', el('span', { class: 'num' }, a.stats.fork_count), ' forks'),
+          ),
+        );
+        grid.appendChild(card);
+      }
+    }
+
+    // --- Detail ---------------------------------------------------------
+    async function openDetail(id) {
+      const r = await fetch('/api/agents/' + id);
+      const a = await r.json();
+      state.currentAgent = a;
+      renderDetail(a);
+      showView('detail');
+    }
+
+    function renderDetail(a) {
+      document.getElementById('d-name').textContent = a.name;
+      document.getElementById('d-sub').textContent = a.description;
+      document.getElementById('d-prompt').value = a.system_prompt;
+      document.getElementById('d-donewhen').textContent = a.done_when;
+      document.getElementById('d-next-version').textContent = a.version + 1;
+
+      // Tools (read-only toggles, all on)
+      const toolsBox = document.getElementById('d-tools');
+      toolsBox.innerHTML = '';
+      for (const t of a.tools) {
+        toolsBox.appendChild(
+          el('div', { class: 'toggle-row' },
+            el('div', { class: 'toggle-name' }, t),
+            el('div', { class: 'switch on' })
+          )
+        );
+      }
+
+      // Versions
+      const vBox = document.getElementById('d-versions');
+      vBox.innerHTML = '';
+      for (const v of a.version_history) {
+        vBox.appendChild(
+          el('div', { class: 'rail-item' },
+            el('div', { class: 'row1' },
+              el('span', { class: 'v' }, 'v' + v.version),
+              el('span', { class: 'when' }, v.date),
+            ),
+            el('div', { class: 'note' }, v.note),
+          )
+        );
+      }
+
+      // Forks
+      const fBox = document.getElementById('d-forks');
+      fBox.innerHTML = '';
+      if (a.forks.length === 0) {
+        fBox.appendChild(el('div', { class: 'muted small' }, 'No forks yet.'));
+      }
+      for (const f of a.forks) {
+        fBox.appendChild(
+          el('div', { class: 'rail-item' },
+            el('div', { class: 'row1' },
+              el('span', { class: 'mono' }, f.name),
+              el('span', { class: 'when' }, 'v' + f.version),
+            ),
+            el('div', { class: 'note' }, 'by ' + f.owner),
+          )
+        );
+      }
+
+      // Recent runs
+      const rBox = document.getElementById('d-recent');
+      rBox.innerHTML = '';
+      for (const run of a.recent_runs) {
+        const status = run.outcome === 'completed' ? '' : ' — ' + run.outcome;
+        rBox.appendChild(
+          el('div', { class: 'rail-item' },
+            el('div', { class: 'row1' },
+              el('span', { class: 'who' }, run.who),
+              el('span', { class: 'when' }, run.when),
+            ),
+            el('div', { class: 'note' }, fmtMoney(run.cost) + ' · ' + run.duration_sec + 's' + status),
+          )
+        );
+      }
+
+      // Test prompt placeholder
+      document.getElementById('t-prompt').value = samplePromptFor(a.id);
+      document.getElementById('t-status').textContent = 'idle';
+      const stream = document.getElementById('t-stream');
+      stream.innerHTML = '<div class="stream-empty">No run yet. Click "Run test" to provision a Sprite and stream live output.</div>';
+    }
+
+    function samplePromptFor(id) {
+      return ({
+        'competitive-researcher': 'What did our top 3 competitors ship in the last 14 days?',
+        'pr-reviewer':            'Review PR #331 in ravi-hq/fairy.',
+        'on-call-scout':          'p99 latency on /api/sessions > 4s for 8 minutes.',
+        'changelog-writer':       'Generate changelog for v1.4.0..v1.5.0.',
+        'spec-drafter':           'Spec out a per-org rate limit on POST /sessions. Linked: ENG-412.',
+        'dependency-bumper':      'Bump django from 5.0.4 to 5.1.2.',
+      })[id] || 'Run a test prompt for this agent.';
+    }
+
+    document.getElementById('detail-back').addEventListener('click', () => {
+      stopRun();
+      showView('library');
+    });
+
+    // --- Test stream ----------------------------------------------------
+    function stopRun() {
+      if (state.currentRun?.eventSource) {
+        state.currentRun.eventSource.close();
+      }
+      state.currentRun = null;
+    }
+
+    document.getElementById('btn-run').addEventListener('click', async () => {
+      if (!state.currentAgent) return;
+      stopRun();
+
+      const stream = document.getElementById('t-stream');
+      stream.innerHTML = '';
+      document.getElementById('t-status').textContent = 'starting…';
+
+      const startBtn = document.getElementById('btn-run');
+      startBtn.disabled = true;
+
+      const r = await fetch('/api/agents/' + state.currentAgent.id + '/test', { method: 'POST' });
+      const { run_id } = await r.json();
+
+      const es = new EventSource('/api/runs/' + run_id + '/stream');
+      state.currentRun = { run_id, eventSource: es };
+
+      const handle = (kind) => (e) => {
+        const data = JSON.parse(e.data);
+        appendEvent(stream, kind, data.text);
+        document.getElementById('t-status').textContent = `streaming · ${kind}`;
+      };
+
+      ['stage', 'tool', 'thought', 'output', 'result', 'exit'].forEach(k => {
+        es.addEventListener(k, handle(k));
+      });
+
+      es.addEventListener('done', () => {
+        es.close();
+        state.currentRun = null;
+        document.getElementById('t-status').textContent = 'completed';
+        startBtn.disabled = false;
+      });
+
+      es.onerror = () => {
+        document.getElementById('t-status').textContent = 'stream error';
+        es.close();
+        startBtn.disabled = false;
+      };
+    });
+
+    function appendEvent(container, kind, text) {
+      const labels = {
+        stage: 'stage', tool: 'tool', thought: 'think',
+        output: 'output', result: 'result', exit: 'exit',
+      };
+      const row = el('div', { class: 'ev ' + kind });
+      row.appendChild(el('span', { class: 'lbl' }, (labels[kind] || kind) + ' '));
+
+      if (kind === 'result') {
+        // Pretty-print structured JSON in a callout block.
+        let pretty = text;
+        try { pretty = JSON.stringify(JSON.parse(text), null, 2); } catch (_) {}
+        const block = el('div', { class: 'result-block' }, pretty);
+        row.appendChild(block);
+      } else {
+        row.appendChild(document.createTextNode(text));
+      }
+      container.appendChild(row);
+      container.scrollTop = container.scrollHeight;
+    }
+
+    // --- Fork modal -----------------------------------------------------
+    document.getElementById('btn-fork').addEventListener('click', () => {
+      if (!state.currentAgent) return;
+      const a = state.currentAgent;
+      document.getElementById('f-name').value = a.name + '-fork';
+      document.getElementById('f-prompt').value = a.system_prompt;
+      const tBox = document.getElementById('f-tools');
+      tBox.innerHTML = '';
+      state.forkTools = {};
+      for (const t of a.tools) {
+        state.forkTools[t] = true;
+        const sw = el('div', { class: 'switch on' });
+        const row = el('div', { class: 'toggle-row', onclick: () => {
+            state.forkTools[t] = !state.forkTools[t];
+            sw.classList.toggle('on', state.forkTools[t]);
+          } },
+          el('div', { class: 'toggle-name' }, t),
+          sw
+        );
+        tBox.appendChild(row);
+      }
+      document.getElementById('fork-modal').classList.add('open');
+    });
+
+    document.getElementById('f-cancel').addEventListener('click', () => {
+      document.getElementById('fork-modal').classList.remove('open');
+    });
+
+    document.getElementById('f-save').addEventListener('click', async () => {
+      const name = document.getElementById('f-name').value.trim();
+      const system_prompt = document.getElementById('f-prompt').value;
+      const tools = Object.entries(state.forkTools).filter(([, on]) => on).map(([t]) => t);
+      const r = await fetch('/api/agents/' + state.currentAgent.id + '/fork', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name, system_prompt, tools }),
+      });
+      const data = await r.json();
+      document.getElementById('fork-modal').classList.remove('open');
+      if (data.ok) snack(`Forked as "${data.fork.name}" · saved to your drafts`);
+    });
+
+    // --- Audit ----------------------------------------------------------
+    async function loadAudit() {
+      const r = await fetch('/api/audit');
+      const a = await r.json();
+      document.getElementById('audit-window').textContent = a.window;
+      document.getElementById('a-runs').textContent = a.total_runs.toLocaleString();
+      document.getElementById('a-cost').textContent = fmtMoney(a.total_cost_usd);
+
+      // By agent: bar chart
+      const byAgent = document.getElementById('a-by-agent');
+      byAgent.innerHTML = '';
+      const max = Math.max(...a.by_agent.map(x => x.runs));
+      for (const x of a.by_agent) {
+        byAgent.appendChild(
+          el('div', { class: 'bar-row' },
+            el('div', { class: 'name' }, x.agent),
+            el('div', { class: 'bar-track' },
+              el('div', { class: 'bar-fill', style: `width: ${(x.runs / max * 100).toFixed(1)}%` })
+            ),
+            el('div', { class: 'num' }, x.runs.toLocaleString()),
+          )
+        );
+        byAgent.appendChild(
+          el('div', { class: 'bar-row', style: 'padding: 0 0 6px; border-bottom: 1px solid var(--border); margin-bottom: 6px;' },
+            el('div', { class: 'muted small', style: 'grid-column: 1 / 4; text-align: right;' }, fmtMoney(x.cost))
+          )
+        );
+      }
+
+      // By human: table
+      const byHuman = document.getElementById('a-by-human');
+      byHuman.innerHTML = '';
+      for (const x of a.by_human) {
+        byHuman.appendChild(
+          el('tr', {},
+            el('td', { class: 'who' }, x.who),
+            el('td', { class: 'runs' }, x.runs.toLocaleString()),
+            el('td', { class: 'cost' }, fmtMoney(x.cost)),
+          )
+        );
+      }
+
+      // Recent activity
+      const act = document.getElementById('a-activity');
+      act.innerHTML = '';
+      for (const r of a.recent_activity) {
+        const cls = r.outcome === 'tests-failed' ? 'row tests-failed' : 'row';
+        act.appendChild(
+          el('div', { class: cls },
+            el('div', { class: 'ts' }, r.ts),
+            el('div', { class: 'summary' },
+              el('span', { class: 'who' }, r.who), ' ran ',
+              el('span', { class: 'agent' }, r.agent),
+              r.outcome === 'completed' ? '' : ' — ' + r.outcome,
+            ),
+            el('div', { class: 'cost' }, fmtMoney(r.cost)),
+            el('div', { class: 'dur' }, r.duration_sec + 's'),
+          )
+        );
+      }
+    }
+
+    // --- Boot -----------------------------------------------------------
+    loadLibrary();
+  </script>
+</body>
+</html>
