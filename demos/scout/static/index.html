@@ -1,0 +1,793 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Scout — Incident Response Co-pilot</title>
+  <style>
+    /* ------------------------------------------------------------------ */
+    /* Reset & base                                                         */
+    /* ------------------------------------------------------------------ */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:          #0d1117;
+      --surface:     #161b22;
+      --surface2:    #1c2128;
+      --border:      #30363d;
+      --text:        #e6edf3;
+      --muted:       #8b949e;
+      --accent:      #58a6ff;
+
+      --p1:          #f85149;
+      --p2:          #e3b341;
+      --p3:          #3fb950;
+
+      --cause-fg:    #f85149;
+      --blast-fg:    #e3b341;
+      --action-fg:   #3fb950;
+      --evidence-fg: #58a6ff;
+
+      --stage-fg:    #8b949e;
+      --output-fg:   #e6edf3;
+
+      --font-mono:   'SF Mono', 'Fira Code', 'Consolas', monospace;
+      --font-ui:     -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-ui);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Layout                                                               */
+    /* ------------------------------------------------------------------ */
+    .app {
+      display: grid;
+      grid-template-rows: auto 1fr;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 14px 24px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+      flex-shrink: 0;
+    }
+
+    .logo {
+      font-size: 20px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      color: var(--text);
+    }
+    .logo span { color: var(--accent); }
+
+    .tagline {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .spacer { flex: 1; }
+
+    .fire-btn {
+      padding: 8px 18px;
+      background: var(--p1);
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .fire-btn:hover { opacity: 0.88; }
+    .fire-btn:active { opacity: 0.75; }
+    .fire-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    .main {
+      display: grid;
+      grid-template-columns: 340px 1fr;
+      overflow: hidden;
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Left panel — Alert feed                                              */
+    /* ------------------------------------------------------------------ */
+    .alert-panel {
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      background: var(--surface);
+    }
+
+    .panel-header {
+      padding: 12px 16px;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+
+    .alert-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px 0;
+    }
+
+    .alert-item {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      cursor: pointer;
+      transition: background 0.12s;
+      position: relative;
+    }
+    .alert-item:hover { background: var(--surface2); }
+    .alert-item.active { background: var(--surface2); }
+    .alert-item.active::before {
+      content: '';
+      position: absolute;
+      left: 0; top: 0; bottom: 0;
+      width: 3px;
+      background: var(--accent);
+      border-radius: 0 2px 2px 0;
+    }
+
+    .alert-top {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 4px;
+    }
+
+    .badge {
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 4px;
+      letter-spacing: 0.04em;
+    }
+    .badge-p1 { background: rgba(248,81,73,0.18); color: var(--p1); border: 1px solid rgba(248,81,73,0.35); }
+    .badge-p2 { background: rgba(227,179,65,0.18); color: var(--p2); border: 1px solid rgba(227,179,65,0.35); }
+    .badge-p3 { background: rgba(63,185,80,0.18);  color: var(--p3); border: 1px solid rgba(63,185,80,0.35); }
+
+    .alert-service {
+      font-size: 11px;
+      color: var(--muted);
+      font-weight: 500;
+    }
+
+    .alert-name {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 2px;
+      line-height: 1.3;
+    }
+
+    .alert-desc {
+      font-size: 11px;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+
+    .alert-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .alert-time {
+      font-size: 11px;
+      color: var(--muted);
+      font-family: var(--font-mono);
+    }
+
+    .status-pill {
+      font-size: 10px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 10px;
+      letter-spacing: 0.04em;
+    }
+    .status-investigating {
+      background: rgba(88,166,255,0.15);
+      color: var(--accent);
+      border: 1px solid rgba(88,166,255,0.3);
+      animation: pulse-blue 1.5s ease-in-out infinite;
+    }
+    .status-complete {
+      background: rgba(63,185,80,0.15);
+      color: var(--p3);
+      border: 1px solid rgba(63,185,80,0.3);
+    }
+
+    @keyframes pulse-blue {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.55; }
+    }
+
+    .empty-feed {
+      padding: 32px 16px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .empty-feed .icon { font-size: 32px; margin-bottom: 8px; }
+
+    /* ------------------------------------------------------------------ */
+    /* Right panel — Investigation                                           */
+    /* ------------------------------------------------------------------ */
+    .inv-panel {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      background: var(--bg);
+    }
+
+    .inv-header {
+      padding: 12px 20px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .inv-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .inv-subtitle {
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    .inv-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    /* Terminal / streaming output */
+    .terminal {
+      background: #010409;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+      font-family: var(--font-mono);
+      font-size: 12.5px;
+      line-height: 1.6;
+    }
+
+    .terminal-titlebar {
+      background: var(--surface2);
+      padding: 8px 14px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .dot { width: 10px; height: 10px; border-radius: 50%; }
+    .dot-red   { background: #f85149; }
+    .dot-yellow{ background: #e3b341; }
+    .dot-green { background: #3fb950; }
+    .terminal-label {
+      font-size: 11px;
+      color: var(--muted);
+      margin-left: 4px;
+      font-family: var(--font-ui);
+    }
+
+    .terminal-output {
+      padding: 14px 16px;
+      min-height: 120px;
+      max-height: 360px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    .line-stage  { color: var(--stage-fg); }
+    .line-output { color: var(--output-fg); }
+    .line-output.scout   { color: #79c0ff; }
+    .line-output.metrics { color: #d2a8ff; }
+    .line-output.deploys { color: #ffa657; }
+    .line-output.traces  { color: #7ee787; }
+    .line-output.logs    { color: #e3b341; }
+    .line-output.db      { color: #a5d6ff; }
+    .line-output.k8s     { color: #ffa657; }
+    .line-output.code    { color: #79c0ff; }
+    .line-output.hypothesis { color: var(--p1); }
+    .line-output.migrations { color: #ffa657; }
+
+    .cursor {
+      display: inline-block;
+      width: 7px;
+      height: 13px;
+      background: var(--accent);
+      vertical-align: text-bottom;
+      animation: blink 1s step-end infinite;
+    }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+
+    /* Provisioning spinner */
+    .provision-bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 0;
+    }
+    .provision-step {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      color: var(--muted);
+      font-family: var(--font-mono);
+    }
+    .provision-step.done { color: var(--p3); }
+    .provision-step.done .step-icon::before { content: '✓'; }
+    .provision-step.active { color: var(--accent); }
+    .provision-step.active .step-icon::before { content: '⟳'; display: inline-block; animation: spin 1s linear infinite; }
+    .provision-step.pending .step-icon::before { content: '○'; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .sep {
+      font-size: 11px;
+      color: var(--border);
+      font-family: var(--font-mono);
+    }
+
+    /* Brief card */
+    .brief-card {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+      background: var(--surface);
+    }
+
+    .brief-header {
+      padding: 12px 16px;
+      background: var(--surface2);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .brief-header-icon { font-size: 18px; }
+    .brief-header-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .brief-header-ts {
+      font-size: 11px;
+      color: var(--muted);
+      font-family: var(--font-mono);
+      margin-left: auto;
+    }
+
+    .brief-body { padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+
+    .brief-section { display: flex; flex-direction: column; gap: 4px; }
+    .brief-label {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .brief-label-surface  { color: var(--muted); }
+    .brief-label-cause    { color: var(--cause-fg); }
+    .brief-label-evidence { color: var(--evidence-fg); }
+    .brief-label-blast    { color: var(--blast-fg); }
+    .brief-label-action   { color: var(--action-fg); }
+
+    .brief-value {
+      font-size: 13px;
+      color: var(--text);
+      line-height: 1.5;
+    }
+    .brief-value.cause  { color: #ffa0a0; }
+    .brief-value.blast  { color: #ffd580; }
+    .brief-value.action { color: #aff5b4; }
+
+    .evidence-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+    .evidence-list li {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      font-size: 13px;
+      color: var(--text);
+    }
+    .evidence-list li::before {
+      content: '·';
+      color: var(--evidence-fg);
+      font-weight: 700;
+      flex-shrink: 0;
+      margin-top: 0px;
+    }
+
+    .no-selection {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: var(--muted);
+      gap: 10px;
+      text-align: center;
+      padding: 40px;
+    }
+    .no-selection-icon { font-size: 48px; opacity: 0.4; }
+    .no-selection h2 { font-size: 16px; color: var(--text); font-weight: 600; }
+    .no-selection p { font-size: 13px; max-width: 300px; }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+  </style>
+</head>
+<body>
+<div class="app">
+  <!-- Header -->
+  <header>
+    <div class="logo">Scout<span>.</span></div>
+    <div class="tagline">Incident co-pilot — investigates before you're paged</div>
+    <div class="spacer"></div>
+    <button class="fire-btn" id="fireBtn" onclick="fireAlert()">
+      &#9888; Fire Test Alert
+    </button>
+  </header>
+
+  <div class="main">
+    <!-- Left: Alert feed -->
+    <aside class="alert-panel">
+      <div class="panel-header">Alert Feed</div>
+      <div class="alert-list" id="alertList">
+        <div class="empty-feed">
+          <div class="icon">&#128274;</div>
+          <div>No alerts yet</div>
+          <div style="margin-top:4px;font-size:11px;">Press "Fire Test Alert" to begin</div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Right: Investigation panel -->
+    <section class="inv-panel" id="invPanel">
+      <div class="no-selection" id="noSelection">
+        <div class="no-selection-icon">&#128270;</div>
+        <h2>Waiting for an alert</h2>
+        <p>When an alert fires, Scout will immediately start investigating and stream its findings here.</p>
+      </div>
+    </section>
+  </div>
+</div>
+
+<script>
+/* ------------------------------------------------------------------ */
+/* State                                                                 */
+/* ------------------------------------------------------------------ */
+const investigations = {};   // id -> { alert, fired_at, status, events, brief }
+let activeId = null;
+
+const PROVISION_STAGES = {
+  create_sprite:   'Creating agent session',
+  provision_setup: 'Provisioning environment',
+  runtime_start:   'Starting runtime',
+};
+
+/* ------------------------------------------------------------------ */
+/* Fire alert                                                            */
+/* ------------------------------------------------------------------ */
+async function fireAlert() {
+  const btn = document.getElementById('fireBtn');
+  btn.disabled = true;
+  setTimeout(() => btn.disabled = false, 1500);
+
+  const resp = await fetch('/api/fire-alert', { method: 'POST' });
+  if (!resp.ok) { console.error('fire-alert failed', resp.status); return; }
+  const data = await resp.json();
+
+  const inv = {
+    id: data.investigation_id,
+    alert: data.alert,
+    fired_at: data.fired_at,
+    status: 'investigating',
+    stages_seen: [],
+    events: [],
+    brief: null,
+  };
+  investigations[data.investigation_id] = inv;
+
+  addAlertItem(inv);
+  selectInvestigation(data.investigation_id);
+  subscribeSSE(data.investigation_id);
+}
+
+/* ------------------------------------------------------------------ */
+/* Alert list (left panel)                                              */
+/* ------------------------------------------------------------------ */
+function addAlertItem(inv) {
+  const list = document.getElementById('alertList');
+  // Remove empty state
+  const empty = list.querySelector('.empty-feed');
+  if (empty) empty.remove();
+
+  const el = document.createElement('div');
+  el.className = 'alert-item';
+  el.id = 'alert-item-' + inv.id;
+  el.onclick = () => selectInvestigation(inv.id);
+  el.innerHTML = alertItemHTML(inv);
+  list.insertBefore(el, list.firstChild);
+}
+
+function alertItemHTML(inv) {
+  const p = inv.alert.priority;
+  const badgeClass = 'badge-' + p.toLowerCase();
+  return `
+    <div class="alert-top">
+      <span class="badge ${badgeClass}">${p}</span>
+      <span class="alert-service">${escHtml(inv.alert.service)}</span>
+    </div>
+    <div class="alert-name">${escHtml(inv.alert.name)}</div>
+    <div class="alert-desc">${escHtml(inv.alert.description)}</div>
+    <div class="alert-footer">
+      <span class="alert-time">${escHtml(inv.fired_at)}</span>
+      <span class="status-pill ${inv.status === 'complete' ? 'status-complete' : 'status-investigating'}">
+        ${inv.status === 'complete' ? 'Complete' : 'Investigating…'}
+      </span>
+    </div>`;
+}
+
+function updateAlertItem(id) {
+  const inv = investigations[id];
+  if (!inv) return;
+  const el = document.getElementById('alert-item-' + id);
+  if (el) el.innerHTML = alertItemHTML(inv);
+}
+
+/* ------------------------------------------------------------------ */
+/* Select / render investigation (right panel)                          */
+/* ------------------------------------------------------------------ */
+function selectInvestigation(id) {
+  // De-activate previous
+  document.querySelectorAll('.alert-item').forEach(el => el.classList.remove('active'));
+  const item = document.getElementById('alert-item-' + id);
+  if (item) item.classList.add('active');
+
+  activeId = id;
+  renderInvPanel(id);
+}
+
+function renderInvPanel(id) {
+  const inv = investigations[id];
+  const panel = document.getElementById('invPanel');
+
+  panel.innerHTML = `
+    <div class="inv-header">
+      <div>
+        <div class="inv-title">${escHtml(inv.alert.name)}</div>
+        <div class="inv-subtitle">${escHtml(inv.alert.service)} &nbsp;·&nbsp; ${escHtml(inv.fired_at)}</div>
+      </div>
+    </div>
+    <div class="inv-body" id="invBody-${id}">
+      ${provisionHTML(inv)}
+      ${terminalHTML(id)}
+      ${inv.brief ? briefHTML(inv.brief) : ''}
+    </div>`;
+
+  // Scroll terminal to bottom
+  scrollTerminal(id);
+}
+
+function provisionHTML(inv) {
+  const stages = ['create_sprite', 'provision_setup', 'runtime_start'];
+  let html = '<div class="provision-bar">';
+  for (let i = 0; i < stages.length; i++) {
+    const s = stages[i];
+    const seen = inv.stages_seen.includes(s);
+    const isNext = !seen && inv.stages_seen.length === i;
+    const cls = seen ? 'done' : (isNext && inv.status !== 'complete' ? 'active' : 'pending');
+    html += `<div class="provision-step ${cls}">
+      <span class="step-icon"></span>
+      <span>${PROVISION_STAGES[s]}</span>
+    </div>`;
+    if (i < stages.length - 1) html += '<span class="sep">›</span>';
+  }
+  html += '</div>';
+  return html;
+}
+
+function terminalHTML(id) {
+  const inv = investigations[id];
+  const lines = inv.events
+    .filter(e => e.type === 'output')
+    .map(e => formatLine(e.data))
+    .join('');
+
+  const cursor = inv.status !== 'complete' ? '<span class="cursor"></span>' : '';
+
+  return `
+    <div class="terminal">
+      <div class="terminal-titlebar">
+        <div class="dot dot-red"></div>
+        <div class="dot dot-yellow"></div>
+        <div class="dot dot-green"></div>
+        <span class="terminal-label">scout agent — investigation output</span>
+      </div>
+      <div class="terminal-output" id="terminal-${id}">${lines}${cursor}</div>
+    </div>`;
+}
+
+function briefHTML(brief) {
+  if (!brief) return '';
+  const evidenceItems = brief.evidence
+    .map(e => `<li>${escHtml(e)}</li>`)
+    .join('');
+
+  return `
+    <div class="brief-card">
+      <div class="brief-header">
+        <span class="brief-header-icon">&#128203;</span>
+        <span class="brief-header-title">Scout Brief</span>
+        <span class="brief-header-ts">${escHtml(brief.timestamp)}</span>
+      </div>
+      <div class="brief-body">
+        <div class="brief-section">
+          <div class="brief-label brief-label-surface">Affected Surface</div>
+          <div class="brief-value">${escHtml(brief.affected_surface)}</div>
+        </div>
+        <div class="brief-section">
+          <div class="brief-label brief-label-cause">Probable Cause</div>
+          <div class="brief-value cause">${escHtml(brief.probable_cause)}</div>
+        </div>
+        <div class="brief-section">
+          <div class="brief-label brief-label-evidence">Evidence</div>
+          <ul class="evidence-list">${evidenceItems}</ul>
+        </div>
+        <div class="brief-section">
+          <div class="brief-label brief-label-blast">Blast Radius</div>
+          <div class="brief-value blast">${escHtml(brief.blast_radius)}</div>
+        </div>
+        <div class="brief-section">
+          <div class="brief-label brief-label-action">Suggested Action</div>
+          <div class="brief-value action">${escHtml(brief.suggested_action)}</div>
+        </div>
+      </div>
+    </div>`;
+}
+
+/* ------------------------------------------------------------------ */
+/* SSE subscription                                                     */
+/* ------------------------------------------------------------------ */
+function subscribeSSE(id) {
+  const es = new EventSource(`/api/investigations/${id}/stream`);
+
+  es.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+    const inv = investigations[id];
+
+    if (msg.type === 'stage') {
+      inv.stages_seen.push(msg.data);
+    } else if (msg.type === 'output') {
+      inv.events.push({ type: 'output', data: msg.data });
+    } else if (msg.type === 'brief') {
+      inv.brief = JSON.parse(msg.data);
+      inv.status = 'complete';
+      updateAlertItem(id);
+    } else if (msg.type === 'exit') {
+      es.close();
+    }
+
+    if (activeId === id) {
+      updateActivePanel(id, msg);
+    }
+  };
+
+  es.onerror = () => es.close();
+}
+
+function updateActivePanel(id, msg) {
+  const inv = investigations[id];
+
+  if (msg.type === 'stage') {
+    // Update provision bar only
+    const body = document.getElementById('invBody-' + id);
+    if (!body) return;
+    const pb = body.querySelector('.provision-bar');
+    if (pb) pb.outerHTML = provisionHTML(inv);
+    return;
+  }
+
+  if (msg.type === 'output') {
+    const terminal = document.getElementById('terminal-' + id);
+    if (!terminal) return;
+    // Remove cursor, append line, re-add cursor
+    const cursor = terminal.querySelector('.cursor');
+    if (cursor) cursor.remove();
+    terminal.insertAdjacentHTML('beforeend', formatLine(msg.data));
+    terminal.insertAdjacentHTML('beforeend', '<span class="cursor"></span>');
+    scrollTerminal(id);
+    return;
+  }
+
+  if (msg.type === 'brief') {
+    // Remove cursor from terminal
+    const terminal = document.getElementById('terminal-' + id);
+    if (terminal) {
+      const cursor = terminal.querySelector('.cursor');
+      if (cursor) cursor.remove();
+    }
+
+    // Append brief card
+    const body = document.getElementById('invBody-' + id);
+    if (body) {
+      const existing = body.querySelector('.brief-card');
+      if (!existing) {
+        body.insertAdjacentHTML('beforeend', briefHTML(inv.brief));
+        // Smooth scroll to brief
+        setTimeout(() => {
+          const card = body.querySelector('.brief-card');
+          if (card) card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }, 100);
+      }
+    }
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Helpers                                                              */
+/* ------------------------------------------------------------------ */
+function scrollTerminal(id) {
+  const el = document.getElementById('terminal-' + id);
+  if (el) el.scrollTop = el.scrollHeight;
+}
+
+function formatLine(text) {
+  // Colour-code by prefix tag e.g. [metrics], [deploys], [scout]
+  const match = text.match(/^\[(\w+)\]/);
+  const tag = match ? match[1] : 'output';
+  const known = ['scout','metrics','deploys','traces','logs','db','k8s','code','hypothesis','migrations'];
+  const cls = known.includes(tag) ? `line-output ${tag}` : 'line-output';
+  return `<span class="${cls}">${escHtml(text)}</span>`;
+}
+
+function escHtml(s) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+</script>
+</body>
+</html>
