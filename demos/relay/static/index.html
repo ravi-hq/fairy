@@ -1,0 +1,1153 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Relay — agent-native chat</title>
+<style>
+:root {
+  --bg:          #0d1117;
+  --surface:     #161b22;
+  --surface2:    #1c2128;
+  --border:      #30363d;
+  --text:        #e6edf3;
+  --muted:       #8b949e;
+  --accent:      #58a6ff;
+  --working:     #e3b341;
+  --idle:        #8b949e;
+  --done:        #3fb950;
+  --human:       #bc8cff;
+  --agent:       #58a6ff;
+  --danger:      #f85149;
+  --warn:        #db6d28;
+  --font-mono:   'SF Mono', 'Fira Code', 'Consolas', monospace;
+  --font-ui:     -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+button { font-family: inherit; color: inherit; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* ─── Layout ─────────────────────────────────────────────────────────── */
+.app {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  grid-template-rows: 1fr;
+  height: 100vh;
+  width: 100vw;
+}
+.app.with-thread {
+  grid-template-columns: 260px 1fr 380px;
+}
+
+/* ─── Sidebar ────────────────────────────────────────────────────────── */
+.sidebar {
+  background: var(--surface2);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.workspace {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 600;
+  font-size: 15px;
+}
+.workspace .ws-dot {
+  width: 22px; height: 22px; border-radius: 6px;
+  background: linear-gradient(135deg, #58a6ff, #bc8cff);
+  display: grid; place-items: center;
+  color: #0d1117; font-size: 12px; font-weight: 700;
+}
+.search {
+  margin: 10px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 13px;
+  color: var(--text);
+}
+.search:focus { outline: none; border-color: var(--accent); }
+
+.section {
+  padding: 8px 12px 4px;
+}
+.section-title {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 6px;
+}
+.channel-list, .member-list, .dm-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.channel-row, .dm-row, .member-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13.5px;
+  color: var(--text);
+}
+.channel-row:hover, .dm-row:hover, .member-row:hover {
+  background: rgba(88, 166, 255, 0.08);
+}
+.channel-row.active {
+  background: rgba(88, 166, 255, 0.16);
+  color: var(--text);
+}
+.channel-row .hash {
+  color: var(--muted);
+  font-weight: 500;
+}
+.dm-row .dot, .member-row .presence-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--muted);
+  flex-shrink: 0;
+}
+.presence-dot.idle { background: var(--idle); }
+.presence-dot.working { background: var(--working); animation: pulse 1.4s infinite; }
+.presence-dot.awaiting_human { background: var(--warn); }
+.presence-dot.done { background: var(--done); }
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+.member-row .avatar {
+  width: 18px; height: 18px;
+  flex-shrink: 0;
+  display: grid; place-items: center;
+  font-size: 9.5px; font-weight: 700;
+  color: #0d1117;
+}
+.member-row .avatar.human {
+  border-radius: 50%;
+}
+.member-row .avatar.agent {
+  border-radius: 4px;
+  background: var(--agent);
+  color: #0d1117;
+}
+.member-row .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.member-row .activity {
+  font-size: 11px; color: var(--muted);
+  font-family: var(--font-mono);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  flex: 1.4;
+}
+.member-row { position: relative; }
+.member-row .tooltip {
+  position: absolute;
+  left: 100%;
+  top: 50%;
+  transform: translateY(-50%);
+  margin-left: 8px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-family: var(--font-mono);
+  color: var(--text);
+  white-space: nowrap;
+  display: none;
+  z-index: 50;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+}
+.member-row:hover .tooltip { display: block; }
+
+/* ─── Main column ────────────────────────────────────────────────────── */
+.main {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  min-width: 0;
+}
+.channel-header {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 12px 20px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.channel-header .name {
+  font-weight: 600;
+  font-size: 15px;
+  display: flex; align-items: center; gap: 6px;
+}
+.channel-header .name .hash { color: var(--muted); }
+.channel-header .topic {
+  color: var(--muted);
+  font-size: 13px;
+  border-left: 1px solid var(--border);
+  padding-left: 16px;
+}
+.header-pills { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  font-size: 12px;
+  color: var(--muted);
+  background: var(--surface2);
+}
+.pill .plus { color: var(--accent); font-weight: 700; }
+
+.scene-bar {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 8px 20px;
+  display: flex; align-items: center; gap: 12px;
+  font-size: 13px;
+}
+.scene-bar label { color: var(--muted); }
+.scene-bar select {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-family: inherit;
+  font-size: 13px;
+}
+.scene-bar button {
+  background: var(--accent);
+  color: #0d1117;
+  border: none;
+  border-radius: 6px;
+  padding: 5px 14px;
+  font-weight: 600;
+  cursor: pointer;
+  font-size: 13px;
+}
+.scene-bar button:hover { filter: brightness(1.1); }
+.scene-bar button:disabled { opacity: 0.5; cursor: not-allowed; }
+.scene-bar .scene-hint {
+  color: var(--muted);
+  font-size: 12px;
+  font-family: var(--font-mono);
+  margin-left: auto;
+}
+
+.timeline {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 0 8px;
+}
+.timeline::-webkit-scrollbar { width: 10px; }
+.timeline::-webkit-scrollbar-track { background: transparent; }
+.timeline::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+.day-divider {
+  display: flex; align-items: center; gap: 12px;
+  padding: 0 20px;
+  margin: 12px 0;
+  font-size: 11px;
+  color: var(--muted);
+}
+.day-divider::before, .day-divider::after {
+  content: ""; flex: 1; height: 1px; background: var(--border);
+}
+
+.message {
+  padding: 6px 20px;
+  display: flex;
+  gap: 10px;
+  position: relative;
+}
+.message:hover { background: rgba(255,255,255,0.018); }
+
+.avatar-lg {
+  width: 36px; height: 36px;
+  flex-shrink: 0;
+  display: grid; place-items: center;
+  font-weight: 700;
+  font-size: 13px;
+  color: #0d1117;
+}
+.avatar-lg.human { border-radius: 50%; }
+.avatar-lg.agent {
+  border-radius: 8px;
+  background: linear-gradient(135deg, #58a6ff, #79c0ff);
+  position: relative;
+}
+.avatar-lg.system {
+  border-radius: 8px;
+  background: var(--warn);
+}
+.avatar-lg.agent svg { width: 22px; height: 22px; }
+
+.msg-body { flex: 1; min-width: 0; }
+.msg-head {
+  display: flex; align-items: baseline; gap: 8px;
+  font-size: 13px;
+  flex-wrap: wrap;
+}
+.msg-author { font-weight: 600; }
+.msg-author.human { color: var(--human); }
+.msg-author.agent { color: var(--agent); }
+.msg-author.system { color: var(--warn); }
+.msg-time { color: var(--muted); font-size: 11px; }
+.msg-badge {
+  font-size: 10.5px;
+  font-family: var(--font-mono);
+  background: rgba(227, 179, 65, 0.15);
+  color: var(--working);
+  padding: 1px 7px;
+  border-radius: 10px;
+  display: inline-flex; align-items: center; gap: 4px;
+}
+.msg-badge .dot {
+  width: 5px; height: 5px; border-radius: 50%; background: var(--working);
+  animation: pulse 1.4s infinite;
+}
+.msg-subline {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--muted);
+  margin-top: 1px;
+}
+
+.msg-text {
+  margin-top: 2px;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+.msg-text strong { color: var(--text); }
+.msg-text code, .msg-text pre {
+  font-family: var(--font-mono);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+.msg-text code { padding: 1px 5px; font-size: 12.5px; }
+.msg-text pre {
+  padding: 8px 12px;
+  margin: 6px 0;
+  font-size: 12.5px;
+  overflow-x: auto;
+}
+
+.message.agent-msg {
+  border-left: 2px solid var(--accent);
+  margin-left: 0;
+}
+
+.steps {
+  margin-top: 6px;
+  border-left: 1px solid var(--border);
+  padding-left: 10px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.step {
+  display: flex; gap: 8px; align-items: flex-start;
+  padding: 2px 0;
+  color: var(--muted);
+}
+.step .label {
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--accent);
+  min-width: 70px;
+  padding-top: 2px;
+}
+.step.done .label { color: var(--done); }
+.step .text { color: var(--text); flex: 1; }
+.step .check { color: var(--done); flex-shrink: 0; }
+
+.thread-collapsed {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--accent);
+}
+.thread-collapsed:hover { background: var(--surface2); }
+.thread-collapsed .count { color: var(--text); font-weight: 600; }
+
+.typing-indicator {
+  padding: 8px 20px;
+  font-size: 12px;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.typing-indicator .dots {
+  display: inline-flex; gap: 3px;
+}
+.typing-indicator .dots span {
+  width: 4px; height: 4px; border-radius: 50%; background: var(--accent);
+  animation: bounce 1.2s infinite;
+}
+.typing-indicator .dots span:nth-child(2) { animation-delay: 0.15s; }
+.typing-indicator .dots span:nth-child(3) { animation-delay: 0.3s; }
+@keyframes bounce {
+  0%, 60%, 100% { opacity: 0.3; transform: translateY(0); }
+  30% { opacity: 1; transform: translateY(-3px); }
+}
+
+.composer {
+  border-top: 1px solid var(--border);
+  padding: 12px 20px 16px;
+  background: var(--bg);
+}
+.composer .box {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* ─── Brief card (Scout) ─────────────────────────────────────────────── */
+.brief-card {
+  margin-top: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px 16px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.brief-card .brief-section {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 12px;
+}
+.brief-card .brief-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+  display: flex; align-items: center; gap: 6px;
+}
+.brief-card .brief-label .swatch {
+  width: 8px; height: 8px; border-radius: 2px;
+}
+.brief-card .brief-section.cause .brief-label { color: var(--danger); }
+.brief-card .brief-section.cause .swatch { background: var(--danger); }
+.brief-card .brief-section.evidence .brief-label { color: var(--accent); }
+.brief-card .brief-section.evidence .swatch { background: var(--accent); }
+.brief-card .brief-section.blast .brief-label { color: var(--warn); }
+.brief-card .brief-section.blast .swatch { background: var(--warn); }
+.brief-card .brief-section.action .brief-label { color: var(--done); }
+.brief-card .brief-section.action .swatch { background: var(--done); }
+.brief-card .brief-text {
+  font-size: 13px;
+  color: var(--text);
+  line-height: 1.55;
+}
+
+/* ─── Competitor brief ───────────────────────────────────────────────── */
+.competitor-brief {
+  margin-top: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px 16px;
+  display: flex; flex-direction: column; gap: 14px;
+}
+.cb-section h4 {
+  margin: 0 0 6px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--accent);
+}
+.cb-section p, .cb-section li { margin: 0; font-size: 13px; }
+.cb-section ul { margin: 4px 0 0; padding-left: 18px; }
+.parity-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+  font-family: var(--font-mono);
+}
+.parity-table th, .parity-table td {
+  text-align: left;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+}
+.parity-table th {
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.parity-table td.us { color: var(--done); }
+.parity-table td.them { color: var(--muted); }
+
+/* ─── Approval card (Migrator) ───────────────────────────────────────── */
+.approval-card {
+  margin-top: 10px;
+  background: var(--surface);
+  border: 1px solid var(--warn);
+  border-radius: 8px;
+  padding: 12px 14px;
+  display: flex; gap: 10px; align-items: center;
+  flex-wrap: wrap;
+}
+.approval-card .a-icon {
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  background: rgba(219, 109, 40, 0.15);
+  color: var(--warn);
+  display: grid; place-items: center;
+  flex-shrink: 0;
+}
+.approval-card .a-msg {
+  flex: 1; min-width: 200px;
+  font-size: 13px;
+  color: var(--text);
+}
+.approval-card .a-msg .a-title {
+  font-weight: 600;
+  display: block;
+  color: var(--warn);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 2px;
+}
+.approval-card .a-buttons { display: flex; gap: 8px; }
+.approval-card .a-btn {
+  padding: 6px 14px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--text);
+  font-weight: 600;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.approval-card .a-btn.danger {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+}
+.approval-card .a-btn.danger:hover { filter: brightness(1.1); }
+.approval-card .a-btn.neutral:hover { background: var(--bg); }
+
+/* ─── Alert message (PagerDuty) ──────────────────────────────────────── */
+.alert-card {
+  margin-top: 4px;
+  background: rgba(248, 81, 73, 0.06);
+  border: 1px solid var(--danger);
+  border-left: 3px solid var(--danger);
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 13px;
+  color: var(--text);
+  white-space: pre-wrap;
+}
+
+/* ─── Right rail (thread) ────────────────────────────────────────────── */
+.thread-pane {
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  display: flex; flex-direction: column;
+  min-width: 0;
+}
+.thread-head {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+  font-weight: 600;
+}
+.thread-head .close {
+  background: none; border: none; color: var(--muted);
+  cursor: pointer; padding: 4px; border-radius: 4px;
+}
+.thread-head .close:hover { background: var(--surface2); color: var(--text); }
+.thread-body { flex: 1; overflow-y: auto; padding: 8px 0; }
+.thread-body .message { padding: 8px 16px; }
+
+@media (max-width: 1100px) {
+  .app.with-thread { grid-template-columns: 220px 1fr 340px; }
+}
+</style>
+</head>
+<body>
+<div id="app" class="app">
+  <aside class="sidebar">
+    <div class="workspace">
+      <div class="ws-dot">A</div>
+      <span>Acme Eng</span>
+    </div>
+    <input class="search" placeholder="Search Acme Eng" />
+    <div class="section">
+      <div class="section-title">Channels</div>
+      <ul id="channel-list" class="channel-list"></ul>
+    </div>
+    <div class="section">
+      <div class="section-title">Direct messages</div>
+      <ul id="dm-list" class="dm-list"></ul>
+    </div>
+    <div class="section">
+      <div class="section-title">Members</div>
+      <ul id="member-list" class="member-list"></ul>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="channel-header">
+      <div class="name"><span class="hash">#</span><span id="ch-name">general</span></div>
+      <div id="ch-topic" class="topic">company-wide announcements</div>
+      <div class="header-pills">
+        <span id="ch-members" class="pill">5 members</span>
+        <span class="pill"><span class="plus">+</span> 1 agent</span>
+      </div>
+    </header>
+
+    <div class="scene-bar">
+      <label for="scene-select">Run scene:</label>
+      <select id="scene-select"></select>
+      <button id="scene-run">Play</button>
+      <span class="scene-hint" id="scene-hint">choose a scene to dramatize agent-as-teammate</span>
+    </div>
+
+    <div id="timeline" class="timeline"></div>
+    <div id="typing" class="typing-indicator" style="display:none;"></div>
+
+    <div class="composer">
+      <div class="box">Message #<span id="composer-channel">general</span></div>
+    </div>
+  </main>
+
+  <aside id="thread-pane" class="thread-pane" style="display:none;">
+    <div class="thread-head">
+      <span>Thread</span>
+      <button id="thread-close" class="close" title="Close thread">
+        <svg width="16" height="16" viewBox="0 0 16 16"><path fill="currentColor" d="M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.75.75 0 1 1 1.06 1.06L9.06 8l3.22 3.22a.75.75 0 1 1-1.06 1.06L8 9.06l-3.22 3.22a.75.75 0 0 1-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06Z"/></svg>
+      </button>
+    </div>
+    <div id="thread-body" class="thread-body"></div>
+  </aside>
+</div>
+
+<script>
+"use strict";
+
+// ─── Global state ─────────────────────────────────────────────────────
+const state = {
+  workspace: null,
+  channels: [],
+  members: {},
+  dms: [],
+  messages: {},     // { channelId: [msg, ...] }
+  scenes: [],
+  activeChannel: "general",
+  activeThread: null,    // { channel, parentId }
+  typing: {},       // { channelId: { agentId: true } }
+};
+
+const $ = (sel) => document.querySelector(sel);
+const create = (tag, props = {}, ...children) => {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(props)) {
+    if (k === "class") el.className = v;
+    else if (k === "html") el.innerHTML = v;
+    else if (k.startsWith("on") && typeof v === "function") {
+      el.addEventListener(k.slice(2).toLowerCase(), v);
+    } else if (v !== undefined && v !== null) {
+      el.setAttribute(k, v);
+    }
+  }
+  for (const c of children) {
+    if (c == null) continue;
+    el.append(c.nodeType ? c : document.createTextNode(c));
+  }
+  return el;
+};
+
+const ROBOT_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="7" width="16" height="12" rx="2" fill="#0d1117"/><circle cx="9" cy="13" r="1.2" fill="currentColor"/><circle cx="15" cy="13" r="1.2" fill="currentColor"/><path d="M12 4v3" stroke="currentColor"/><circle cx="12" cy="3.5" r="1" fill="currentColor"/><path d="M2 12h2M20 12h2" stroke="currentColor"/></svg>`;
+
+const HASH_SVG = `<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M6.49 1.74a.75.75 0 0 1 .59.88L6.6 5h2.96l.5-2.74a.75.75 0 1 1 1.48.27L11.07 5H13.5a.75.75 0 0 1 0 1.5h-2.7l-.55 3H12.5a.75.75 0 0 1 0 1.5h-2.52l-.5 2.74a.75.75 0 1 1-1.48-.27l.45-2.47H5.49l-.5 2.74a.75.75 0 1 1-1.48-.27L3.96 11H1.5a.75.75 0 0 1 0-1.5h2.73l.55-3H2.5a.75.75 0 0 1 0-1.5h2.52l.5-2.74a.75.75 0 0 1 .97-.52ZM6.33 6.5l-.55 3h2.96l.55-3H6.33Z"/></svg>`;
+
+// ─── Time helpers ─────────────────────────────────────────────────────
+function formatTime(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  let h = d.getHours();
+  const m = d.getMinutes().toString().padStart(2, "0");
+  const ampm = h >= 12 ? "PM" : "AM";
+  h = h % 12 || 12;
+  return `${h}:${m} ${ampm}`;
+}
+
+// ─── Renderers ────────────────────────────────────────────────────────
+function renderSidebar() {
+  const cl = $("#channel-list");
+  cl.replaceChildren(...state.channels.map((ch) => {
+    const row = create("li", {
+      class: "channel-row" + (ch.id === state.activeChannel ? " active" : ""),
+      onclick: () => selectChannel(ch.id),
+    },
+      create("span", { class: "hash" }, "#"),
+      create("span", {}, ch.name),
+    );
+    return row;
+  }));
+
+  const dl = $("#dm-list");
+  dl.replaceChildren(...state.dms.map((dm) => {
+    const m = state.members[dm.with[0]];
+    const presence = m && m.kind === "agent" ? (m.presence || "idle") : "idle";
+    return create("li", {
+      class: "dm-row",
+      title: dm.label,
+    },
+      create("span", { class: "dot " + presence }),
+      create("span", {}, dm.label),
+    );
+  }));
+
+  const ml = $("#member-list");
+  const ordered = Object.values(state.members).filter(m => m.kind !== "system");
+  ordered.sort((a, b) => {
+    if (a.kind !== b.kind) return a.kind === "human" ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  });
+  ml.replaceChildren(...ordered.map((m) => {
+    if (m.kind === "human") {
+      return create("li", { class: "member-row", title: m.title || "" },
+        create("span", { class: "avatar human", style: `background:${m.color}` }, m.initials),
+        create("span", { class: "name" }, m.name),
+      );
+    }
+    const presence = m.presence || "idle";
+    const activity = m.current_activity || "ready";
+    const tooltip = create("div", { class: "tooltip" }, `${m.name}: ${activity}`);
+    return create("li", { class: "member-row" },
+      create("span", { class: "avatar agent", html: ROBOT_SVG }),
+      create("span", { class: "name" }, m.name),
+      create("span", { class: "presence-dot " + presence }),
+      create("span", { class: "activity" }, presence === "working" ? activity : presence),
+      tooltip,
+    );
+  }));
+}
+
+function renderHeader() {
+  const ch = state.channels.find((c) => c.id === state.activeChannel);
+  if (!ch) return;
+  $("#ch-name").textContent = ch.name;
+  $("#ch-topic").textContent = ch.topic || "";
+  $("#ch-members").textContent = `${ch.members.length} members`;
+  $("#composer-channel").textContent = ch.name;
+}
+
+function renderScenePicker() {
+  const sel = $("#scene-select");
+  sel.replaceChildren(...state.scenes.map((s) =>
+    create("option", { value: s.id }, s.label)
+  ));
+}
+
+function selectChannel(id) {
+  state.activeChannel = id;
+  state.activeThread = null;
+  document.getElementById("app").classList.remove("with-thread");
+  $("#thread-pane").style.display = "none";
+  renderSidebar();
+  renderHeader();
+  renderTimeline();
+}
+
+function avatarFor(m, size = "lg") {
+  const cls = `avatar-lg ${m.kind}`;
+  if (m.kind === "agent") {
+    return create("div", { class: cls, html: ROBOT_SVG });
+  }
+  if (m.kind === "system") {
+    return create("div", { class: cls, html: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0d1117" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z" fill="#0d1117" stroke="#0d1117"/></svg>` });
+  }
+  const el = create("div", { class: cls, style: `background:${m.color}` }, m.initials);
+  return el;
+}
+
+function renderText(text) {
+  // Minimal markdown: **bold**, `code`, ```sql blocks```, line-wrapping links.
+  let html = text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+  html = html.replace(/```(\w+)?\n([\s\S]*?)```/g, (_, lang, code) =>
+    `<pre><code>${code.trim()}</code></pre>`);
+  html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
+  html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  html = html.replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noreferrer">$1</a>');
+  // Bullet lines starting with "•"
+  html = html.replace(/(^|\n)• /g, "$1• ");
+  return html;
+}
+
+function renderMessage(channelId, msg, opts = {}) {
+  const author = state.members[msg.author_id] || { name: msg.author_id, kind: "human" };
+  const isAgent = author.kind === "agent";
+  const isSystem = author.kind === "system";
+
+  const head = create("div", { class: "msg-head" },
+    create("span", { class: "msg-author " + author.kind }, author.name),
+    create("span", { class: "msg-time" }, formatTime(msg.ts)),
+  );
+  if (msg.streaming) {
+    head.append(create("span", { class: "msg-badge" },
+      create("span", { class: "dot" }), document.createTextNode("Working...")));
+  }
+
+  const body = create("div", { class: "msg-body" }, head);
+
+  if (isAgent && msg.streaming) {
+    const subline = author.current_activity ? `${author.current_activity}` : "";
+    if (subline) body.append(create("div", { class: "msg-subline" }, subline));
+  }
+
+  // Body content depends on kind.
+  if (msg.kind === "alert") {
+    body.append(create("div", { class: "alert-card", html: renderText(msg.text) }));
+  } else if (msg.kind === "approval_request") {
+    body.append(create("div", { class: "msg-text", html: renderText(msg.text) }));
+    if (msg.approval) {
+      body.append(renderApproval(msg.approval));
+    }
+  } else if (msg.kind === "brief") {
+    body.append(create("div", { class: "msg-text", html: renderText(msg.text) }));
+    body.append(renderBrief(msg.brief));
+  } else if (msg.kind === "competitor_brief") {
+    body.append(create("div", { class: "msg-text", html: renderText(msg.text) }));
+    body.append(renderCompetitorBrief(msg.competitor_brief));
+  } else {
+    body.append(create("div", { class: "msg-text", html: renderText(msg.text || "") }));
+  }
+
+  // Stream steps render under the text.
+  if (msg.steps && msg.steps.length) {
+    const stepsEl = create("div", { class: "steps" });
+    for (const s of msg.steps) {
+      stepsEl.append(create("div", { class: "step done" },
+        create("span", { class: "label" }, s.label),
+        create("span", { class: "text" }, s.text),
+        create("span", { class: "check" }, "✓"),
+      ));
+    }
+    body.append(stepsEl);
+  }
+
+  // Thread indicator.
+  if (!opts.inThread && msg.thread && msg.thread.length) {
+    body.append(create("button", {
+      class: "thread-collapsed",
+      onclick: () => openThread(channelId, msg.id),
+    },
+      create("span", { class: "count" }, `${msg.thread.length}`),
+      document.createTextNode(`${msg.thread.length === 1 ? "reply" : "replies"}`),
+      document.createTextNode(" · open thread"),
+    ));
+  }
+
+  const wrapper = create("div", {
+    class: "message" + (isAgent ? " agent-msg" : ""),
+    "data-message-id": msg.id,
+  }, avatarFor(author), body);
+  return wrapper;
+}
+
+function renderBrief(brief) {
+  if (!brief) return create("div");
+  const sections = [
+    { key: "cause",    label: "Probable Cause",  text: brief.probable_cause },
+    { key: "evidence", label: "Evidence",        text: brief.evidence },
+    { key: "blast",    label: "Blast Radius",    text: brief.blast_radius },
+    { key: "action",   label: "Suggested Action",text: brief.suggested_action },
+  ];
+  const card = create("div", { class: "brief-card" });
+  for (const s of sections) {
+    card.append(create("div", { class: "brief-section " + s.key },
+      create("div", { class: "brief-label" },
+        create("span", { class: "swatch" }),
+        document.createTextNode(s.label),
+      ),
+      create("div", { class: "brief-text" }, s.text),
+    ));
+  }
+  return card;
+}
+
+function renderCompetitorBrief(b) {
+  const card = create("div", { class: "competitor-brief" });
+  card.append(create("div", { class: "cb-section" },
+    create("h4", {}, "Positioning Shift"),
+    create("p", {}, b.positioning_shift),
+  ));
+  card.append(create("div", { class: "cb-section" },
+    create("h4", {}, "Pricing Changes"),
+    create("p", {}, b.pricing_changes),
+  ));
+  const table = create("table", { class: "parity-table" });
+  table.append(create("thead", {}, create("tr", {},
+    create("th", {}, "Feature"),
+    create("th", {}, "Us"),
+    create("th", {}, "Them"),
+  )));
+  const tbody = create("tbody");
+  for (const row of b.feature_parity || []) {
+    tbody.append(create("tr", {},
+      create("td", {}, row.feature),
+      create("td", { class: "us" }, row.us),
+      create("td", { class: "them" }, row.them),
+    ));
+  }
+  table.append(tbody);
+  card.append(create("div", { class: "cb-section" },
+    create("h4", {}, "Feature Parity"),
+    table,
+  ));
+  const ul = create("ul");
+  for (const i of b.implications || []) ul.append(create("li", {}, i));
+  card.append(create("div", { class: "cb-section" },
+    create("h4", {}, "Implications for our Roadmap"),
+    ul,
+  ));
+  return card;
+}
+
+function renderApproval(approval) {
+  const card = create("div", { class: "approval-card" });
+  card.append(create("div", { class: "a-icon", html:
+    `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>` }));
+  card.append(create("div", { class: "a-msg" },
+    create("span", { class: "a-title" }, "Awaiting human sign-off"),
+    document.createTextNode("Migrator paused this turn until a human approves the destructive change."),
+  ));
+  const buttons = create("div", { class: "a-buttons" });
+  for (const opt of approval.options || []) {
+    buttons.append(create("button", {
+      class: "a-btn " + (opt.tone || "neutral"),
+      onclick: () => alert(`(demo) you would ${opt.label.toLowerCase()} the migration`),
+    }, opt.label));
+  }
+  card.append(buttons);
+  return card;
+}
+
+function renderTimeline() {
+  const tl = $("#timeline");
+  const list = state.messages[state.activeChannel] || [];
+  tl.replaceChildren();
+  if (list.length === 0) {
+    tl.append(create("div", { class: "day-divider" }, "no messages yet"));
+  } else {
+    tl.append(create("div", { class: "day-divider" }, "today"));
+    for (const m of list) {
+      tl.append(renderMessage(state.activeChannel, m));
+    }
+  }
+  tl.scrollTop = tl.scrollHeight;
+  renderTyping();
+}
+
+function renderTyping() {
+  const t = state.typing[state.activeChannel] || {};
+  const ids = Object.keys(t);
+  const el = $("#typing");
+  if (ids.length === 0) {
+    el.style.display = "none";
+    el.replaceChildren();
+    return;
+  }
+  el.style.display = "flex";
+  const names = ids.map((id) => (state.members[id] || { name: id }).name).join(", ");
+  el.replaceChildren(
+    create("span", { class: "dots" },
+      create("span"), create("span"), create("span")),
+    create("span", {}, `${names} ${ids.length === 1 ? "is" : "are"} typing...`),
+  );
+}
+
+function openThread(channelId, parentId) {
+  state.activeThread = { channel: channelId, parentId };
+  document.getElementById("app").classList.add("with-thread");
+  $("#thread-pane").style.display = "flex";
+  renderThread();
+}
+
+function renderThread() {
+  if (!state.activeThread) return;
+  const { channel, parentId } = state.activeThread;
+  const list = state.messages[channel] || [];
+  const parent = list.find((m) => m.id === parentId);
+  const body = $("#thread-body");
+  body.replaceChildren();
+  if (!parent) return;
+  body.append(renderMessage(channel, parent, { inThread: true }));
+  body.append(create("div", { class: "day-divider" },
+    `${(parent.thread || []).length} ${(parent.thread || []).length === 1 ? "reply" : "replies"}`));
+  for (const reply of parent.thread || []) {
+    body.append(renderMessage(channel, reply, { inThread: true }));
+  }
+  body.scrollTop = body.scrollHeight;
+}
+
+// ─── State sync from SSE events ───────────────────────────────────────
+function applyMessage(channel, message) {
+  state.messages[channel] = state.messages[channel] || [];
+  state.messages[channel].push({ ...message, thread: message.thread || [] });
+  if (channel === state.activeChannel) renderTimeline();
+}
+
+function applyMessageUpdate(channel, messageId, patch) {
+  const list = state.messages[channel] || [];
+  for (const m of list) {
+    if (m.id === messageId) {
+      Object.assign(m, patch);
+      if (channel === state.activeChannel) renderTimeline();
+      if (state.activeThread && state.activeThread.parentId === messageId) renderThread();
+      return;
+    }
+    for (const reply of m.thread || []) {
+      if (reply.id === messageId) {
+        Object.assign(reply, patch);
+        if (channel === state.activeChannel) renderTimeline();
+        if (state.activeThread && state.activeThread.channel === channel) renderThread();
+        return;
+      }
+    }
+  }
+}
+
+function applyThreadReply(channel, parentId, message) {
+  const list = state.messages[channel] || [];
+  for (const m of list) {
+    if (m.id === parentId) {
+      m.thread = m.thread || [];
+      m.thread.push(message);
+      if (channel === state.activeChannel) renderTimeline();
+      if (state.activeThread && state.activeThread.parentId === parentId) renderThread();
+      return;
+    }
+  }
+}
+
+function applyPresence(agentId, status, activity) {
+  const m = state.members[agentId];
+  if (!m) return;
+  m.presence = status;
+  m.current_activity = activity;
+  renderSidebar();
+}
+
+function applyTyping(channel, agentId, on) {
+  state.typing[channel] = state.typing[channel] || {};
+  if (on) state.typing[channel][agentId] = true;
+  else delete state.typing[channel][agentId];
+  if (channel === state.activeChannel) renderTyping();
+}
+
+// ─── Bootstrap ────────────────────────────────────────────────────────
+async function loadState() {
+  const res = await fetch("/api/state");
+  const data = await res.json();
+  state.workspace = data.workspace;
+  state.channels = data.channels;
+  state.members = Object.fromEntries(data.members.map((m) => [m.id, m]));
+  state.dms = data.dms;
+  state.messages = data.messages || {};
+  state.scenes = data.scenes;
+  renderSidebar();
+  renderHeader();
+  renderScenePicker();
+  renderTimeline();
+}
+
+function connectStream() {
+  const es = new EventSource("/api/stream");
+  const handler = (e) => {
+    let data;
+    try { data = JSON.parse(e.data); } catch { return; }
+    switch (data.type) {
+      case "message":        return applyMessage(data.channel, data.message);
+      case "message_update": return applyMessageUpdate(data.channel, data.message_id, data.patch);
+      case "thread_reply":   return applyThreadReply(data.channel, data.parent_id, data.message);
+      case "presence":       return applyPresence(data.agent_id, data.status, data.activity);
+      case "typing":         return applyTyping(data.channel, data.agent_id, data.on);
+    }
+  };
+  ["message", "message_update", "thread_reply", "presence", "typing", "hello"].forEach((kind) => {
+    es.addEventListener(kind, handler);
+  });
+  es.onerror = () => { /* let the browser auto-reconnect */ };
+}
+
+function bindUi() {
+  $("#scene-run").addEventListener("click", async () => {
+    const id = $("#scene-select").value;
+    const scene = state.scenes.find((s) => s.id === id);
+    if (scene && scene.channel) selectChannel(scene.channel);
+    $("#scene-run").disabled = true;
+    $("#scene-hint").textContent = `running scene: ${id}`;
+    await fetch(`/api/scenes/${id}/run`, { method: "POST" });
+    setTimeout(() => {
+      $("#scene-run").disabled = false;
+      $("#scene-hint").textContent = "scene complete — pick another or replay";
+    }, 14000);
+  });
+  $("#thread-close").addEventListener("click", () => {
+    state.activeThread = null;
+    document.getElementById("app").classList.remove("with-thread");
+    $("#thread-pane").style.display = "none";
+  });
+}
+
+(async () => {
+  bindUi();
+  await loadState();
+  connectStream();
+})();
+</script>
+</body>
+</html>
