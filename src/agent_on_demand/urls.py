@@ -23,6 +23,7 @@ urlpatterns = [
     path("sessions/<uuid:session_id>", sessions.get_session),
     path("sessions/<uuid:session_id>/prompt", sessions.send_prompt),
     path("sessions/<uuid:session_id>/turns", sessions.list_session_turns),
+    path("sessions/<uuid:session_id>/interrupt", sessions.interrupt_session),
     path("sessions/<uuid:session_id>/terminate", sessions.terminate_session),
     path("sessions/<uuid:session_id>/delete", sessions.delete_session),
     path("sessions/<uuid:session_id>/stream", sessions.stream_session),

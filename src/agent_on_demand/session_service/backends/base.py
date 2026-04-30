@@ -95,6 +95,14 @@ class SessionHandle(Protocol):
         timeout: float | None = None,
     ) -> Command: ...
     def apply_network_policy(self, policy: NetworkPolicy) -> None: ...
+    def interrupt_running_commands(self) -> None:
+        """Best-effort: send SIGTERM to any commands currently executing
+        on this handle. No-op when nothing is running. Does not destroy
+        the handle — callers can still issue new commands afterwards.
+
+        Implementations may swallow not-found errors but should raise
+        ``BackendError`` for transport-layer failures."""
+        ...
 
 
 class BackendClient(Protocol):

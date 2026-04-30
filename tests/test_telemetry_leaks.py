@@ -263,6 +263,30 @@ def test_session_terminated_event_emits_id_only(
 
 
 @pytest.mark.django_db
+def test_session_interrupt_requested_event_emits_id_only(
+    client: Client, auth_headers, user, runtime_keys, fake_sprites, captured_events, mocker
+):
+    """Mirror of test_session_terminated_event_emits_id_only — the interrupt
+    posthog event must not leak the prompt or any other session metadata."""
+    session = AgentSession.objects.create(
+        user=user,
+        runtime="claude",
+        prompt=SECRET_PROMPT,
+        backend_handle="aod-int",
+        status="running",
+    )
+    mocker.patch("agent_on_demand.session_service.interrupt_session_task.defer")
+    captured_events.clear()
+    resp = client.post(f"/sessions/{session.id}/interrupt", **auth_headers)
+    assert resp.status_code == 202
+    matched = [e for e in captured_events if e["event"] == "session.interrupt_requested"]
+    assert len(matched) == 1
+    assert matched[0]["properties"] == {"session_id": str(session.id)}
+    blob = _all_property_strings(captured_events)
+    assert SECRET_PROMPT not in blob
+
+
+@pytest.mark.django_db
 def test_session_deleted_event_emits_id_only(
     client: Client, auth_headers, user, runtime_keys, fake_sprites, captured_events
 ):

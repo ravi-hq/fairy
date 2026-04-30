@@ -39,6 +39,11 @@ class AgentSession(models.Model):
     runtime_session_id = models.UUIDField(null=True, blank=True)
     status = models.CharField(max_length=16, choices=STATUS_CHOICES, default="pending")
     exit_code = models.IntegerField(null=True, blank=True)
+    # Transient request flag set by POST /sessions/{id}/interrupt. The worker
+    # observes it just before/after running the turn and finalizes the row as
+    # status="completed" with turn.status="interrupted" so the caller can
+    # immediately send a new prompt against the same Sprite.
+    interrupt_requested = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -89,6 +94,7 @@ class SessionTurn(models.Model):
         ("running", "Running"),
         ("completed", "Completed"),
         ("failed", "Failed"),
+        ("interrupted", "Interrupted"),
     ]
 
     session = models.ForeignKey(AgentSession, on_delete=models.CASCADE, related_name="turns")

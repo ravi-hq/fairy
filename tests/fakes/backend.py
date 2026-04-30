@@ -117,8 +117,10 @@ class RecordingHandle:
         self._fs = RecordingFS()
         self.commands: list[RecordedCommand] = []
         self.network_policies: list[NetworkPolicy] = []
+        self.interrupt_calls: int = 0
         self._command_actions: list[tuple[Any, tuple[int, bytes, Exception | None]]] = []
         self._policy_raise: Exception | None = None
+        self._interrupt_raise: Exception | None = None
 
     @property
     def name(self) -> str:
@@ -141,6 +143,13 @@ class RecordingHandle:
             self._policy_raise = None
             raise exc
         self.network_policies.append(policy)
+
+    def interrupt_running_commands(self) -> None:
+        if self._interrupt_raise is not None:
+            exc = self._interrupt_raise
+            self._interrupt_raise = None
+            raise exc
+        self.interrupt_calls += 1
 
     @property
     def writes(self) -> list[RecordedWrite]:
@@ -174,6 +183,9 @@ class RecordingHandle:
 
     def raise_on_apply_network_policy(self, exc: Exception) -> None:
         self._policy_raise = exc
+
+    def raise_on_interrupt(self, exc: Exception) -> None:
+        self._interrupt_raise = exc
 
 
 class RecordingBackendClient:

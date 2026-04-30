@@ -2,9 +2,9 @@
 
 Public surface preserved from the original single-file `views/sessions.py`:
 view callables (`sessions_list_create`, `get_session`, `send_prompt`,
-`list_session_turns`, `terminate_session`, `delete_session`, `stream_session`)
-and the request pydantic models (`GitHubRepoResource`, `RunRequest`,
-`PromptRequest`).
+`list_session_turns`, `interrupt_session`, `terminate_session`,
+`delete_session`, `stream_session`) and the request pydantic models
+(`GitHubRepoResource`, `RunRequest`, `PromptRequest`).
 
 Several auxiliary names (`session_service`, `check_can_accept_prompt`,
 `stream_session_from_db`) are also re-exported because tests patch them at
@@ -19,6 +19,7 @@ from agent_on_demand import session_service
 from agent_on_demand.session_state import (
     check_can_accept_prompt,
     check_can_delete,
+    check_can_interrupt,
     check_can_terminate,
 )
 from agent_on_demand.stream import stream_session_from_db
@@ -40,6 +41,7 @@ from .create import sessions_list_create  # noqa: E402
 from .lifecycle import (  # noqa: E402
     delete_session,
     get_session,
+    interrupt_session,
     list_session_turns,
     send_prompt,
     terminate_session,
@@ -52,9 +54,11 @@ __all__ = [
     "RunRequest",
     "check_can_accept_prompt",
     "check_can_delete",
+    "check_can_interrupt",
     "check_can_terminate",
     "delete_session",
     "get_session",
+    "interrupt_session",
     "list_session_turns",
     "send_prompt",
     "session_service",

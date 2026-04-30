@@ -167,6 +167,7 @@ class RecordingSprite:
         self._fs = _Filesystem()
         self.commands: list[RecordedCommand] = []
         self.policies: list[Any] = []
+        self.interrupt_calls: int = 0
         self._raise_on_predicates: list[tuple] = []
 
     # Legacy sprites SDK shape — runtimes still call these in PR 2;
@@ -200,6 +201,10 @@ class RecordingSprite:
             self.update_network_policy(policy)
         except SpriteError as e:
             raise BackendError(str(e)) from e
+
+    def interrupt_running_commands(self) -> None:
+        self._maybe_raise(("interrupt_running_commands",))
+        self.interrupt_calls += 1
 
     @property
     def writes(self) -> list[RecordedWrite]:
