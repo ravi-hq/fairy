@@ -61,7 +61,11 @@ a:hover { text-decoration: underline; }
   display: flex;
   flex-direction: column;
   min-width: 0;
+  overflow-y: auto;
 }
+.sidebar::-webkit-scrollbar { width: 8px; }
+.sidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
 .workspace {
   padding: 14px 16px;
   border-bottom: 1px solid var(--border);
@@ -85,8 +89,9 @@ a:hover { text-decoration: underline; }
   padding: 6px 10px;
   font-size: 13px;
   color: var(--text);
+  cursor: pointer;
 }
-.search:focus { outline: none; border-color: var(--accent); }
+.search:hover { border-color: var(--accent); }
 
 .section {
   padding: 8px 12px 4px;
@@ -117,13 +122,30 @@ a:hover { text-decoration: underline; }
 .channel-row:hover, .dm-row:hover, .member-row:hover {
   background: rgba(88, 166, 255, 0.08);
 }
-.channel-row.active {
+.channel-row.active, .dm-row.active {
   background: rgba(88, 166, 255, 0.16);
   color: var(--text);
 }
 .channel-row .hash {
   color: var(--muted);
   font-weight: 500;
+}
+.channel-row .name, .dm-row .label {
+  flex: 1; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.channel-row.unread .name, .dm-row.unread .label {
+  font-weight: 700;
+}
+.unread-badge {
+  background: var(--accent);
+  color: #0d1117;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 10px;
+  min-width: 18px;
+  text-align: center;
 }
 .dm-row .dot, .member-row .presence-dot {
   width: 8px; height: 8px; border-radius: 50%;
@@ -179,8 +201,52 @@ a:hover { text-decoration: underline; }
   display: none;
   z-index: 50;
   box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+  pointer-events: none;
 }
 .member-row:hover .tooltip { display: block; }
+
+/* Ambient activity panel */
+.ambient {
+  margin: 4px 12px 12px;
+  padding: 10px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--muted);
+  min-height: 60px;
+  position: relative;
+}
+.ambient .ambient-title {
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 10px;
+  color: var(--muted);
+  margin-bottom: 6px;
+  display: flex; align-items: center; gap: 6px;
+}
+.ambient .ambient-title .pulse-dot {
+  width: 6px; height: 6px; border-radius: 50%; background: var(--working);
+  animation: pulse 1.4s infinite;
+}
+.ambient .ambient-line {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text);
+  line-height: 1.45;
+  opacity: 1;
+  transition: opacity 0.6s ease;
+}
+.ambient .ambient-line.fade-out { opacity: 0; }
+
+/* Clickable member name (in messages, mentions, etc.) */
+.member-link {
+  cursor: pointer;
+}
+.member-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
 
 /* ─── Main column ────────────────────────────────────────────────────── */
 .main {
@@ -294,6 +360,7 @@ a:hover { text-decoration: underline; }
   font-weight: 700;
   font-size: 13px;
   color: #0d1117;
+  cursor: pointer;
 }
 .avatar-lg.human { border-radius: 50%; }
 .avatar-lg.agent {
@@ -357,10 +424,24 @@ a:hover { text-decoration: underline; }
   font-size: 12.5px;
   overflow-x: auto;
 }
+.msg-text .mention {
+  color: var(--accent);
+  background: rgba(88, 166, 255, 0.10);
+  padding: 0 4px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+.msg-text .mention:hover { background: rgba(88, 166, 255, 0.20); }
 
 .message.agent-msg {
   border-left: 2px solid var(--accent);
   margin-left: 0;
+}
+.message.system-msg .msg-body {
+  background: rgba(227, 179, 65, 0.04);
+  border-left: 2px solid var(--warn);
+  padding: 6px 12px;
+  border-radius: 0 4px 4px 0;
 }
 
 .steps {
@@ -430,14 +511,83 @@ a:hover { text-decoration: underline; }
   border-top: 1px solid var(--border);
   padding: 12px 20px 16px;
   background: var(--bg);
+  position: relative;
 }
 .composer .box {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 10px 12px;
-  color: var(--muted);
+  display: flex; align-items: center; gap: 10px;
+}
+.composer .box:focus-within { border-color: var(--accent); }
+.composer input.composer-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 14px;
+}
+.composer input.composer-input::placeholder { color: var(--muted); }
+.composer .send-btn {
+  background: var(--accent);
+  color: #0d1117;
+  border: none;
+  border-radius: 6px;
+  padding: 4px 12px;
+  font-weight: 600;
+  cursor: pointer;
+  font-size: 12.5px;
+}
+.composer .send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.composer .send-btn:hover:not(:disabled) { filter: brightness(1.1); }
+
+/* Slash command popover */
+.slash-pop {
+  position: absolute;
+  bottom: calc(100% - 4px);
+  left: 20px;
+  right: 20px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 -8px 24px rgba(0,0,0,0.4);
+  max-height: 280px;
+  overflow-y: auto;
+  z-index: 60;
+}
+.slash-pop .slash-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  padding: 8px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+  align-items: baseline;
+}
+.slash-pop .slash-row:last-child { border-bottom: none; }
+.slash-pop .slash-row.selected { background: rgba(88, 166, 255, 0.12); }
+.slash-pop .slash-name {
+  font-family: var(--font-mono);
+  color: var(--accent);
   font-size: 13px;
+}
+.slash-pop .slash-args { color: var(--muted); font-family: var(--font-mono); font-size: 12px; }
+.slash-pop .slash-desc { font-size: 12px; color: var(--muted); grid-column: 1 / -1; margin-top: 2px; }
+
+.kb-hint {
+  position: fixed;
+  bottom: 8px;
+  right: 16px;
+  font-size: 11px;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  opacity: 0.55;
+  pointer-events: none;
+  z-index: 5;
+  user-select: none;
 }
 
 /* ─── Brief card (Scout) ─────────────────────────────────────────────── */
@@ -520,6 +670,101 @@ a:hover { text-decoration: underline; }
 }
 .parity-table td.us { color: var(--done); }
 .parity-table td.them { color: var(--muted); }
+
+/* ─── Migration report card ──────────────────────────────────────────── */
+.migration-card {
+  margin-top: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+.migration-card .mc-summary {
+  font-size: 13px;
+  color: var(--text);
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+.migration-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+  font-family: var(--font-mono);
+}
+.migration-table th, .migration-table td {
+  text-align: left;
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--border);
+}
+.migration-table th {
+  color: var(--muted);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.migration-table td.risk-low { color: var(--done); }
+.migration-table td.risk-medium { color: var(--warn); }
+.migration-table td.risk-high { color: var(--danger); }
+
+/* ─── PR review card ─────────────────────────────────────────────────── */
+.pr-card {
+  margin-top: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 14px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.pr-card .pr-summary { font-size: 13px; color: var(--text); }
+.pr-card .pr-counts { display: flex; gap: 8px; }
+.pr-card .pr-count {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  padding: 2px 8px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+}
+.pr-card .pr-count.blocking { color: var(--danger); border-color: var(--danger); }
+.pr-card .pr-count.warning { color: var(--warn); border-color: var(--warn); }
+.pr-card .pr-count.nit { color: var(--muted); }
+.pr-card ul { margin: 0; padding-left: 18px; }
+.pr-card li { font-size: 13px; margin-bottom: 2px; }
+
+/* ─── Poll card ──────────────────────────────────────────────────────── */
+.poll-card {
+  margin-top: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+.poll-card .poll-q {
+  font-weight: 600;
+  font-size: 14px;
+  margin-bottom: 10px;
+}
+.poll-card .poll-options { display: flex; flex-direction: column; gap: 6px; }
+.poll-card .poll-opt {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text);
+}
+.poll-card .poll-opt:hover { border-color: var(--accent); }
+.poll-card .poll-opt .label { flex: 1; }
+.poll-card .poll-opt .votes {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--accent);
+  min-width: 24px;
+  text-align: right;
+}
 
 /* ─── Approval card (Migrator) ───────────────────────────────────────── */
 .approval-card {
@@ -609,6 +854,232 @@ a:hover { text-decoration: underline; }
 @media (max-width: 1100px) {
   .app.with-thread { grid-template-columns: 220px 1fr 340px; }
 }
+
+/* ─── Modals (profile + quick-switcher) ─────────────────────────────── */
+.modal-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: none;
+  align-items: center; justify-content: center;
+  z-index: 100;
+  backdrop-filter: blur(2px);
+}
+.modal-backdrop.open { display: flex; }
+.modal {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 16px 48px rgba(0,0,0,0.6);
+  max-width: 560px;
+  width: 90vw;
+  max-height: 80vh;
+  overflow: hidden;
+  display: flex; flex-direction: column;
+}
+.modal-head {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 14px;
+}
+.modal-head .close {
+  margin-left: auto;
+  background: none; border: none; color: var(--muted);
+  cursor: pointer; padding: 4px;
+  border-radius: 4px;
+}
+.modal-head .close:hover { background: var(--surface2); color: var(--text); }
+.modal-body {
+  flex: 1; overflow-y: auto;
+  padding: 16px 20px;
+}
+.modal-section { margin-bottom: 16px; }
+.modal-section:last-child { margin-bottom: 0; }
+.modal-label {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 10.5px;
+  color: var(--muted);
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+.modal-text { font-size: 13px; color: var(--text); }
+
+.profile-avatar {
+  width: 56px; height: 56px;
+  flex-shrink: 0;
+  display: grid; place-items: center;
+  font-size: 18px; font-weight: 700;
+  color: #0d1117;
+  border-radius: 12px;
+}
+.profile-avatar.human { border-radius: 50%; }
+.profile-avatar.agent {
+  background: linear-gradient(135deg, #58a6ff, #79c0ff);
+}
+.profile-avatar.agent svg { width: 32px; height: 32px; }
+.profile-name { font-size: 18px; font-weight: 700; }
+.profile-role { color: var(--muted); font-size: 13px; margin-top: 2px; }
+.profile-meta { display: flex; flex-direction: column; }
+.forge-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--accent);
+  background: rgba(88, 166, 255, 0.10);
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-family: var(--font-mono);
+  width: fit-content;
+}
+.forge-badge::before {
+  content: ""; width: 6px; height: 6px;
+  background: var(--accent); border-radius: 50%;
+}
+
+.system-prompt {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  color: var(--text);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  max-height: 100px;
+  overflow: hidden;
+  position: relative;
+  cursor: pointer;
+}
+.system-prompt.expanded { max-height: 800px; }
+.system-prompt::after {
+  content: "click to expand";
+  position: absolute;
+  bottom: 4px; right: 8px;
+  font-size: 10.5px;
+  color: var(--muted);
+  background: linear-gradient(0deg, var(--bg) 60%, transparent);
+  padding: 2px 6px;
+}
+.system-prompt.expanded::after { content: ""; padding: 0; }
+
+.chip-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 2px 9px;
+  color: var(--text);
+}
+.chip.clickable { cursor: pointer; }
+.chip.clickable:hover { border-color: var(--accent); color: var(--accent); }
+
+.recent-list { display: flex; flex-direction: column; gap: 6px; }
+.recent-item {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 12.5px;
+}
+.recent-item .recent-meta {
+  font-size: 10.5px;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  margin-bottom: 2px;
+}
+
+.modal-foot {
+  padding: 12px 20px;
+  border-top: 1px solid var(--border);
+  display: flex; justify-content: flex-end; gap: 8px;
+}
+.modal-btn {
+  background: var(--accent);
+  color: #0d1117;
+  border: none; border-radius: 6px;
+  padding: 6px 14px;
+  font-weight: 600;
+  cursor: pointer;
+  font-size: 13px;
+}
+.modal-btn:hover { filter: brightness(1.1); }
+.modal-btn.ghost {
+  background: var(--surface2);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+/* Quick-switcher */
+.qs-input {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 14px;
+  color: var(--text);
+  font-size: 14px;
+  font-family: inherit;
+  outline: none;
+}
+.qs-input:focus { border-color: var(--accent); }
+.qs-results {
+  margin-top: 12px;
+  max-height: 360px;
+  overflow-y: auto;
+  display: flex; flex-direction: column;
+}
+.qs-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+}
+.qs-row.selected { background: rgba(88, 166, 255, 0.16); }
+.qs-row:hover { background: rgba(88, 166, 255, 0.10); }
+.qs-row .qs-prefix { color: var(--muted); font-family: var(--font-mono); font-size: 12px; min-width: 50px; }
+.qs-row .qs-name { color: var(--text); }
+.qs-row .qs-meta { margin-left: auto; color: var(--muted); font-size: 11.5px; }
+
+/* Toast notifications */
+.toast-stack {
+  position: fixed;
+  right: 16px; bottom: 36px;
+  display: flex; flex-direction: column; gap: 8px;
+  z-index: 80;
+  max-width: 340px;
+}
+.toast {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  padding: 10px 12px;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.4);
+  font-size: 12.5px;
+  display: flex; flex-direction: column; gap: 4px;
+  animation: toast-in 0.25s ease;
+}
+@keyframes toast-in {
+  from { transform: translateY(8px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+.toast .toast-head { color: var(--muted); font-size: 11px; }
+.toast .toast-text { color: var(--text); overflow: hidden; text-overflow: ellipsis; }
+.toast .toast-actions { display: flex; gap: 6px; margin-top: 2px; }
+.toast .toast-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--accent);
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.toast .toast-btn:hover { background: var(--bg); }
 </style>
 </head>
 <body>
@@ -618,7 +1089,7 @@ a:hover { text-decoration: underline; }
       <div class="ws-dot">A</div>
       <span>Acme Eng</span>
     </div>
-    <input class="search" placeholder="Search Acme Eng" />
+    <input id="search" class="search" placeholder="Quick switch (⌘K)" readonly />
     <div class="section">
       <div class="section-title">Channels</div>
       <ul id="channel-list" class="channel-list"></ul>
@@ -630,6 +1101,13 @@ a:hover { text-decoration: underline; }
     <div class="section">
       <div class="section-title">Members</div>
       <ul id="member-list" class="member-list"></ul>
+    </div>
+    <div class="section">
+      <div class="section-title">Ambient activity</div>
+      <div id="ambient" class="ambient">
+        <div class="ambient-title"><span class="pulse-dot"></span> live across the workspace</div>
+        <div id="ambient-line" class="ambient-line">…</div>
+      </div>
     </div>
   </aside>
 
@@ -654,7 +1132,12 @@ a:hover { text-decoration: underline; }
     <div id="typing" class="typing-indicator" style="display:none;"></div>
 
     <div class="composer">
-      <div class="box">Message #<span id="composer-channel">general</span></div>
+      <div id="slash-pop" class="slash-pop" style="display:none;"></div>
+      <div class="box">
+        <input id="composer-input" class="composer-input"
+               placeholder="Message #general — type / for commands, @ to mention" />
+        <button id="composer-send" class="send-btn">Send</button>
+      </div>
     </div>
   </main>
 
@@ -669,6 +1152,54 @@ a:hover { text-decoration: underline; }
   </aside>
 </div>
 
+<!-- Profile modal -->
+<div id="profile-backdrop" class="modal-backdrop">
+  <div class="modal" role="dialog" aria-labelledby="profile-name">
+    <div class="modal-head">
+      <div id="profile-avatar"></div>
+      <div class="profile-meta">
+        <div id="profile-name" class="profile-name"></div>
+        <div id="profile-role" class="profile-role"></div>
+        <div id="profile-forge" class="forge-badge" style="display:none;">
+          <a id="profile-forge-link" target="_blank" rel="noreferrer">Made in Forge</a>
+        </div>
+      </div>
+      <button class="close" id="profile-close" aria-label="Close">
+        <svg width="18" height="18" viewBox="0 0 16 16"><path fill="currentColor" d="M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.75.75 0 1 1 1.06 1.06L9.06 8l3.22 3.22a.75.75 0 1 1-1.06 1.06L8 9.06l-3.22 3.22a.75.75 0 0 1-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06Z"/></svg>
+      </button>
+    </div>
+    <div class="modal-body" id="profile-body"></div>
+    <div class="modal-foot">
+      <button id="profile-dm" class="modal-btn">Send DM</button>
+    </div>
+  </div>
+</div>
+
+<!-- Quick-switcher modal -->
+<div id="qs-backdrop" class="modal-backdrop">
+  <div class="modal" role="dialog" style="max-width: 480px;">
+    <div class="modal-head">
+      <div class="profile-meta" style="flex:1;">
+        <div class="profile-name" style="font-size:14px;">Jump to…</div>
+        <div class="profile-role" style="font-size:12px;">Channels and DMs · Enter to jump · Esc to close</div>
+      </div>
+      <button class="close" id="qs-close" aria-label="Close">
+        <svg width="18" height="18" viewBox="0 0 16 16"><path fill="currentColor" d="M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.75.75 0 1 1 1.06 1.06L9.06 8l3.22 3.22a.75.75 0 1 1-1.06 1.06L8 9.06l-3.22 3.22a.75.75 0 0 1-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06Z"/></svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <input id="qs-input" class="qs-input" placeholder="Type a channel or DM name…" />
+      <div id="qs-results" class="qs-results"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Toast stack -->
+<div id="toast-stack" class="toast-stack"></div>
+
+<!-- Keyboard hint -->
+<div class="kb-hint">⌘K to switch · / for commands · @ to mention</div>
+
 <script>
 "use strict";
 
@@ -678,12 +1209,25 @@ const state = {
   channels: [],
   members: {},
   dms: [],
-  messages: {},     // { channelId: [msg, ...] }
+  messages: {},     // { channelId|dmId: [msg, ...] }
   scenes: [],
+  ambient: [],
+  unreads: {},
+  mentionAliases: {},
   activeChannel: "general",
   activeThread: null,    // { channel, parentId }
   typing: {},       // { channelId: { agentId: true } }
+  ambientIndex: 0,
 };
+
+const SLASH_COMMANDS = [
+  { name: "scout",     args: "investigate <query>", desc: "Scout investigates and posts a brief" },
+  { name: "researcher", args: "brief <topic>",       desc: "Researcher posts a brief" },
+  { name: "migrator",  args: "preflight <table>",   desc: "Migrator runs a pre-flight scan" },
+  { name: "poll",      args: "<question> | opt1 | opt2 | …", desc: "Post a poll with vote buttons" },
+  { name: "dm",        args: "<agent>",              desc: "Open or switch to a DM" },
+  { name: "help",      args: "",                     desc: "List slash commands" },
+];
 
 const $ = (sel) => document.querySelector(sel);
 const create = (tag, props = {}, ...children) => {
@@ -693,7 +1237,7 @@ const create = (tag, props = {}, ...children) => {
     else if (k === "html") el.innerHTML = v;
     else if (k.startsWith("on") && typeof v === "function") {
       el.addEventListener(k.slice(2).toLowerCase(), v);
-    } else if (v !== undefined && v !== null) {
+    } else if (v !== undefined && v !== null && v !== false) {
       el.setAttribute(k, v);
     }
   }
@@ -706,8 +1250,6 @@ const create = (tag, props = {}, ...children) => {
 
 const ROBOT_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="7" width="16" height="12" rx="2" fill="#0d1117"/><circle cx="9" cy="13" r="1.2" fill="currentColor"/><circle cx="15" cy="13" r="1.2" fill="currentColor"/><path d="M12 4v3" stroke="currentColor"/><circle cx="12" cy="3.5" r="1" fill="currentColor"/><path d="M2 12h2M20 12h2" stroke="currentColor"/></svg>`;
 
-const HASH_SVG = `<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M6.49 1.74a.75.75 0 0 1 .59.88L6.6 5h2.96l.5-2.74a.75.75 0 1 1 1.48.27L11.07 5H13.5a.75.75 0 0 1 0 1.5h-2.7l-.55 3H12.5a.75.75 0 0 1 0 1.5h-2.52l-.5 2.74a.75.75 0 1 1-1.48-.27l.45-2.47H5.49l-.5 2.74a.75.75 0 1 1-1.48-.27L3.96 11H1.5a.75.75 0 0 1 0-1.5h2.73l.55-3H2.5a.75.75 0 0 1 0-1.5h2.52l.5-2.74a.75.75 0 0 1 .97-.52ZM6.33 6.5l-.55 3h2.96l.55-3H6.33Z"/></svg>`;
-
 // ─── Time helpers ─────────────────────────────────────────────────────
 function formatTime(iso) {
   if (!iso) return "";
@@ -719,17 +1261,52 @@ function formatTime(iso) {
   return `${h}:${m} ${ampm}`;
 }
 
+function relativeTime(iso) {
+  if (!iso) return "";
+  const ms = Date.now() - new Date(iso).getTime();
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return `${s}s ago`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  return `${d}d ago`;
+}
+
+// ─── DM helpers ───────────────────────────────────────────────────────
+function isDmChannel(id) { return typeof id === "string" && id.startsWith("dm-"); }
+function dmCounterpart(dmId) {
+  const dm = state.dms.find((d) => d.id === dmId);
+  if (!dm) return null;
+  return dm.with[0];
+}
+function channelLabel(id) {
+  if (isDmChannel(id)) {
+    const dm = state.dms.find((d) => d.id === id);
+    return dm ? dm.label : id;
+  }
+  return `#${id}`;
+}
+
 // ─── Renderers ────────────────────────────────────────────────────────
 function renderSidebar() {
   const cl = $("#channel-list");
   cl.replaceChildren(...state.channels.map((ch) => {
+    const unread = state.unreads[ch.id] || 0;
     const row = create("li", {
-      class: "channel-row" + (ch.id === state.activeChannel ? " active" : ""),
+      class:
+        "channel-row" +
+        (ch.id === state.activeChannel ? " active" : "") +
+        (unread > 0 && ch.id !== state.activeChannel ? " unread" : ""),
       onclick: () => selectChannel(ch.id),
     },
       create("span", { class: "hash" }, "#"),
-      create("span", {}, ch.name),
+      create("span", { class: "name" }, ch.name),
     );
+    if (unread > 0 && ch.id !== state.activeChannel) {
+      row.append(create("span", { class: "unread-badge" }, String(unread)));
+    }
     return row;
   }));
 
@@ -737,13 +1314,22 @@ function renderSidebar() {
   dl.replaceChildren(...state.dms.map((dm) => {
     const m = state.members[dm.with[0]];
     const presence = m && m.kind === "agent" ? (m.presence || "idle") : "idle";
-    return create("li", {
-      class: "dm-row",
+    const unread = state.unreads[dm.id] || 0;
+    const row = create("li", {
+      class:
+        "dm-row" +
+        (dm.id === state.activeChannel ? " active" : "") +
+        (unread > 0 && dm.id !== state.activeChannel ? " unread" : ""),
       title: dm.label,
+      onclick: () => selectChannel(dm.id),
     },
       create("span", { class: "dot " + presence }),
-      create("span", {}, dm.label),
+      create("span", { class: "label" }, dm.label),
     );
+    if (unread > 0 && dm.id !== state.activeChannel) {
+      row.append(create("span", { class: "unread-badge" }, String(unread)));
+    }
+    return row;
   }));
 
   const ml = $("#member-list");
@@ -754,15 +1340,23 @@ function renderSidebar() {
   });
   ml.replaceChildren(...ordered.map((m) => {
     if (m.kind === "human") {
-      return create("li", { class: "member-row", title: m.title || "" },
+      const row = create("li", {
+        class: "member-row",
+        title: m.title || "",
+        onclick: () => openProfile(m.id),
+      },
         create("span", { class: "avatar human", style: `background:${m.color}` }, m.initials),
         create("span", { class: "name" }, m.name),
       );
+      return row;
     }
     const presence = m.presence || "idle";
     const activity = m.current_activity || "ready";
     const tooltip = create("div", { class: "tooltip" }, `${m.name}: ${activity}`);
-    return create("li", { class: "member-row" },
+    return create("li", {
+      class: "member-row",
+      onclick: () => openProfile(m.id),
+    },
       create("span", { class: "avatar agent", html: ROBOT_SVG }),
       create("span", { class: "name" }, m.name),
       create("span", { class: "presence-dot " + presence }),
@@ -773,12 +1367,33 @@ function renderSidebar() {
 }
 
 function renderHeader() {
-  const ch = state.channels.find((c) => c.id === state.activeChannel);
-  if (!ch) return;
-  $("#ch-name").textContent = ch.name;
-  $("#ch-topic").textContent = ch.topic || "";
-  $("#ch-members").textContent = `${ch.members.length} members`;
-  $("#composer-channel").textContent = ch.name;
+  const id = state.activeChannel;
+  const isDm = isDmChannel(id);
+  const headEl = $("#ch-name").parentElement;
+  const hashEl = headEl.querySelector(".hash");
+  if (isDm) {
+    hashEl.textContent = "@";
+    const dm = state.dms.find((d) => d.id === id);
+    $("#ch-name").textContent = dm ? dm.label : id;
+    const counterpart = dm && state.members[dm.with[0]];
+    $("#ch-topic").textContent = counterpart
+      ? counterpart.kind === "agent"
+        ? `direct message · ${counterpart.role || "agent"}`
+        : `direct message · ${counterpart.title || "human"}`
+      : "direct message";
+    $("#ch-members").textContent = "2 members";
+    $("#composer-input").placeholder = `Message ${dm ? dm.label : id}`;
+    document.querySelectorAll(".header-pills .pill")[1].style.display = "none";
+  } else {
+    hashEl.textContent = "#";
+    const ch = state.channels.find((c) => c.id === id);
+    if (!ch) return;
+    $("#ch-name").textContent = ch.name;
+    $("#ch-topic").textContent = ch.topic || "";
+    $("#ch-members").textContent = `${ch.members.length} members`;
+    $("#composer-input").placeholder = `Message #${ch.name} — type / for commands, @ to mention`;
+    document.querySelectorAll(".header-pills .pill")[1].style.display = "";
+  }
 }
 
 function renderScenePicker() {
@@ -791,27 +1406,34 @@ function renderScenePicker() {
 function selectChannel(id) {
   state.activeChannel = id;
   state.activeThread = null;
+  state.unreads[id] = 0;
   document.getElementById("app").classList.remove("with-thread");
   $("#thread-pane").style.display = "none";
   renderSidebar();
   renderHeader();
   renderTimeline();
+  // Focus the input so Cmd-K → Enter → typing flows naturally.
+  setTimeout(() => $("#composer-input").focus(), 30);
 }
 
-function avatarFor(m, size = "lg") {
+function avatarFor(m, opts = {}) {
   const cls = `avatar-lg ${m.kind}`;
+  const onClick = (e) => {
+    e.stopPropagation();
+    openProfile(m.id);
+  };
   if (m.kind === "agent") {
-    return create("div", { class: cls, html: ROBOT_SVG });
+    return create("div", { class: cls, html: ROBOT_SVG, onclick: onClick });
   }
   if (m.kind === "system") {
     return create("div", { class: cls, html: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0d1117" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z" fill="#0d1117" stroke="#0d1117"/></svg>` });
   }
-  const el = create("div", { class: cls, style: `background:${m.color}` }, m.initials);
-  return el;
+  return create("div", { class: cls, style: `background:${m.color}`, onclick: onClick }, m.initials);
 }
 
 function renderText(text) {
-  // Minimal markdown: **bold**, `code`, ```sql blocks```, line-wrapping links.
+  // Minimal markdown: **bold**, `code`, ```sql blocks```, line-wrapping links,
+  // and @mentions that resolve to clickable members.
   let html = text
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -821,18 +1443,37 @@ function renderText(text) {
   html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
   html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
   html = html.replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noreferrer">$1</a>');
-  // Bullet lines starting with "•"
-  html = html.replace(/(^|\n)• /g, "$1• ");
+  html = html.replace(/@([a-zA-Z][a-zA-Z0-9_-]*)/g, (whole, name) => {
+    const id = state.mentionAliases[name.toLowerCase()];
+    if (id && state.members[id]) {
+      return `<span class="mention" data-member-id="${id}">@${state.members[id].name}</span>`;
+    }
+    return `<span class="mention">${whole}</span>`;
+  });
   return html;
+}
+
+function bindMentionClicks(root) {
+  root.querySelectorAll(".mention[data-member-id]").forEach((el) => {
+    el.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openProfile(el.getAttribute("data-member-id"));
+    });
+  });
 }
 
 function renderMessage(channelId, msg, opts = {}) {
   const author = state.members[msg.author_id] || { name: msg.author_id, kind: "human" };
   const isAgent = author.kind === "agent";
-  const isSystem = author.kind === "system";
+  const isSystem = author.kind === "system" || msg.system === true;
+
+  const authorSpan = create("span", {
+    class: "msg-author member-link " + author.kind,
+    onclick: (e) => { e.stopPropagation(); openProfile(author.id); },
+  }, author.name);
 
   const head = create("div", { class: "msg-head" },
-    create("span", { class: "msg-author " + author.kind }, author.name),
+    authorSpan,
     create("span", { class: "msg-time" }, formatTime(msg.ts)),
   );
   if (msg.streaming) {
@@ -851,7 +1492,8 @@ function renderMessage(channelId, msg, opts = {}) {
   if (msg.kind === "alert") {
     body.append(create("div", { class: "alert-card", html: renderText(msg.text) }));
   } else if (msg.kind === "approval_request") {
-    body.append(create("div", { class: "msg-text", html: renderText(msg.text) }));
+    const txt = create("div", { class: "msg-text", html: renderText(msg.text) });
+    body.append(txt);
     if (msg.approval) {
       body.append(renderApproval(msg.approval));
     }
@@ -861,6 +1503,14 @@ function renderMessage(channelId, msg, opts = {}) {
   } else if (msg.kind === "competitor_brief") {
     body.append(create("div", { class: "msg-text", html: renderText(msg.text) }));
     body.append(renderCompetitorBrief(msg.competitor_brief));
+  } else if (msg.kind === "migration_report") {
+    body.append(create("div", { class: "msg-text", html: renderText(msg.text) }));
+    body.append(renderMigrationReport(msg.migration));
+  } else if (msg.kind === "pr_review") {
+    body.append(create("div", { class: "msg-text", html: renderText(msg.text) }));
+    body.append(renderPrReview(msg.pr_review));
+  } else if (msg.kind === "poll") {
+    body.append(renderPoll(msg));
   } else {
     body.append(create("div", { class: "msg-text", html: renderText(msg.text || "") }));
   }
@@ -891,9 +1541,11 @@ function renderMessage(channelId, msg, opts = {}) {
   }
 
   const wrapper = create("div", {
-    class: "message" + (isAgent ? " agent-msg" : ""),
+    class: "message" + (isAgent ? " agent-msg" : "") + (isSystem ? " system-msg" : ""),
     "data-message-id": msg.id,
   }, avatarFor(author), body);
+
+  bindMentionClicks(wrapper);
   return wrapper;
 }
 
@@ -956,6 +1608,72 @@ function renderCompetitorBrief(b) {
   return card;
 }
 
+function renderMigrationReport(m) {
+  const card = create("div", { class: "migration-card" });
+  card.append(create("div", { class: "mc-summary" }, m.summary || ""));
+  const table = create("table", { class: "migration-table" });
+  table.append(create("thead", {}, create("tr", {},
+    create("th", {}, "Op"),
+    create("th", {}, "Target"),
+    create("th", {}, "Rows"),
+    create("th", {}, "Lock"),
+    create("th", {}, "Risk"),
+  )));
+  const tbody = create("tbody");
+  for (const c of m.changes || []) {
+    tbody.append(create("tr", {},
+      create("td", {}, c.op),
+      create("td", {}, c.target),
+      create("td", {}, c.rows || "—"),
+      create("td", {}, (c.lock_ms != null ? `${c.lock_ms}ms` : "—")),
+      create("td", { class: "risk-" + (c.risk || "low") }, c.risk || "low"),
+    ));
+  }
+  table.append(tbody);
+  card.append(table);
+  return card;
+}
+
+function renderPrReview(r) {
+  const card = create("div", { class: "pr-card" });
+  card.append(create("div", { class: "pr-summary" }, r.summary || ""));
+  const counts = create("div", { class: "pr-counts" });
+  for (const f of r.findings || []) {
+    counts.append(create("span", { class: "pr-count " + f.severity }, `${f.count} ${f.severity}`));
+  }
+  card.append(counts);
+  if (r.highlights && r.highlights.length) {
+    const ul = create("ul");
+    for (const h of r.highlights) ul.append(create("li", { html: renderText(h) }));
+    card.append(ul);
+  }
+  return card;
+}
+
+function renderPoll(msg) {
+  const p = msg.poll;
+  const card = create("div", { class: "poll-card" });
+  card.append(create("div", { class: "poll-q" }, p.question));
+  const opts = create("div", { class: "poll-options" });
+  for (let i = 0; i < p.options.length; i++) {
+    const opt = p.options[i];
+    const row = create("button", {
+      class: "poll-opt",
+      onclick: () => {
+        // Local-only voting — we don't round-trip to the server.
+        opt.votes = (opt.votes || 0) + 1;
+        renderTimeline();
+      },
+    },
+      create("span", { class: "label" }, opt.label),
+      create("span", { class: "votes" }, String(opt.votes || 0)),
+    );
+    opts.append(row);
+  }
+  card.append(opts);
+  return card;
+}
+
 function renderApproval(approval) {
   const card = create("div", { class: "approval-card" });
   card.append(create("div", { class: "a-icon", html:
@@ -982,7 +1700,7 @@ function renderTimeline() {
   if (list.length === 0) {
     tl.append(create("div", { class: "day-divider" }, "no messages yet"));
   } else {
-    tl.append(create("div", { class: "day-divider" }, "today"));
+    tl.append(create("div", { class: "day-divider" }, "earlier"));
     for (const m of list) {
       tl.append(renderMessage(state.activeChannel, m));
     }
@@ -1037,7 +1755,13 @@ function renderThread() {
 function applyMessage(channel, message) {
   state.messages[channel] = state.messages[channel] || [];
   state.messages[channel].push({ ...message, thread: message.thread || [] });
-  if (channel === state.activeChannel) renderTimeline();
+  if (channel === state.activeChannel) {
+    renderTimeline();
+  } else {
+    state.unreads[channel] = (state.unreads[channel] || 0) + 1;
+    renderSidebar();
+    maybeToast(channel, message);
+  }
 }
 
 function applyMessageUpdate(channel, messageId, patch) {
@@ -1088,6 +1812,301 @@ function applyTyping(channel, agentId, on) {
   if (channel === state.activeChannel) renderTyping();
 }
 
+// ─── Toasts ───────────────────────────────────────────────────────────
+function maybeToast(channel, message) {
+  const author = state.members[message.author_id];
+  if (!author || author.kind !== "agent") return;
+  const stack = $("#toast-stack");
+  const toast = create("div", { class: "toast" });
+  toast.append(create("div", { class: "toast-head" },
+    `${author.name} in ${channelLabel(channel)}`));
+  const preview = (message.text || "").replace(/\s+/g, " ").slice(0, 100);
+  toast.append(create("div", { class: "toast-text" }, preview || "(activity)"));
+  const actions = create("div", { class: "toast-actions" });
+  actions.append(create("button", {
+    class: "toast-btn",
+    onclick: () => {
+      selectChannel(channel);
+      toast.remove();
+    },
+  }, "Jump to thread"));
+  actions.append(create("button", {
+    class: "toast-btn",
+    onclick: () => toast.remove(),
+  }, "Dismiss"));
+  toast.append(actions);
+  stack.prepend(toast);
+  setTimeout(() => { toast.style.opacity = "0"; toast.style.transition = "opacity .4s"; }, 5800);
+  setTimeout(() => toast.remove(), 6400);
+}
+
+// ─── Profile modal ────────────────────────────────────────────────────
+async function openProfile(memberId) {
+  if (!memberId) return;
+  let prof;
+  try {
+    const res = await fetch(`/api/profiles/${memberId}`);
+    if (!res.ok) return;
+    prof = await res.json();
+  } catch { return; }
+  const member = state.members[memberId] || prof;
+  const avatarSlot = $("#profile-avatar");
+  avatarSlot.replaceChildren();
+  if (prof.kind === "agent") {
+    const a = create("div", { class: "profile-avatar agent", html: ROBOT_SVG });
+    avatarSlot.append(a);
+  } else {
+    const color = (member && member.color) || "#bc8cff";
+    const initials = (member && member.initials) ||
+      prof.name.split(" ").map((s) => s[0]).join("").slice(0, 2);
+    const a = create("div", { class: "profile-avatar human", style: `background:${color}` }, initials);
+    avatarSlot.append(a);
+  }
+  $("#profile-name").textContent = prof.name;
+  $("#profile-role").textContent = prof.role || (prof.kind === "agent" ? "Agent" : "Human");
+
+  const forge = $("#profile-forge");
+  const forgeLink = $("#profile-forge-link");
+  if (prof.kind === "agent") {
+    forge.style.display = "";
+    forgeLink.textContent = "Made in Forge ↗";
+    forgeLink.href = `https://forge.example.dev/agents/${prof.id}`;
+  } else {
+    forge.style.display = "none";
+  }
+
+  const body = $("#profile-body");
+  body.replaceChildren();
+
+  const status = state.members[prof.id];
+  if (status && status.kind === "agent") {
+    const sec = create("div", { class: "modal-section" });
+    sec.append(create("div", { class: "modal-label" }, "Status"));
+    const dot = `<span class="presence-dot ${status.presence || "idle"}" style="display:inline-block;margin-right:6px;vertical-align:middle;"></span>`;
+    sec.append(create("div", { class: "modal-text", html:
+      `${dot}<strong>${status.presence || "idle"}</strong> · ${status.current_activity || "ready"}` }));
+    body.append(sec);
+  } else if (prof.bio) {
+    const sec = create("div", { class: "modal-section" });
+    sec.append(create("div", { class: "modal-label" }, "Bio"));
+    sec.append(create("div", { class: "modal-text" }, prof.bio));
+    body.append(sec);
+  }
+
+  if (prof.system_prompt) {
+    const sec = create("div", { class: "modal-section" });
+    sec.append(create("div", { class: "modal-label" }, "System prompt"));
+    const sp = create("div", { class: "system-prompt" }, prof.system_prompt);
+    sp.addEventListener("click", () => sp.classList.toggle("expanded"));
+    sec.append(sp);
+    body.append(sec);
+  }
+
+  if (prof.tools && prof.tools.length) {
+    const sec = create("div", { class: "modal-section" });
+    sec.append(create("div", { class: "modal-label" }, "Tools"));
+    const chips = create("div", { class: "chip-row" });
+    for (const t of prof.tools) chips.append(create("span", { class: "chip" }, t));
+    sec.append(chips);
+    body.append(sec);
+  }
+
+  if (prof.channels && prof.channels.length) {
+    const sec = create("div", { class: "modal-section" });
+    sec.append(create("div", { class: "modal-label" }, "Channels"));
+    const chips = create("div", { class: "chip-row" });
+    for (const c of prof.channels) {
+      chips.append(create("span", {
+        class: "chip clickable",
+        onclick: () => { closeProfile(); selectChannel(c); },
+      }, `#${c}`));
+    }
+    sec.append(chips);
+    body.append(sec);
+  }
+
+  if (prof.recent_activity && prof.recent_activity.length) {
+    const sec = create("div", { class: "modal-section" });
+    sec.append(create("div", { class: "modal-label" }, "Recent activity"));
+    const list = create("div", { class: "recent-list" });
+    for (const item of prof.recent_activity) {
+      list.append(create("div", { class: "recent-item" },
+        create("div", { class: "recent-meta" }, `${channelLabel(item.channel)} · ${relativeTime(item.ts)}`),
+        create("div", {}, item.text),
+      ));
+    }
+    sec.append(list);
+    body.append(sec);
+  }
+
+  // DM button — always available, jumps to DM channel.
+  $("#profile-dm").onclick = () => {
+    closeProfile();
+    const dmId = `dm-${prof.id}`;
+    if (!state.dms.find((d) => d.id === dmId)) {
+      state.dms.push({ id: dmId, with: [prof.id], label: prof.name });
+      state.messages[dmId] = state.messages[dmId] || [];
+    }
+    selectChannel(dmId);
+  };
+
+  $("#profile-backdrop").classList.add("open");
+}
+
+function closeProfile() { $("#profile-backdrop").classList.remove("open"); }
+
+// ─── Quick switcher ───────────────────────────────────────────────────
+let qsItems = [];
+let qsSelected = 0;
+
+function buildQsItems() {
+  const items = [];
+  for (const ch of state.channels) {
+    items.push({ kind: "channel", id: ch.id, name: ch.name, prefix: "#" });
+  }
+  for (const dm of state.dms) {
+    items.push({ kind: "dm", id: dm.id, name: dm.label, prefix: "@" });
+  }
+  return items;
+}
+
+function openQs() {
+  qsItems = buildQsItems();
+  qsSelected = 0;
+  $("#qs-input").value = "";
+  renderQsResults("");
+  $("#qs-backdrop").classList.add("open");
+  setTimeout(() => $("#qs-input").focus(), 30);
+}
+
+function closeQs() { $("#qs-backdrop").classList.remove("open"); }
+
+function fuzzyMatch(needle, hay) {
+  if (!needle) return true;
+  needle = needle.toLowerCase();
+  hay = hay.toLowerCase();
+  let i = 0;
+  for (const c of hay) {
+    if (c === needle[i]) i++;
+    if (i === needle.length) return true;
+  }
+  return false;
+}
+
+function renderQsResults(query) {
+  const results = qsItems.filter((it) => fuzzyMatch(query, it.name));
+  qsSelected = Math.min(qsSelected, Math.max(0, results.length - 1));
+  const out = $("#qs-results");
+  out.replaceChildren(...results.map((it, i) => create("div", {
+    class: "qs-row" + (i === qsSelected ? " selected" : ""),
+    onclick: () => { closeQs(); selectChannel(it.id); },
+    onmouseenter: () => { qsSelected = i; renderQsResults(query); },
+  },
+    create("span", { class: "qs-prefix" }, it.prefix),
+    create("span", { class: "qs-name" }, it.name),
+    create("span", { class: "qs-meta" }, it.kind),
+  )));
+  return results;
+}
+
+// ─── Slash command popover ────────────────────────────────────────────
+let slashSelected = 0;
+let slashOpen = false;
+
+function updateSlashPop() {
+  const input = $("#composer-input");
+  const text = input.value;
+  const pop = $("#slash-pop");
+  if (!text.startsWith("/")) {
+    pop.style.display = "none";
+    slashOpen = false;
+    return;
+  }
+  const query = text.slice(1).split(" ")[0].toLowerCase();
+  const matches = SLASH_COMMANDS.filter((c) => c.name.startsWith(query) || query === "");
+  if (matches.length === 0) {
+    pop.style.display = "none";
+    slashOpen = false;
+    return;
+  }
+  slashOpen = true;
+  slashSelected = Math.min(slashSelected, matches.length - 1);
+  pop.replaceChildren();
+  matches.forEach((c, i) => {
+    const row = create("div", {
+      class: "slash-row" + (i === slashSelected ? " selected" : ""),
+      onclick: () => { acceptSlash(c); },
+      onmouseenter: () => { slashSelected = i; updateSlashPop(); },
+    },
+      create("div", {},
+        create("span", { class: "slash-name" }, `/${c.name}`),
+        document.createTextNode(" "),
+        create("span", { class: "slash-args" }, c.args),
+      ),
+      create("div", {}),
+    );
+    if (c.desc) {
+      row.append(create("div", { class: "slash-desc" }, c.desc));
+    }
+    pop.append(row);
+  });
+  pop.style.display = "block";
+  pop.dataset.matches = matches.length;
+  pop._matches = matches;
+}
+
+function acceptSlash(cmd) {
+  const input = $("#composer-input");
+  input.value = `/${cmd.name} `;
+  input.focus();
+  updateSlashPop();
+}
+
+// ─── Composer / send ──────────────────────────────────────────────────
+async function sendMessage() {
+  const input = $("#composer-input");
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = "";
+  $("#slash-pop").style.display = "none";
+
+  const channel = state.activeChannel;
+  try {
+    const res = await fetch(`/api/channels/${encodeURIComponent(channel)}/messages`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    });
+    const data = await res.json();
+    // /dm command returns a target dm_id we should jump to.
+    if (data && data.result && data.result.kind === "dm" && data.result.dm_id) {
+      // Make sure the DM exists in our local list.
+      const dmId = data.result.dm_id;
+      if (!state.dms.find((d) => d.id === dmId)) {
+        const target = dmId.replace(/^dm-/, "");
+        const m = state.members[target];
+        state.dms.push({ id: dmId, with: [target], label: m ? m.name : target });
+        state.messages[dmId] = state.messages[dmId] || [];
+      }
+      selectChannel(dmId);
+    }
+  } catch (e) {
+    console.error("send failed", e);
+  }
+}
+
+// ─── Ambient activity rotation ────────────────────────────────────────
+function rotateAmbient() {
+  if (!state.ambient.length) return;
+  const line = $("#ambient-line");
+  line.classList.add("fade-out");
+  setTimeout(() => {
+    state.ambientIndex = (state.ambientIndex + 1) % state.ambient.length;
+    line.textContent = state.ambient[state.ambientIndex];
+    line.classList.remove("fade-out");
+  }, 500);
+}
+
 // ─── Bootstrap ────────────────────────────────────────────────────────
 async function loadState() {
   const res = await fetch("/api/state");
@@ -1098,10 +2117,18 @@ async function loadState() {
   state.dms = data.dms;
   state.messages = data.messages || {};
   state.scenes = data.scenes;
+  state.ambient = data.ambient || [];
+  state.unreads = { ...(data.unreads || {}) };
+  state.mentionAliases = data.mention_aliases || {};
+  // The active channel is "read" as soon as you load.
+  state.unreads[state.activeChannel] = 0;
   renderSidebar();
   renderHeader();
   renderScenePicker();
   renderTimeline();
+  if (state.ambient.length) {
+    $("#ambient-line").textContent = state.ambient[0];
+  }
 }
 
 function connectStream() {
@@ -1141,12 +2168,95 @@ function bindUi() {
     document.getElementById("app").classList.remove("with-thread");
     $("#thread-pane").style.display = "none";
   });
+
+  // Composer.
+  const input = $("#composer-input");
+  $("#composer-send").addEventListener("click", sendMessage);
+  input.addEventListener("input", updateSlashPop);
+  input.addEventListener("keydown", (e) => {
+    if (slashOpen) {
+      const matches = $("#slash-pop")._matches || [];
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        slashSelected = (slashSelected + 1) % matches.length;
+        updateSlashPop();
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        slashSelected = (slashSelected - 1 + matches.length) % matches.length;
+        updateSlashPop();
+        return;
+      }
+      if (e.key === "Tab" || (e.key === "Enter" && !input.value.includes(" "))) {
+        e.preventDefault();
+        const cmd = matches[slashSelected];
+        if (cmd) acceptSlash(cmd);
+        return;
+      }
+      if (e.key === "Escape") {
+        $("#slash-pop").style.display = "none";
+        slashOpen = false;
+        return;
+      }
+    }
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  });
+
+  // Profile modal.
+  $("#profile-close").addEventListener("click", closeProfile);
+  $("#profile-backdrop").addEventListener("click", (e) => {
+    if (e.target === $("#profile-backdrop")) closeProfile();
+  });
+
+  // Quick switcher.
+  $("#search").addEventListener("click", openQs);
+  $("#qs-close").addEventListener("click", closeQs);
+  $("#qs-backdrop").addEventListener("click", (e) => {
+    if (e.target === $("#qs-backdrop")) closeQs();
+  });
+  $("#qs-input").addEventListener("input", () => renderQsResults($("#qs-input").value));
+  $("#qs-input").addEventListener("keydown", (e) => {
+    const matches = qsItems.filter((it) => fuzzyMatch($("#qs-input").value, it.name));
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      qsSelected = (qsSelected + 1) % Math.max(1, matches.length);
+      renderQsResults($("#qs-input").value);
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      qsSelected = (qsSelected - 1 + matches.length) % Math.max(1, matches.length);
+      renderQsResults($("#qs-input").value);
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      const it = matches[qsSelected];
+      if (it) { closeQs(); selectChannel(it.id); }
+    } else if (e.key === "Escape") {
+      closeQs();
+    }
+  });
+
+  // Global keyboard shortcuts.
+  document.addEventListener("keydown", (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+      e.preventDefault();
+      openQs();
+      return;
+    }
+    if (e.key === "Escape") {
+      if ($("#profile-backdrop").classList.contains("open")) closeProfile();
+      else if ($("#qs-backdrop").classList.contains("open")) closeQs();
+    }
+  });
 }
 
 (async () => {
   bindUi();
   await loadState();
   connectStream();
+  setInterval(rotateAmbient, 4000);
 })();
 </script>
 </body>
