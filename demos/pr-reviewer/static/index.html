@@ -1,0 +1,855 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PR Reviewer — AI Code Review</title>
+<style>
+  /* ── Reset & base ─────────────────────────────────────────────────── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:          #0d1117;
+    --surface:     #161b22;
+    --surface2:    #21262d;
+    --border:      #30363d;
+    --text:        #e6edf3;
+    --muted:       #8b949e;
+    --accent:      #58a6ff;
+    --accent-dim:  #1f3a5f;
+
+    --red:         #f85149;
+    --red-bg:      #3d1a1a;
+    --orange:      #e3b341;
+    --orange-bg:   #3d2e0f;
+    --green:       #3fb950;
+    --green-bg:    #0d2b18;
+    --blue:        #58a6ff;
+    --blue-bg:     #0d2148;
+
+    --diff-add:    #1a3a26;
+    --diff-add-fg: #3fb950;
+    --diff-del:    #3a1a1a;
+    --diff-del-fg: #f85149;
+    --diff-meta:   #8b949e;
+  }
+
+  html, body { height: 100%; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  /* ── Top bar ──────────────────────────────────────────────────────── */
+  header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 20px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+
+  header .logo {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  header .logo span.icon {
+    font-size: 1.3rem;
+  }
+
+  header .tagline {
+    color: var(--muted);
+    font-size: 0.85rem;
+  }
+
+  /* ── Main split layout ────────────────────────────────────────────── */
+  main {
+    display: grid;
+    grid-template-columns: 420px 1fr;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  /* ── Left panel ───────────────────────────────────────────────────── */
+  .left-panel {
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .left-panel h2 {
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    padding: 14px 16px 10px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+
+  /* PR cards list */
+  .pr-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    overflow-y: auto;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+
+  .pr-card {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    transition: background 0.12s;
+    position: relative;
+  }
+
+  .pr-card:last-child { border-bottom: none; }
+
+  .pr-card:hover { background: var(--surface2); }
+
+  .pr-card.selected {
+    background: var(--accent-dim);
+    border-left: 3px solid var(--accent);
+  }
+
+  .pr-card .pr-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 4px;
+  }
+
+  .pr-card .pr-number {
+    font-size: 0.75rem;
+    color: var(--muted);
+    font-family: "SF Mono", "Consolas", monospace;
+    flex-shrink: 0;
+  }
+
+  .pr-card .pr-title {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--text);
+    line-height: 1.4;
+    flex: 1;
+  }
+
+  .pr-card .lang-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 20px;
+    flex-shrink: 0;
+    letter-spacing: 0.03em;
+  }
+
+  .lang-python  { background: #2b3a6e; color: #79b8ff; }
+  .lang-typescript { background: #1a3a4a; color: #56b6c2; }
+  .lang-go      { background: #1a3a2a; color: #56d364; }
+
+  .pr-card .pr-meta {
+    display: flex;
+    gap: 12px;
+    font-size: 0.75rem;
+    color: var(--muted);
+    margin-top: 5px;
+  }
+
+  .pr-card .pr-meta .additions { color: var(--green); }
+  .pr-card .pr-meta .deletions { color: var(--red); }
+
+  /* Diff viewer */
+  .diff-section {
+    flex: 1;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  .diff-section .diff-header {
+    padding: 10px 16px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+    background: var(--surface);
+  }
+
+  .diff-section .diff-description {
+    padding: 10px 16px;
+    font-size: 0.8rem;
+    color: var(--muted);
+    line-height: 1.5;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    background: var(--surface2);
+  }
+
+  .diff-placeholder {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--muted);
+    font-size: 0.875rem;
+  }
+
+  .diff-code {
+    flex: 1;
+    overflow-y: auto;
+    font-family: "SF Mono", "Consolas", "Liberation Mono", monospace;
+    font-size: 0.78rem;
+    line-height: 1.6;
+  }
+
+  .diff-code pre {
+    margin: 0;
+    padding: 12px 0;
+  }
+
+  .diff-line {
+    display: block;
+    padding: 0 16px;
+    white-space: pre;
+  }
+
+  .diff-line.add  { background: var(--diff-add);  color: var(--diff-add-fg); }
+  .diff-line.del  { background: var(--diff-del);  color: var(--diff-del-fg); }
+  .diff-line.meta { color: var(--diff-meta); }
+  .diff-line.hunk { color: #79b8ff; background: #1a2a3a; }
+
+  /* Review button */
+  .review-btn-wrap {
+    padding: 12px 16px;
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+    flex-shrink: 0;
+  }
+
+  .review-btn {
+    width: 100%;
+    padding: 10px 16px;
+    background: var(--accent);
+    color: #0d1117;
+    font-size: 0.875rem;
+    font-weight: 700;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: opacity 0.15s, transform 0.1s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+  }
+
+  .review-btn:hover:not(:disabled) { opacity: 0.88; }
+  .review-btn:active:not(:disabled) { transform: scale(0.98); }
+  .review-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+  /* ── Right panel ──────────────────────────────────────────────────── */
+  .right-panel {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--bg);
+  }
+
+  .right-panel .review-header {
+    padding: 14px 20px 10px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--surface);
+    flex-shrink: 0;
+  }
+
+  .right-panel .review-title {
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+  }
+
+  .status-badge {
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 20px;
+    letter-spacing: 0.03em;
+  }
+
+  .status-idle    { background: var(--surface2); color: var(--muted); }
+  .status-running { background: var(--blue-bg); color: var(--blue); }
+  .status-done    { background: var(--green-bg); color: var(--green); }
+  .status-error   { background: var(--red-bg); color: var(--red); }
+
+  /* Review output area */
+  .review-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .review-empty {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    color: var(--muted);
+  }
+
+  .review-empty .icon { font-size: 2.5rem; opacity: 0.5; }
+  .review-empty p { font-size: 0.875rem; }
+
+  /* Stage indicator */
+  .stage-line {
+    font-size: 0.75rem;
+    color: var(--muted);
+    font-family: "SF Mono", monospace;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 0;
+  }
+
+  .stage-line::before {
+    content: "";
+    display: inline-block;
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+    animation: pulse 1s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.3; }
+  }
+
+  /* Opening/analysis lines */
+  .output-line {
+    font-size: 0.8rem;
+    color: var(--muted);
+    font-family: "SF Mono", monospace;
+    padding: 1px 0;
+    animation: fadeIn 0.3s ease;
+  }
+
+  /* Category headers */
+  .category-header {
+    margin-top: 16px;
+    margin-bottom: 4px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--muted);
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 4px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    animation: fadeIn 0.3s ease;
+  }
+
+  /* Finding cards */
+  .finding-card {
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    padding: 10px 14px;
+    background: var(--surface);
+    animation: slideIn 0.35s ease;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .finding-card .finding-top {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .severity-badge {
+    font-size: 0.65rem;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 4px;
+    letter-spacing: 0.05em;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+
+  .sev-critical { background: var(--red-bg);    color: var(--red);    border: 1px solid #5a1a1a; }
+  .sev-high     { background: var(--red-bg);    color: #ff7b72;       border: 1px solid #4a2020; }
+  .sev-medium   { background: var(--orange-bg); color: var(--orange); border: 1px solid #4a3a10; }
+  .sev-low      { background: var(--surface2);  color: var(--muted);  border: 1px solid var(--border); }
+  .sev-good     { background: var(--green-bg);  color: var(--green);  border: 1px solid #0d3a20; }
+
+  .finding-card .finding-title {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text);
+    flex: 1;
+  }
+
+  .finding-card .finding-body {
+    font-size: 0.8rem;
+    color: var(--muted);
+    line-height: 1.55;
+  }
+
+  /* Inline code in finding bodies */
+  .finding-card .finding-body code {
+    font-family: "SF Mono", "Consolas", monospace;
+    font-size: 0.75rem;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    padding: 1px 4px;
+    border-radius: 3px;
+    color: #d2a8ff;
+  }
+
+  /* Summary card */
+  .summary-card {
+    margin-top: 8px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    padding: 14px 16px;
+    background: var(--surface);
+    animation: slideIn 0.35s ease;
+    border-left: 4px solid var(--accent);
+  }
+
+  .summary-card .summary-label {
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--accent);
+    margin-bottom: 6px;
+  }
+
+  .summary-card .summary-counts {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 6px;
+  }
+
+  .summary-card .summary-body {
+    font-size: 0.82rem;
+    color: var(--muted);
+    line-height: 1.55;
+  }
+
+  /* Cursor blink while streaming */
+  .cursor {
+    display: inline-block;
+    width: 8px;
+    height: 14px;
+    background: var(--accent);
+    border-radius: 1px;
+    animation: blink 0.8s step-end infinite;
+    vertical-align: text-bottom;
+    margin-left: 2px;
+  }
+
+  @keyframes blink {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0; }
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+
+  @keyframes slideIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Scrollbars */
+  ::-webkit-scrollbar       { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+</style>
+</head>
+<body>
+
+<!-- ── Header ──────────────────────────────────────────────────────────── -->
+<header>
+  <div class="logo">
+    <span class="icon">&#x1F50D;</span>
+    PR Reviewer
+  </div>
+  <span class="tagline">AI-powered code review, streamed in real time</span>
+</header>
+
+<!-- ── Main split ──────────────────────────────────────────────────────── -->
+<main>
+
+  <!-- LEFT PANEL -->
+  <div class="left-panel">
+    <h2>Pull Requests</h2>
+
+    <div class="pr-list" id="pr-list">
+      <!-- populated by JS -->
+    </div>
+
+    <div class="diff-section" id="diff-section">
+      <div class="diff-placeholder" id="diff-placeholder">
+        Select a PR to view the diff
+      </div>
+      <!-- diff header + body injected here by JS -->
+    </div>
+
+    <div class="review-btn-wrap">
+      <button class="review-btn" id="review-btn" disabled>
+        <span id="btn-icon">&#x25B6;</span>
+        <span id="btn-label">Review this PR</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- RIGHT PANEL -->
+  <div class="right-panel">
+    <div class="review-header">
+      <span class="review-title">Code Review</span>
+      <span class="status-badge status-idle" id="status-badge">Idle</span>
+    </div>
+
+    <div class="review-body" id="review-body">
+      <div class="review-empty" id="review-empty">
+        <span class="icon">&#x1F916;</span>
+        <p>Select a PR and click <strong>Review this PR</strong> to start.</p>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<script>
+// ── State ────────────────────────────────────────────────────────────────
+let prs = [];
+let selectedPr = null;
+let streaming = false;
+let activeSource = null;
+
+// ── Boot ─────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', async () => {
+  const res = await fetch('/reviews/prs');
+  prs = await res.json();
+  renderPrList();
+});
+
+// ── PR card rendering ────────────────────────────────────────────────────
+function renderPrList() {
+  const list = document.getElementById('pr-list');
+  list.innerHTML = '';
+  for (const pr of prs) {
+    const card = document.createElement('div');
+    card.className = 'pr-card';
+    card.dataset.id = pr.id;
+    card.innerHTML = `
+      <div class="pr-header">
+        <span class="pr-title">${esc(pr.title)}</span>
+        <span class="lang-badge lang-${pr.language.toLowerCase()}">${esc(pr.language)}</span>
+      </div>
+      <div class="pr-meta">
+        <span class="pr-number">#${pr.number}</span>
+        <span>by ${esc(pr.author)}</span>
+        <span>${pr.files_changed} file${pr.files_changed !== 1 ? 's' : ''}</span>
+        <span class="additions">+${pr.additions}</span>
+        <span class="deletions">-${pr.deletions}</span>
+      </div>
+    `;
+    card.addEventListener('click', () => selectPr(pr));
+    list.appendChild(card);
+  }
+}
+
+function selectPr(pr) {
+  if (streaming) return;
+  selectedPr = pr;
+
+  // highlight card
+  document.querySelectorAll('.pr-card').forEach(c => {
+    c.classList.toggle('selected', c.dataset.id === pr.id);
+  });
+
+  renderDiff(pr);
+  document.getElementById('review-btn').disabled = false;
+}
+
+// ── Diff rendering ───────────────────────────────────────────────────────
+function renderDiff(pr) {
+  const section = document.getElementById('diff-section');
+
+  // Remove old content, keep placeholder accessible
+  section.innerHTML = `
+    <div class="diff-header">
+      <span>&#x1F4C4; ${esc(pr.title)}</span>
+      <span class="lang-badge lang-${pr.language.toLowerCase()}">${esc(pr.language)}</span>
+    </div>
+    <div class="diff-description">${esc(pr.description)}</div>
+    <div class="diff-code"><pre id="diff-pre"></pre></div>
+  `;
+
+  const pre = document.getElementById('diff-pre');
+  const lines = pr.diff.split('\n');
+  for (const raw of lines) {
+    const span = document.createElement('span');
+    span.className = 'diff-line ' + classifyDiffLine(raw);
+    span.textContent = raw;
+    pre.appendChild(span);
+    pre.appendChild(document.createTextNode('\n'));
+  }
+}
+
+function classifyDiffLine(line) {
+  if (line.startsWith('+++') || line.startsWith('---')) return 'meta';
+  if (line.startsWith('@@'))  return 'hunk';
+  if (line.startsWith('+'))   return 'add';
+  if (line.startsWith('-'))   return 'del';
+  if (line.startsWith('diff ') || line.startsWith('index ')) return 'meta';
+  return '';
+}
+
+// ── Review button ────────────────────────────────────────────────────────
+document.getElementById('review-btn').addEventListener('click', () => {
+  if (!selectedPr || streaming) return;
+  startReview(selectedPr.id);
+});
+
+// ── SSE streaming ────────────────────────────────────────────────────────
+function startReview(prId) {
+  if (activeSource) { activeSource.close(); activeSource = null; }
+
+  streaming = true;
+  setStatus('running', 'Analyzing...');
+  document.getElementById('review-btn').disabled = true;
+  document.getElementById('btn-label').textContent = 'Reviewing...';
+  document.getElementById('btn-icon').innerHTML = '&#x23F3;';
+
+  // Clear previous output
+  const body = document.getElementById('review-body');
+  body.innerHTML = '';
+
+  // Cursor element
+  const cursor = document.createElement('span');
+  cursor.className = 'cursor';
+  body.appendChild(cursor);
+
+  const source = new EventSource(`/reviews/stream/${prId}`);
+  activeSource = source;
+
+  source.addEventListener('stage', e => {
+    const label = e.data === 'create_sprite' ? 'Provisioning environment…' : 'Starting agent runtime…';
+    appendStageLine(label, body, cursor);
+  });
+
+  source.addEventListener('output', e => {
+    const text = e.data;
+    handleOutputLine(text.trimEnd(), body, cursor);
+    scrollToBottom(body);
+  });
+
+  source.addEventListener('exit', e => {
+    cursor.remove();
+    streaming = false;
+    activeSource = null;
+    source.close();
+    if (e.data === '0') {
+      setStatus('done', 'Complete');
+    } else {
+      setStatus('error', 'Error');
+    }
+    document.getElementById('review-btn').disabled = false;
+    document.getElementById('btn-label').textContent = 'Review this PR';
+    document.getElementById('btn-icon').innerHTML = '&#x25B6;';
+    scrollToBottom(body);
+  });
+
+  source.onerror = () => {
+    cursor.remove();
+    streaming = false;
+    source.close();
+    setStatus('error', 'Connection error');
+    document.getElementById('review-btn').disabled = false;
+    document.getElementById('btn-label').textContent = 'Review this PR';
+    document.getElementById('btn-icon').innerHTML = '&#x25B6;';
+  };
+}
+
+// ── Output line dispatcher ───────────────────────────────────────────────
+function handleOutputLine(line, body, cursor) {
+  if (!line) return;
+
+  // CATEGORY:Label
+  if (line.startsWith('CATEGORY:')) {
+    const label = line.slice('CATEGORY:'.length);
+    appendCategoryHeader(label, body, cursor);
+    return;
+  }
+
+  // SUMMARY|counts|body
+  if (line.startsWith('SUMMARY|')) {
+    const parts = line.slice('SUMMARY|'.length).split('|');
+    const counts = parts[0] || '';
+    const bodyText = parts.slice(1).join('|');
+    appendSummaryCard(counts, bodyText, body, cursor);
+    return;
+  }
+
+  // SEVERITY|Category|Title|Body
+  const pipeCount = (line.match(/\|/g) || []).length;
+  if (pipeCount >= 3) {
+    const idx1 = line.indexOf('|');
+    const idx2 = line.indexOf('|', idx1 + 1);
+    const idx3 = line.indexOf('|', idx2 + 1);
+    const severity = line.slice(0, idx1);
+    const category = line.slice(idx1 + 1, idx2);
+    const title    = line.slice(idx2 + 1, idx3);
+    const detail   = line.slice(idx3 + 1);
+    const knownSeverities = ['CRITICAL','HIGH','MEDIUM','LOW','GOOD'];
+    if (knownSeverities.includes(severity)) {
+      appendFindingCard(severity, category, title, detail, body, cursor);
+      return;
+    }
+  }
+
+  // Plain output line
+  appendOutputLine(line, body, cursor);
+}
+
+// ── DOM append helpers ───────────────────────────────────────────────────
+function appendStageLine(text, body, cursor) {
+  const el = document.createElement('div');
+  el.className = 'stage-line';
+  el.textContent = text;
+  body.insertBefore(el, cursor);
+}
+
+function appendOutputLine(text, body, cursor) {
+  const el = document.createElement('div');
+  el.className = 'output-line';
+  el.textContent = text;
+  body.insertBefore(el, cursor);
+}
+
+function appendCategoryHeader(label, body, cursor) {
+  const icons = { Security: '&#x1F512;', Correctness: '&#x2699;&#xFE0F;', Performance: '&#x26A1;', Style: '&#x1F58C;&#xFE0F;' };
+  const el = document.createElement('div');
+  el.className = 'category-header';
+  el.innerHTML = `${icons[label] || '&#x1F4CB;'} ${esc(label)}`;
+  body.insertBefore(el, cursor);
+}
+
+function appendFindingCard(severity, category, title, detail, body, cursor) {
+  const sevClass = {
+    CRITICAL: 'sev-critical',
+    HIGH:     'sev-high',
+    MEDIUM:   'sev-medium',
+    LOW:      'sev-low',
+    GOOD:     'sev-good',
+  }[severity] || 'sev-low';
+
+  const sevIcon = {
+    CRITICAL: '&#x1F534;',
+    HIGH:     '&#x1F534;',
+    MEDIUM:   '&#x1F7E1;',
+    LOW:      '&#x1F7E2;',
+    GOOD:     '&#x2705;',
+  }[severity] || '';
+
+  const card = document.createElement('div');
+  card.className = 'finding-card';
+  card.innerHTML = `
+    <div class="finding-top">
+      <span class="severity-badge ${sevClass}">${sevIcon} ${severity}</span>
+      <span class="finding-title">${esc(title)}</span>
+    </div>
+    <div class="finding-body">${formatBody(detail)}</div>
+  `;
+  body.insertBefore(card, cursor);
+}
+
+function appendSummaryCard(counts, bodyText, body, cursor) {
+  const card = document.createElement('div');
+  card.className = 'summary-card';
+  card.innerHTML = `
+    <div class="summary-label">&#x1F4CB; Review Summary</div>
+    <div class="summary-counts">${esc(counts)}</div>
+    <div class="summary-body">${formatBody(bodyText)}</div>
+  `;
+  body.insertBefore(card, cursor);
+}
+
+// ── Utilities ────────────────────────────────────────────────────────────
+function setStatus(state, label) {
+  const badge = document.getElementById('status-badge');
+  badge.className = `status-badge status-${state}`;
+  badge.textContent = label;
+}
+
+function scrollToBottom(el) {
+  el.scrollTop = el.scrollHeight;
+}
+
+function esc(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+/** Wrap backtick-delimited spans in <code> tags and escape everything else. */
+function formatBody(text) {
+  const parts = text.split(/`([^`]+)`/);
+  return parts.map((p, i) => i % 2 === 1 ? `<code>${esc(p)}</code>` : esc(p)).join('');
+}
+</script>
+</body>
+</html>
