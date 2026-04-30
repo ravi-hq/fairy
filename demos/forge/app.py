@@ -24,7 +24,21 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
-from scenarios import AGENTS, AUDIT, get_agent, get_test_run, list_agents_summary
+from scenarios import (
+    AGENTS,
+    AUDIT,
+    DAILY_SPEND,
+    OWNERS,
+    TOOLS,
+    add_agent,
+    get_agent,
+    get_audit_kpis,
+    get_footer_stats,
+    get_run_detail,
+    get_run_history,
+    get_test_run,
+    list_agents_summary,
+)
 
 app = FastAPI(title="Forge", description="Team agent maker — Agent on Demand demo.")
 
@@ -138,11 +152,97 @@ async def api_fork(agent_id: str, body: ForkBody) -> dict[str, Any]:
     return {"ok": True, "fork": record}
 
 
+# --- API: create new agent (wizard publish) ---------------------------------
+
+class CreateAgentBody(BaseModel):
+    name: str
+    description: str
+    category: str
+    system_prompt: str
+    tools: list[str]
+    done_when: str
+
+
+def _slugify(name: str) -> str:
+    out = []
+    for ch in name.lower().strip():
+        if ch.isalnum():
+            out.append(ch)
+        elif ch in (" ", "-", "_"):
+            out.append("-")
+    slug = "".join(out).strip("-")
+    return slug or "new-agent"
+
+
+@app.post("/api/agents")
+async def api_create_agent(body: CreateAgentBody) -> dict[str, Any]:
+    base = _slugify(body.name)
+    agent_id = base
+    n = 2
+    while agent_id in AGENTS:
+        agent_id = f"{base}-{n}"
+        n += 1
+    record = {
+        "id": agent_id,
+        "name": body.name.strip() or agent_id,
+        "description": body.description.strip(),
+        "version": 1,
+        "category": body.category or "Other",
+        "created_at": "2026-04-29",
+        "owner": OWNERS["jake"],
+        "tools": body.tools,
+        "system_prompt": body.system_prompt,
+        "done_when": body.done_when,
+        "stats": {"runs_per_week": 0, "rating": None, "rating_count": 0, "fork_count": 0},
+        "version_history": [
+            {"version": 1, "date": "2026-04-29", "note": "Published from wizard."},
+        ],
+        "forks": [],
+        "recent_runs": [],
+        # No mock_test_run — get_test_run() falls back to the generic 6-step sequence.
+    }
+    add_agent(record)
+    return {k: v for k, v in record.items() if k != "mock_test_run"}
+
+
+# --- API: run history -------------------------------------------------------
+
+@app.get("/api/agents/{agent_id}/runs")
+async def api_run_history(agent_id: str) -> dict[str, Any]:
+    if agent_id not in AGENTS:
+        raise HTTPException(404, f"Unknown agent: {agent_id}")
+    return {"runs": get_run_history(agent_id)}
+
+
+@app.get("/api/agents/{agent_id}/runs/{run_id}")
+async def api_run_detail(agent_id: str, run_id: str) -> dict[str, Any]:
+    detail = get_run_detail(agent_id, run_id)
+    if detail is None:
+        raise HTTPException(404, f"Unknown run: {run_id}")
+    return detail
+
+
 # --- API: audit -------------------------------------------------------------
 
 @app.get("/api/audit")
 async def api_audit() -> dict[str, Any]:
-    return AUDIT
+    return {**AUDIT, "kpis": get_audit_kpis(), "daily_spend": DAILY_SPEND}
+
+
+# --- API: tools / footer ----------------------------------------------------
+
+@app.get("/api/tools")
+async def api_tools() -> dict[str, Any]:
+    catalog = []
+    for tool_name, info in TOOLS.items():
+        used_by = [a["id"] for a in AGENTS.values() if tool_name in a["tools"]]
+        catalog.append({**info, "used_by": used_by})
+    return {"tools": catalog}
+
+
+@app.get("/api/footer")
+async def api_footer() -> dict[str, Any]:
+    return get_footer_stats()
 
 
 # --- Index ------------------------------------------------------------------

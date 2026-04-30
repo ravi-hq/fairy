@@ -198,6 +198,70 @@ SPEC_DRAFTER_RUN: list[tuple[float, str, str]] = [
 ]
 
 
+ONBOARDING_BUDDY_RUN: list[tuple[float, str, str]] = [
+    (0.3, "stage",   "create_sprite          claimed sprite-3e91 in 0.15s"),
+    (0.3, "stage",   "provision_setup       loaded slack + notion + gcal creds"),
+    (0.3, "stage",   "runtime_start         claude-sonnet ready"),
+    (0.5, "thought", "New hire: Priya R. starts Mon. Role: Eng. Manager: Jake G. Build week 1 plan."),
+    (0.7, "tool",    "notion.search        'onboarding template' database=people-ops"),
+    (0.6, "output",  "Found 'Eng onboarding v4' — covers laptop, repos, on-call shadowing, week-1 1:1s."),
+    (0.7, "tool",    "slack.lookup_user    name='Priya R.'"),
+    (0.6, "output",  "Resolved @priya.r — joined Slack 2026-04-28, no DMs yet."),
+    (0.7, "tool",    "gcal.find_freebusy   attendees=[priya, jake, maya, sam], window=next_5_days, dur=30m"),
+    (0.6, "output",  "3 viable slots for each intro — picked least-disruptive across calendars."),
+    (0.7, "tool",    "gcal.create_event    title='Welcome 1:1 — Priya x Jake', when=Mon 10:00"),
+    (0.7, "tool",    "gcal.create_event    title='Codebase tour — Priya x Maya', when=Tue 14:00"),
+    (0.7, "tool",    "gcal.create_event    title='Coffee — Priya x Sam', when=Wed 09:30"),
+    (0.5, "thought", "Send the welcome DM with the schedule + repo links + on-call rotation map."),
+    (0.7, "tool",    "slack.dm             to=@priya.r, type=welcome_packet"),
+    (1.0, "result",  _result({
+        "new_hire": "Priya R.",
+        "role": "Engineering",
+        "week_1_events_scheduled": 3,
+        "intros_booked_with": ["Jake G.", "Maya M.", "Sam P."],
+        "slack_dm_sent": True,
+        "next_steps": [
+            "Day 2: laptop pickup reminder (auto-fires Mon 09:00)",
+            "Day 4: 'how's it going?' check-in DM",
+            "Day 7: schedule second-week deep-dive sessions",
+        ],
+        "doc_link": "notion.so/ravi/priya-r-onboarding",
+    })),
+    (0.2, "exit", "0"),
+]
+
+
+INCIDENT_COMMS_RUN: list[tuple[float, str, str]] = [
+    (0.3, "stage",   "create_sprite          claimed sprite-8ac2 in 0.16s"),
+    (0.3, "stage",   "provision_setup       loaded statuspage + slack creds"),
+    (0.3, "stage",   "runtime_start         claude-opus ready"),
+    (0.5, "thought", "Incident INC-2026-04-29-01 active. Sev2. Customer-visible: yes. Need first update within 10 min."),
+    (0.7, "tool",    "slack.read           channel=#inc-2026-04-29-01, last=20"),
+    (0.6, "output",  "Engineering hypothesis: PR #324 caused seq-scan on agent_session.state. Mitigation in flight."),
+    (0.5, "thought", "Customer audience: API consumers. Tone: factual, no internal blame, no 'we apologize for the inconvenience' filler."),
+    (0.7, "tool",    "statuspage.create_incident  name='Elevated latency on /api/sessions', impact=minor"),
+    (0.6, "output",  "Statuspage incident st-9f4e2 created. Public URL: status.aod.ravi.id/incidents/9f4e2."),
+    (0.7, "tool",    "statuspage.post_update      incident=st-9f4e2, status=identified"),
+    (0.5, "thought", "Drop a parallel update in #customers-vip — these orgs hit Slack-paged tiers."),
+    (0.7, "tool",    "slack.post                  channel=#customers-vip, type=incident_first_update"),
+    (1.0, "result",  _result({
+        "incident_id": "st-9f4e2",
+        "severity": "minor",
+        "status": "identified",
+        "first_update_eta_min": 6.5,
+        "channels_posted": ["statuspage", "#customers-vip"],
+        "first_update_text": (
+            "We're investigating elevated latency on POST /api/sessions starting at 14:31 UTC. "
+            "Affected: ~3% of requests, p99 +3s above baseline. "
+            "Root cause identified; mitigation in progress. Next update by 14:55 UTC."
+        ),
+        "next_update_due": "2026-04-29T14:55:00Z",
+        "internal_runbook": "docs/runbook.md#customer-comms",
+    })),
+    (0.2, "exit", "0"),
+]
+
+
 DEPENDENCY_BUMPER_RUN: list[tuple[float, str, str]] = [
     (0.3, "stage",   "create_sprite          claimed sprite-6b22 in 0.16s"),
     (0.3, "stage",   "provision_setup       cloned ravi-hq/fairy@main"),
@@ -237,6 +301,8 @@ AGENTS: dict[str, dict[str, Any]] = {
         "name": "competitive-researcher",
         "description": "Researches competitor launches, summarizes positioning shifts, extracts pricing changes.",
         "version": 3,
+        "category": "Research",
+        "created_at": "2026-03-12",
         "owner": OWNERS["maya"],
         "tools": ["Web Search", "Web Fetch"],
         "system_prompt": (
@@ -273,6 +339,8 @@ AGENTS: dict[str, dict[str, Any]] = {
         "name": "pr-reviewer",
         "description": "Reviews open PRs against codebase conventions and flags risks.",
         "version": 2,
+        "category": "Engineering",
+        "created_at": "2026-02-04",
         "owner": OWNERS["jake"],
         "tools": ["Filesystem", "Bash", "Git"],
         "system_prompt": (
@@ -311,6 +379,8 @@ AGENTS: dict[str, dict[str, Any]] = {
         "name": "on-call-scout",
         "description": "First responder for incidents — runs the investigation playbook before paging.",
         "version": 1,
+        "category": "Ops",
+        "created_at": "2026-04-08",
         "owner": OWNERS["maya"],
         "tools": ["Honeycomb", "GitHub", "Slack"],
         "system_prompt": (
@@ -342,6 +412,8 @@ AGENTS: dict[str, dict[str, Any]] = {
         "name": "changelog-writer",
         "description": "Turns a git log range into a customer-friendly changelog.",
         "version": 2,
+        "category": "Engineering",
+        "created_at": "2026-02-22",
         "owner": OWNERS["sam"],
         "tools": ["Git", "Filesystem"],
         "system_prompt": (
@@ -379,6 +451,8 @@ AGENTS: dict[str, dict[str, Any]] = {
         "name": "spec-drafter",
         "description": "Drafts engineering specs from a one-line prompt + linked tickets.",
         "version": 1,
+        "category": "Engineering",
+        "created_at": "2026-04-18",
         "owner": OWNERS["sam"],
         "tools": ["Web Fetch", "Linear", "Notion"],
         "system_prompt": (
@@ -408,6 +482,8 @@ AGENTS: dict[str, dict[str, Any]] = {
         "name": "dependency-bumper",
         "description": "Bumps a dependency, runs tests, opens a PR if they pass.",
         "version": 4,
+        "category": "Engineering",
+        "created_at": "2026-01-29",
         "owner": OWNERS["jake"],
         "tools": ["Filesystem", "Bash", "Git"],
         "system_prompt": (
@@ -438,6 +514,255 @@ AGENTS: dict[str, dict[str, Any]] = {
         ],
         "mock_test_run": DEPENDENCY_BUMPER_RUN,
     },
+
+    "onboarding-buddy": {
+        "id": "onboarding-buddy",
+        "name": "onboarding-buddy",
+        "description": "Guides new hires through their first week — schedules intros, sends welcome packets, files reminders.",
+        "version": 1,
+        "category": "Growth",
+        "created_at": "2026-04-19",
+        "owner": OWNERS["sam"],
+        "tools": ["Slack", "Notion"],
+        "system_prompt": (
+            "You are an onboarding concierge for a small engineering org.\n"
+            "Given a new hire's name + start date + manager, build a structured first-week plan:\n"
+            "intros with at least 3 teammates, a coffee chat, a codebase tour, and a Day-1 welcome DM.\n"
+            "Pull from the latest 'Eng onboarding' template in Notion — never improvise the schedule from scratch.\n"
+            "Use Google Calendar free/busy to pick the least-disruptive slots; never double-book.\n"
+            "Always send the welcome DM as a Slack message, never as email — first contact should feel personal."
+        ),
+        "done_when": "All Week-1 events scheduled, welcome DM sent, onboarding doc linked, follow-up reminders queued.",
+        "stats": {"runs_per_week": 38, "rating": 4.6, "rating_count": 8, "fork_count": 1},
+        "version_history": [
+            {"version": 1, "date": "2026-04-19", "note": "Initial version."},
+        ],
+        "forks": [
+            {"name": "intern-onboarding-buddy", "owner": "Sam P.", "version": 1},
+        ],
+        "recent_runs": [
+            {"who": "Sam P.",  "when": "1 hr ago",   "cost": 0.18, "duration_sec": 21, "outcome": "completed"},
+            {"who": "Jake G.", "when": "2 days ago", "cost": 0.21, "duration_sec": 24, "outcome": "completed"},
+        ],
+        "mock_test_run": ONBOARDING_BUDDY_RUN,
+    },
+
+    "incident-comms": {
+        "id": "incident-comms",
+        "name": "incident-comms",
+        "description": "Drafts customer-facing status updates during incidents — Statuspage + VIP Slack channels.",
+        "version": 2,
+        "category": "Ops",
+        "created_at": "2026-03-04",
+        "owner": OWNERS["maya"],
+        "tools": ["Slack"],
+        "system_prompt": (
+            "You write customer-facing incident updates during active outages.\n"
+            "Read the engineering channel for the current hypothesis and mitigation status before writing.\n"
+            "Tone: factual, no internal blame, no 'we apologize for the inconvenience' filler.\n"
+            "Always include: what's affected, scope (% of users / requests), current status, next-update ETA.\n"
+            "Post first to Statuspage, then mirror to #customers-vip. Never DM individual customers.\n"
+            "The first update must go out within 10 minutes of incident declaration — speed beats polish."
+        ),
+        "done_when": "Statuspage incident created with first update; #customers-vip mirror posted; next-update ETA set.",
+        "stats": {"runs_per_week": 14, "rating": 4.8, "rating_count": 9, "fork_count": 0},
+        "version_history": [
+            {"version": 2, "date": "2026-04-12", "note": "Mirror to #customers-vip; tightened first-update template."},
+            {"version": 1, "date": "2026-03-04", "note": "Initial version."},
+        ],
+        "forks": [],
+        "recent_runs": [
+            {"who": "Maya M.",   "when": "yesterday",  "cost": 0.31, "duration_sec": 27, "outcome": "completed"},
+            {"who": "PagerDuty", "when": "4 days ago", "cost": 0.29, "duration_sec": 25, "outcome": "completed"},
+        ],
+        "mock_test_run": INCIDENT_COMMS_RUN,
+    },
+}
+
+
+# --- Run history (per-agent) ------------------------------------------------
+
+RUN_HISTORY: dict[str, list[dict[str, Any]]] = {
+    "competitive-researcher": [
+        {"id": "rh-cr-01", "ts": "14:20",       "who": "Maya M.",  "prompt": "Top 3 competitors — last 14d.",                       "duration_sec": 24, "cost": 0.32, "status": "success"},
+        {"id": "rh-cr-02", "ts": "12:04",       "who": "Jake G.",  "prompt": "Pricing-page diffs since April 1.",                   "duration_sec": 31, "cost": 0.41, "status": "success"},
+        {"id": "rh-cr-03", "ts": "Mon 16:42",   "who": "Sam P.",   "prompt": "What did Linear ship this week?",                     "duration_sec": 22, "cost": 0.29, "status": "success"},
+        {"id": "rh-cr-04", "ts": "Mon 11:08",   "who": "Maya M.",  "prompt": "Devtools positioning shifts (Linear, Asana, Height).", "duration_sec": 26, "cost": 0.34, "status": "success"},
+        {"id": "rh-cr-05", "ts": "Sun 09:15",   "who": "GitHub Action", "prompt": "Weekly digest — competitor changelogs.",          "duration_sec": 41, "cost": 0.52, "status": "success"},
+        {"id": "rh-cr-06", "ts": "Fri 15:30",   "who": "Jake G.",  "prompt": "Did anyone announce AI features this week?",          "duration_sec": 19, "cost": 0.24, "status": "success"},
+        {"id": "rh-cr-07", "ts": "Fri 10:01",   "who": "Sam P.",   "prompt": "Compare Asana Business vs Linear Plus pricing.",      "duration_sec": 28, "cost": 0.36, "status": "success"},
+        {"id": "rh-cr-08", "ts": "Thu 14:55",   "who": "Maya M.",  "prompt": "Has Notion shipped anything in the AI space?",        "duration_sec": 17, "cost": 0.21, "status": "failed"},
+        {"id": "rh-cr-09", "ts": "Wed 13:22",   "who": "Maya M.",  "prompt": "Top 3 competitors — last 14d.",                       "duration_sec": 25, "cost": 0.33, "status": "success"},
+        {"id": "rh-cr-10", "ts": "Wed 09:48",   "who": "Sam P.",   "prompt": "Find any podcast appearances by competitor CEOs.",    "duration_sec": 38, "cost": 0.47, "status": "success"},
+    ],
+    "pr-reviewer": [
+        {"id": "rh-pr-01", "ts": "14:32",       "who": "Jake G.",       "prompt": "Review PR #331 — /interrupt endpoint.",        "duration_sec": 14, "cost": 0.18, "status": "success"},
+        {"id": "rh-pr-02", "ts": "13:44",       "who": "Jake G.",       "prompt": "Review PR #330 — schema diff snapshot.",        "duration_sec": 17, "cost": 0.21, "status": "success"},
+        {"id": "rh-pr-03", "ts": "13:31",       "who": "GitHub Action", "prompt": "Auto-review PR #329 (renovate-bot).",           "duration_sec": 12, "cost": 0.16, "status": "success"},
+        {"id": "rh-pr-04", "ts": "11:22",       "who": "Sam P.",        "prompt": "Review PR #327 — TS SDK abort listener.",       "duration_sec": 19, "cost": 0.24, "status": "success"},
+        {"id": "rh-pr-05", "ts": "10:08",       "who": "Maya M.",       "prompt": "Review PR #326 — landing page narrative.",      "duration_sec": 15, "cost": 0.19, "status": "success"},
+        {"id": "rh-pr-06", "ts": "Mon 17:14",   "who": "Jake G.",       "prompt": "Review PR #324 — agent_session.state filter.",  "duration_sec": 21, "cost": 0.27, "status": "success"},
+        {"id": "rh-pr-07", "ts": "Mon 11:55",   "who": "GitHub Action", "prompt": "Auto-review PR #322 (deps).",                   "duration_sec": 11, "cost": 0.14, "status": "success"},
+        {"id": "rh-pr-08", "ts": "Sun 22:08",   "who": "Sam P.",        "prompt": "Review PR #321 — mutation gate config.",         "duration_sec": 18, "cost": 0.22, "status": "failed"},
+        {"id": "rh-pr-09", "ts": "Fri 16:40",   "who": "Maya M.",       "prompt": "Review PR #318 — provisioning refactor.",        "duration_sec": 23, "cost": 0.28, "status": "success"},
+        {"id": "rh-pr-10", "ts": "Fri 09:12",   "who": "Jake G.",       "prompt": "Review PR #316 — encrypted env_vars handling.",  "duration_sec": 26, "cost": 0.32, "status": "success"},
+    ],
+    "on-call-scout": [
+        {"id": "rh-oc-01", "ts": "13:58",     "who": "PagerDuty", "prompt": "p99 latency on /api/sessions > 4s for 8 minutes.", "duration_sec": 19, "cost": 0.27, "status": "success"},
+        {"id": "rh-oc-02", "ts": "Mon 02:18", "who": "PagerDuty", "prompt": "Worker queue backlog > 500 for 12 minutes.",       "duration_sec": 22, "cost": 0.31, "status": "success"},
+        {"id": "rh-oc-03", "ts": "Sun 14:09", "who": "Maya M.",   "prompt": "Investigate flaky e2e tests on main.",             "duration_sec": 16, "cost": 0.24, "status": "success"},
+        {"id": "rh-oc-04", "ts": "Fri 19:22", "who": "PagerDuty", "prompt": "5xx rate on /sessions > 2% for 5 minutes.",        "duration_sec": 18, "cost": 0.26, "status": "success"},
+        {"id": "rh-oc-05", "ts": "Wed 11:44", "who": "PagerDuty", "prompt": "DB connection exhaustion alert.",                  "duration_sec": 14, "cost": 0.20, "status": "failed"},
+        {"id": "rh-oc-06", "ts": "Mon 21:08", "who": "Maya M.",   "prompt": "Why are session.completed events missing in PostHog?", "duration_sec": 23, "cost": 0.34, "status": "success"},
+        {"id": "rh-oc-07", "ts": "Sun 09:30", "who": "PagerDuty", "prompt": "Render deploy stuck > 10 min on web service.",     "duration_sec": 17, "cost": 0.25, "status": "success"},
+        {"id": "rh-oc-08", "ts": "Fri 03:42", "who": "PagerDuty", "prompt": "Procrastinate worker error rate spike.",           "duration_sec": 20, "cost": 0.28, "status": "success"},
+    ],
+    "changelog-writer": [
+        {"id": "rh-cw-01", "ts": "14:02",     "who": "Sam P.",  "prompt": "Generate changelog for v1.4.0..v1.5.0.",           "duration_sec": 18, "cost": 0.22, "status": "success"},
+        {"id": "rh-cw-02", "ts": "Mon 10:55", "who": "Jake G.", "prompt": "Generate changelog for v1.3.0..v1.4.0.",           "duration_sec": 16, "cost": 0.20, "status": "success"},
+        {"id": "rh-cw-03", "ts": "Fri 14:18", "who": "Sam P.",  "prompt": "Customer-facing only — last 7 days.",              "duration_sec": 12, "cost": 0.15, "status": "success"},
+        {"id": "rh-cw-04", "ts": "Wed 11:22", "who": "Maya M.", "prompt": "Engineering log for sprint 14.",                   "duration_sec": 14, "cost": 0.18, "status": "success"},
+        {"id": "rh-cw-05", "ts": "Mon 16:08", "who": "Sam P.",  "prompt": "Generate changelog for v1.2.0..v1.3.0.",           "duration_sec": 17, "cost": 0.21, "status": "success"},
+        {"id": "rh-cw-06", "ts": "Sun 08:11", "who": "GitHub Action", "prompt": "Auto changelog — weekly digest cron.",       "duration_sec": 22, "cost": 0.27, "status": "success"},
+        {"id": "rh-cw-07", "ts": "Fri 09:45", "who": "Jake G.", "prompt": "SDK-only changelog — TS SDK fixes.",               "duration_sec": 11, "cost": 0.14, "status": "success"},
+        {"id": "rh-cw-08", "ts": "Thu 13:30", "who": "Sam P.",  "prompt": "Patch release notes for v1.4.1.",                  "duration_sec": 13, "cost": 0.16, "status": "failed"},
+    ],
+    "spec-drafter": [
+        {"id": "rh-sd-01", "ts": "13:18",     "who": "Sam P.",   "prompt": "Per-org rate limit on POST /sessions.",             "duration_sec": 42, "cost": 0.51, "status": "success"},
+        {"id": "rh-sd-02", "ts": "Mon 15:42", "who": "Maya M.",  "prompt": "Spec out the auto-revert workflow.",                "duration_sec": 39, "cost": 0.48, "status": "success"},
+        {"id": "rh-sd-03", "ts": "Fri 11:08", "who": "Jake G.",  "prompt": "Sprite cold-start budget — design doc.",            "duration_sec": 44, "cost": 0.54, "status": "success"},
+        {"id": "rh-sd-04", "ts": "Wed 14:22", "who": "Sam P.",   "prompt": "Multi-region sprite placement.",                    "duration_sec": 51, "cost": 0.62, "status": "success"},
+        {"id": "rh-sd-05", "ts": "Mon 10:18", "who": "Maya M.",  "prompt": "RFC: deprecate session.recent_events shape.",       "duration_sec": 38, "cost": 0.47, "status": "success"},
+        {"id": "rh-sd-06", "ts": "Sun 19:30", "who": "Jake G.",  "prompt": "Spec out idempotency keys on POST /agents.",        "duration_sec": 36, "cost": 0.45, "status": "success"},
+        {"id": "rh-sd-07", "ts": "Fri 16:55", "who": "Sam P.",   "prompt": "Auto-revert UX — internal vs external.",            "duration_sec": 40, "cost": 0.49, "status": "failed"},
+        {"id": "rh-sd-08", "ts": "Thu 09:12", "who": "Maya M.",  "prompt": "Telemetry redaction policy.",                       "duration_sec": 42, "cost": 0.51, "status": "success"},
+    ],
+    "dependency-bumper": [
+        {"id": "rh-db-01", "ts": "12:51",     "who": "Jake G.",       "prompt": "Bump django 5.0.4 -> 5.1.2.",        "duration_sec": 67, "cost": 0.39, "status": "success"},
+        {"id": "rh-db-02", "ts": "11:30",     "who": "Renovate-bot",  "prompt": "Bump pydantic 2.5.3 -> 2.6.0.",       "duration_sec": 71, "cost": 0.41, "status": "success"},
+        {"id": "rh-db-03", "ts": "08:15",     "who": "Renovate-bot",  "prompt": "Bump procrastinate 2.9.1 -> 2.10.0.", "duration_sec": 69, "cost": 0.40, "status": "failed"},
+        {"id": "rh-db-04", "ts": "Mon 22:18", "who": "Renovate-bot",  "prompt": "Bump fastapi 0.110.0 -> 0.111.0.",    "duration_sec": 64, "cost": 0.37, "status": "success"},
+        {"id": "rh-db-05", "ts": "Mon 14:08", "who": "Jake G.",       "prompt": "Bump httpx 0.27.0 -> 0.28.1.",        "duration_sec": 58, "cost": 0.34, "status": "success"},
+        {"id": "rh-db-06", "ts": "Sun 03:24", "who": "Renovate-bot",  "prompt": "Bump uvicorn 0.29.0 -> 0.30.0.",      "duration_sec": 62, "cost": 0.36, "status": "success"},
+        {"id": "rh-db-07", "ts": "Fri 18:42", "who": "Renovate-bot",  "prompt": "Bump cryptography 42.0.5 -> 42.0.7.", "duration_sec": 71, "cost": 0.41, "status": "failed"},
+        {"id": "rh-db-08", "ts": "Wed 12:11", "who": "Jake G.",       "prompt": "Bump psycopg 3.1.18 -> 3.1.19.",      "duration_sec": 68, "cost": 0.40, "status": "success"},
+    ],
+    "onboarding-buddy": [
+        {"id": "rh-ob-01", "ts": "Mon 09:02", "who": "Sam P.",  "prompt": "Onboard Priya R. — Eng, starts Mon, manager Jake.", "duration_sec": 21, "cost": 0.18, "status": "success"},
+        {"id": "rh-ob-02", "ts": "Fri 14:30", "who": "Jake G.", "prompt": "Onboard Tomás L. — Eng intern.",                    "duration_sec": 24, "cost": 0.21, "status": "success"},
+        {"id": "rh-ob-03", "ts": "Wed 10:11", "who": "Sam P.",  "prompt": "Refresh week-1 plan for Avery (already started).", "duration_sec": 19, "cost": 0.16, "status": "success"},
+        {"id": "rh-ob-04", "ts": "Mon 11:45", "who": "Maya M.", "prompt": "Onboard Dani W. — Design.",                        "duration_sec": 22, "cost": 0.19, "status": "success"},
+        {"id": "rh-ob-05", "ts": "Sun 16:08", "who": "Sam P.",  "prompt": "Onboard Kai O. — Ops.",                            "duration_sec": 20, "cost": 0.17, "status": "success"},
+        {"id": "rh-ob-06", "ts": "Fri 09:22", "who": "Jake G.", "prompt": "Generate intern-onboarding-buddy fork plan.",      "duration_sec": 26, "cost": 0.22, "status": "failed"},
+        {"id": "rh-ob-07", "ts": "Wed 14:03", "who": "Sam P.",  "prompt": "Onboard Riley K. — Engineering.",                  "duration_sec": 23, "cost": 0.20, "status": "success"},
+        {"id": "rh-ob-08", "ts": "Mon 13:50", "who": "Sam P.",  "prompt": "Reschedule week-1 — Priya delayed by 2 days.",     "duration_sec": 18, "cost": 0.15, "status": "success"},
+    ],
+    "incident-comms": [
+        {"id": "rh-ic-01", "ts": "13:59",     "who": "Maya M.",   "prompt": "First update for INC-2026-04-29-01.",          "duration_sec": 27, "cost": 0.31, "status": "success"},
+        {"id": "rh-ic-02", "ts": "Mon 02:24", "who": "PagerDuty", "prompt": "Worker queue backlog — first update.",          "duration_sec": 29, "cost": 0.34, "status": "success"},
+        {"id": "rh-ic-03", "ts": "Fri 19:30", "who": "PagerDuty", "prompt": "5xx spike — first update + status update.",     "duration_sec": 31, "cost": 0.36, "status": "success"},
+        {"id": "rh-ic-04", "ts": "Wed 11:50", "who": "Maya M.",   "prompt": "DB connection alert — customer-facing comm.",   "duration_sec": 25, "cost": 0.29, "status": "success"},
+        {"id": "rh-ic-05", "ts": "Mon 21:15", "who": "Maya M.",   "prompt": "Telemetry gap — internal-only comm.",           "duration_sec": 22, "cost": 0.26, "status": "success"},
+        {"id": "rh-ic-06", "ts": "Sun 09:35", "who": "Maya M.",   "prompt": "Render deploy stuck — status update only.",     "duration_sec": 19, "cost": 0.23, "status": "failed"},
+        {"id": "rh-ic-07", "ts": "Fri 03:48", "who": "PagerDuty", "prompt": "Procrastinate spike — full incident comms.",    "duration_sec": 33, "cost": 0.39, "status": "success"},
+    ],
+}
+
+
+# --- Daily spend (14 days) ---------------------------------------------------
+# Each entry: { "date": "YYYY-MM-DD", "by_agent": { agent_id: dollars } }
+
+DAILY_SPEND: list[dict[str, Any]] = [
+    {"date": "2026-04-16", "by_agent": {"pr-reviewer": 31.40, "competitive-researcher": 18.20, "dependency-bumper": 14.10, "changelog-writer": 2.40, "on-call-scout": 1.10, "spec-drafter": 1.50, "onboarding-buddy": 0.40, "incident-comms": 0.60}},
+    {"date": "2026-04-17", "by_agent": {"pr-reviewer": 28.10, "competitive-researcher": 21.00, "dependency-bumper": 17.80, "changelog-writer": 3.10, "on-call-scout": 1.60, "spec-drafter": 1.80, "onboarding-buddy": 0.50, "incident-comms": 0.70}},
+    {"date": "2026-04-18", "by_agent": {"pr-reviewer": 22.40, "competitive-researcher": 14.50, "dependency-bumper": 11.20, "changelog-writer": 1.80, "on-call-scout": 0.80, "spec-drafter": 1.10, "onboarding-buddy": 0.30, "incident-comms": 0.40}},
+    {"date": "2026-04-19", "by_agent": {"pr-reviewer": 19.80, "competitive-researcher": 12.30, "dependency-bumper": 10.40, "changelog-writer": 1.60, "on-call-scout": 0.90, "spec-drafter": 1.00, "onboarding-buddy": 0.40, "incident-comms": 0.50}},
+    {"date": "2026-04-20", "by_agent": {"pr-reviewer": 33.20, "competitive-researcher": 19.10, "dependency-bumper": 16.80, "changelog-writer": 2.90, "on-call-scout": 1.40, "spec-drafter": 1.70, "onboarding-buddy": 0.60, "incident-comms": 0.80}},
+    {"date": "2026-04-21", "by_agent": {"pr-reviewer": 35.60, "competitive-researcher": 20.40, "dependency-bumper": 18.10, "changelog-writer": 3.20, "on-call-scout": 1.80, "spec-drafter": 1.90, "onboarding-buddy": 0.70, "incident-comms": 0.90}},
+    {"date": "2026-04-22", "by_agent": {"pr-reviewer": 36.80, "competitive-researcher": 19.80, "dependency-bumper": 17.40, "changelog-writer": 2.80, "on-call-scout": 1.50, "spec-drafter": 1.60, "onboarding-buddy": 0.60, "incident-comms": 0.80}},
+    {"date": "2026-04-23", "by_agent": {"pr-reviewer": 34.10, "competitive-researcher": 21.20, "dependency-bumper": 18.60, "changelog-writer": 3.10, "on-call-scout": 1.70, "spec-drafter": 1.80, "onboarding-buddy": 0.70, "incident-comms": 0.90}},
+    {"date": "2026-04-24", "by_agent": {"pr-reviewer": 38.20, "competitive-researcher": 22.10, "dependency-bumper": 19.40, "changelog-writer": 3.40, "on-call-scout": 2.10, "spec-drafter": 2.00, "onboarding-buddy": 0.80, "incident-comms": 1.10}},
+    {"date": "2026-04-25", "by_agent": {"pr-reviewer": 26.10, "competitive-researcher": 14.20, "dependency-bumper": 12.80, "changelog-writer": 1.90, "on-call-scout": 0.90, "spec-drafter": 1.10, "onboarding-buddy": 0.40, "incident-comms": 0.50}},
+    {"date": "2026-04-26", "by_agent": {"pr-reviewer": 24.40, "competitive-researcher": 13.50, "dependency-bumper": 11.60, "changelog-writer": 1.70, "on-call-scout": 0.80, "spec-drafter": 1.00, "onboarding-buddy": 0.30, "incident-comms": 0.40}},
+    {"date": "2026-04-27", "by_agent": {"pr-reviewer": 41.20, "competitive-researcher": 23.80, "dependency-bumper": 20.40, "changelog-writer": 3.60, "on-call-scout": 2.30, "spec-drafter": 2.10, "onboarding-buddy": 0.90, "incident-comms": 1.20}},
+    {"date": "2026-04-28", "by_agent": {"pr-reviewer": 39.80, "competitive-researcher": 22.40, "dependency-bumper": 19.10, "changelog-writer": 3.30, "on-call-scout": 2.00, "spec-drafter": 1.90, "onboarding-buddy": 0.80, "incident-comms": 1.00}},
+    {"date": "2026-04-29", "by_agent": {"pr-reviewer": 28.20, "competitive-researcher": 16.10, "dependency-bumper": 13.80, "changelog-writer": 2.40, "on-call-scout": 1.40, "spec-drafter": 1.40, "onboarding-buddy": 0.60, "incident-comms": 0.80}},
+]
+
+
+# --- Tool catalog -----------------------------------------------------------
+
+TOOLS: dict[str, dict[str, Any]] = {
+    "Web Search": {
+        "name": "Web Search",
+        "description": "Searches the public web. Returns titles, URLs, and snippets.",
+        "sensitivity": "Safe",
+        "example": "search('Linear changelog April 2026')",
+        "icon": "search",
+    },
+    "Web Fetch": {
+        "name": "Web Fetch",
+        "description": "Fetches the rendered content of a single URL — text + visible markup.",
+        "sensitivity": "Safe",
+        "example": "fetch('https://linear.app/changelog')",
+        "icon": "globe",
+    },
+    "Filesystem": {
+        "name": "Filesystem",
+        "description": "Read and write files inside the Sprite's workspace. Scoped to /workspace.",
+        "sensitivity": "Sensitive",
+        "example": "read('src/views/sessions.py'), write('CHANGELOG.md', ...)",
+        "icon": "folder",
+    },
+    "Bash": {
+        "name": "Bash",
+        "description": "Run shell commands inside the Sprite. No host access; sandboxed VM.",
+        "sensitivity": "Sensitive",
+        "example": "bash('pytest tests/test_sessions.py -k interrupt -q')",
+        "icon": "terminal",
+    },
+    "Git": {
+        "name": "Git",
+        "description": "Local git operations — branch, diff, commit, push. No force-push.",
+        "sensitivity": "Sensitive",
+        "example": "git.commit(-am 'chore: bump deps'), git.push(origin)",
+        "icon": "git",
+    },
+    "GitHub": {
+        "name": "GitHub",
+        "description": "Read/write the GitHub API: PRs, issues, search, code review comments.",
+        "sensitivity": "Safe",
+        "example": "github.search('repo:ravi-hq/fairy state filter merged:>2026-04-25')",
+        "icon": "github",
+    },
+    "Honeycomb": {
+        "name": "Honeycomb",
+        "description": "Run Honeycomb queries, BubbleUp pivots, and read triggers/SLOs.",
+        "sensitivity": "Safe",
+        "example": "honeycomb.query(dataset='fairy-prod', calc='HEATMAP(duration_ms)')",
+        "icon": "chart",
+    },
+    "Slack": {
+        "name": "Slack",
+        "description": "Read channel history, post messages, DM users, look up identities.",
+        "sensitivity": "Safe",
+        "example": "slack.post(channel='#on-call', type='incident_brief')",
+        "icon": "slack",
+    },
+    "Linear": {
+        "name": "Linear",
+        "description": "Read/write Linear: tickets, projects, comments, attachments.",
+        "sensitivity": "Safe",
+        "example": "linear.fetch('ENG-412'), linear.comment('ENG-412', body=...)",
+        "icon": "linear",
+    },
+    "Notion": {
+        "name": "Notion",
+        "description": "Search Notion databases, create pages, update structured fields.",
+        "sensitivity": "Safe",
+        "example": "notion.create_page(db='engineering-specs', title='Spec: ...')",
+        "icon": "notion",
+    },
 }
 
 
@@ -445,8 +770,8 @@ AGENTS: dict[str, dict[str, Any]] = {
 
 AUDIT: dict[str, Any] = {
     "window": "this week (2026-04-22 — 2026-04-29)",
-    "total_runs": 2086,
-    "total_cost_usd": 612.40,
+    "total_runs": 2247,
+    "total_cost_usd": 638.80,
     "by_agent": [
         {"agent": "pr-reviewer",            "runs": 1204, "cost": 244.81},
         {"agent": "competitive-researcher", "runs": 412,  "cost": 137.21},
@@ -454,6 +779,8 @@ AUDIT: dict[str, Any] = {
         {"agent": "changelog-writer",       "runs": 89,   "cost": 19.58},
         {"agent": "on-call-scout",          "runs": 47,   "cost": 12.69},
         {"agent": "spec-drafter",           "runs": 22,   "cost": 11.22},
+        {"agent": "onboarding-buddy",       "runs": 38,   "cost":  7.20},
+        {"agent": "incident-comms",         "runs": 14,   "cost":  6.40},
     ],
     "by_human": [
         {"who": "Jake G.",       "runs": 612, "cost": 198.40},
@@ -487,6 +814,8 @@ def list_agents_summary() -> list[dict[str, Any]]:
             "name": agent["name"],
             "description": agent["description"],
             "version": agent["version"],
+            "category": agent.get("category", "Other"),
+            "created_at": agent.get("created_at", "2026-01-01"),
             "owner": agent["owner"],
             "tools": agent["tools"],
             "stats": agent["stats"],
@@ -505,4 +834,100 @@ def get_test_run(agent_id: str) -> list[tuple[float, str, str]] | None:
     agent = AGENTS.get(agent_id)
     if agent is None:
         return None
-    return agent["mock_test_run"]
+    return agent.get("mock_test_run") or _generic_test_run(agent_id)
+
+
+def _generic_test_run(agent_id: str) -> list[tuple[float, str, str]]:
+    """Fallback test sequence for newly-created agents that have no hand-written run."""
+    agent = AGENTS.get(agent_id, {})
+    name = agent.get("name", agent_id)
+    tools = agent.get("tools") or []
+    tool_summary = ", ".join(tools) if tools else "no external tools"
+    return [
+        (0.3, "stage",   "create_sprite          claimed sprite-test in 0.16s"),
+        (0.4, "stage",   f"provision_setup       reading system prompt for {name}"),
+        (0.4, "stage",   f"validate_tools        {tool_summary}"),
+        (0.4, "stage",   "runtime_start         claude-sonnet ready (sandbox provisioned)"),
+        (0.5, "thought", "Running test prompt against the agent definition."),
+        (0.7, "output",  "Test prompt processed; system prompt loaded; tool stubs responded."),
+        (0.6, "output",  "Output captured. Definition looks ready to publish."),
+        (0.6, "result",  _result({
+            "agent": agent_id,
+            "ok": True,
+            "system_prompt_chars": len(agent.get("system_prompt", "") or ""),
+            "tools_validated": tools,
+            "note": "This is a generic test run. Hand-write a `mock_test_run` for richer streaming output.",
+        })),
+        (0.2, "exit", "0"),
+    ]
+
+
+def get_run_history(agent_id: str) -> list[dict[str, Any]]:
+    """All recorded runs for an agent (most recent first). Empty for newly-created agents."""
+    return RUN_HISTORY.get(agent_id, [])
+
+
+def get_run_detail(agent_id: str, run_id: str) -> dict[str, Any] | None:
+    """Synthesize a full run-detail payload (output, tool calls, sandbox events) for the modal."""
+    rows = RUN_HISTORY.get(agent_id, [])
+    row = next((r for r in rows if r["id"] == run_id), None)
+    if row is None:
+        return None
+    agent = AGENTS.get(agent_id, {})
+    seq = agent.get("mock_test_run") or _generic_test_run(agent_id)
+    tool_calls = [t for (_, k, t) in seq if k == "tool"]
+    sandbox = [t for (_, k, t) in seq if k == "stage"]
+    output_lines = [t for (_, k, t) in seq if k in ("thought", "output")]
+    result_text = next((t for (_, k, t) in seq if k == "result"), "")
+    output_full = (
+        "\n".join(output_lines)
+        + ("\n\n--- result ---\n" + result_text if result_text else "")
+    )
+    return {
+        **row,
+        "agent_id": agent_id,
+        "agent_name": agent.get("name", agent_id),
+        "prompt_full": (
+            row["prompt"]
+            + "\n\n(Context: this run was triggered by "
+            + row["who"]
+            + " at "
+            + row["ts"]
+            + ". Full transcript reconstructed from the agent's last published definition.)"
+        ),
+        "output_full": output_full,
+        "tool_calls": tool_calls,
+        "sandbox_events": sandbox,
+    }
+
+
+def get_audit_kpis() -> dict[str, Any]:
+    """4 KPI cards above the spend chart."""
+    by_agent = AUDIT["by_agent"]
+    top = max(by_agent, key=lambda x: x["cost"])
+    avg_dur = 28  # weighted-ish average from RUN_HISTORY rows; rounded for display
+    return {
+        "total_runs": AUDIT["total_runs"],
+        "total_spend": AUDIT["total_cost_usd"],
+        "avg_duration_sec": avg_dur,
+        "top_agent": {"name": top["agent"], "cost": top["cost"]},
+    }
+
+
+def get_footer_stats() -> dict[str, Any]:
+    """Footer-strip stats. 'spent' is the most recent day, 'forks' is total fork_count."""
+    today = DAILY_SPEND[-1]
+    today_total = round(sum(today["by_agent"].values()), 2)
+    total_forks = sum(a["stats"]["fork_count"] for a in AGENTS.values())
+    return {
+        "agent_count": len(AGENTS),
+        "runs_this_week": AUDIT["total_runs"],
+        "spent_today": today_total,
+        "fork_count": total_forks,
+    }
+
+
+def add_agent(record: dict[str, Any]) -> dict[str, Any]:
+    """Insert a freshly-published agent into the in-memory library."""
+    AGENTS[record["id"]] = record
+    return record
