@@ -184,10 +184,10 @@ pending).
 
 ## Migrations
 
-CI runs `django-migration-linter` against every unapplied migration on each PR
-via the `check-migrations` job in `.github/workflows/ci.yml`. The job spins up a
-fresh Postgres 16 container, applies all existing migrations (so they're marked
-applied), then lints any migrations not yet in the DB. A non-zero exit from the
+CI runs `django-migration-linter` against migrations introduced on the current
+branch via the `migration-lint` job in `.github/workflows/ci.yml`. It uses
+`--git-commit-id $(git merge-base origin/main HEAD)` so existing migrations on
+main are grandfathered and only new ones are linted. A non-zero exit from the
 linter fails the job and blocks the PR.
 
 **Dangerous patterns the linter catches:** NOT NULL column additions on populated
