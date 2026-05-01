@@ -1,0 +1,2975 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Orbit — agent-native Atlassian</title>
+  <style>
+    :root {
+      --bg:          #0d1117;
+      --surface:     #161b22;
+      --surface2:    #1c2128;
+      --border:      #30363d;
+      --text:        #e6edf3;
+      --muted:       #8b949e;
+      --accent:      #58a6ff;
+      --status-running:    #58a6ff;
+      --status-done:       #3fb950;
+      --status-blocked:    #f85149;
+      --status-awaiting:   #e3b341;
+      --status-queued:     #8b949e;
+      --status-drafting:   #8b949e;
+      --status-inflight:   #58a6ff;
+      --human:       #bc8cff;
+      --agent:       #58a6ff;
+      --font-mono:   'SF Mono', 'Fira Code', 'Consolas', monospace;
+      --font-ui:     -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-ui);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    body {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* -- Top bar / tabs -------------------------------------------------- */
+    .topbar {
+      height: 52px;
+      flex: 0 0 52px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      padding: 0 20px;
+      gap: 24px;
+      background: var(--surface);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 600;
+      letter-spacing: 0.2px;
+      font-size: 15px;
+    }
+    .brand .logo {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: radial-gradient(circle at 35% 35%, #58a6ff, #1f6feb 60%, #0d1117 100%);
+      box-shadow: 0 0 0 1px var(--border), 0 0 12px rgba(88,166,255,0.35);
+    }
+
+    .tabs {
+      display: flex;
+      gap: 4px;
+      margin-left: 12px;
+    }
+    .tab {
+      background: transparent;
+      border: none;
+      color: var(--muted);
+      padding: 8px 14px;
+      border-radius: 6px;
+      cursor: pointer;
+      font: inherit;
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .tab:hover { color: var(--text); background: var(--surface2); }
+    .tab.active {
+      color: var(--text);
+      background: var(--surface2);
+      box-shadow: inset 0 -2px 0 var(--accent);
+    }
+    .tab svg { width: 14px; height: 14px; }
+
+    .topbar-spacer { flex: 1; }
+    .topbar-meta {
+      color: var(--muted);
+      font-size: 12px;
+      font-family: var(--font-mono);
+    }
+
+    /* -- Layouts --------------------------------------------------------- */
+    .view {
+      flex: 1;
+      min-height: 0;
+      display: none;
+    }
+    .view.active { display: flex; }
+
+    /* Missions: 3 columns */
+    #view-missions { display: none; }
+    #view-missions.active {
+      display: grid;
+      grid-template-columns: 320px 1fr 320px;
+    }
+
+    /* Knowledge: 2 columns */
+    #view-kb { display: none; }
+    #view-kb.active {
+      display: grid;
+      grid-template-columns: 340px 1fr;
+    }
+
+    .col {
+      min-height: 0;
+      overflow-y: auto;
+      border-right: 1px solid var(--border);
+      background: var(--bg);
+    }
+    .col:last-child { border-right: none; }
+
+    .col-header {
+      position: sticky;
+      top: 0;
+      background: var(--bg);
+      padding: 16px 18px 10px;
+      border-bottom: 1px solid var(--border);
+      z-index: 1;
+    }
+    .col-header h2 {
+      margin: 0;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--muted);
+      font-weight: 600;
+    }
+    .col-header .sub {
+      margin-top: 2px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    /* -- Mission card list (left) --------------------------------------- */
+    .mission-card {
+      display: block;
+      width: 100%;
+      text-align: left;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--status-queued);
+      padding: 12px 14px;
+      margin: 10px 12px 0;
+      border-radius: 6px;
+      cursor: pointer;
+      font: inherit;
+      color: inherit;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .mission-card:hover { background: var(--surface2); }
+    .mission-card.selected {
+      background: var(--surface2);
+      box-shadow: 0 0 0 1px var(--accent);
+    }
+    .mission-card[data-status="in-flight"] { border-left-color: var(--status-running); }
+    .mission-card[data-status="done"]      { border-left-color: var(--status-done); }
+    .mission-card[data-status="blocked"]   { border-left-color: var(--status-blocked); }
+    .mission-card[data-status="drafting"]  { border-left-color: var(--status-drafting); }
+
+    .mission-card-head {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .mission-card-title {
+      font-weight: 600;
+      font-size: 13px;
+      flex: 1;
+      line-height: 1.35;
+    }
+    .mission-card-meta {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .progress-bar {
+      flex: 1;
+      height: 4px;
+      background: var(--border);
+      border-radius: 2px;
+      overflow: hidden;
+      position: relative;
+    }
+    .progress-bar > span {
+      display: block;
+      height: 100%;
+      background: var(--accent);
+    }
+    .mission-card[data-status="done"] .progress-bar > span { background: var(--status-done); }
+    .mission-card[data-status="blocked"] .progress-bar > span { background: var(--status-blocked); }
+    .mission-card[data-status="drafting"] .progress-bar > span { background: var(--status-queued); }
+
+    .avatar {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #2d5fa3, #58a6ff);
+      color: #fff;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.3px;
+      flex: 0 0 22px;
+    }
+
+    /* -- Status pill ----------------------------------------------------- */
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 500;
+      text-transform: capitalize;
+      background: var(--surface2);
+      color: var(--muted);
+      border: 1px solid var(--border);
+      white-space: nowrap;
+    }
+    .pill .dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--muted);
+    }
+    .pill[data-status="in-flight"], .pill[data-status="running"] {
+      color: var(--status-running);
+      border-color: rgba(88,166,255,0.4);
+    }
+    .pill[data-status="in-flight"] .dot, .pill[data-status="running"] .dot {
+      background: var(--status-running);
+      box-shadow: 0 0 0 0 rgba(88,166,255,0.7);
+      animation: pulse 1.6s ease-out infinite;
+    }
+    .pill[data-status="done"] {
+      color: var(--status-done);
+      border-color: rgba(63,185,80,0.4);
+    }
+    .pill[data-status="done"] .dot { background: var(--status-done); }
+    .pill[data-status="blocked"] {
+      color: var(--status-blocked);
+      border-color: rgba(248,81,73,0.4);
+    }
+    .pill[data-status="blocked"] .dot { background: var(--status-blocked); }
+    .pill[data-status="awaiting"] {
+      color: var(--status-awaiting);
+      border-color: rgba(227,179,65,0.4);
+    }
+    .pill[data-status="awaiting"] .dot { background: var(--status-awaiting); }
+    .pill[data-status="queued"], .pill[data-status="drafting"] {
+      color: var(--status-queued);
+    }
+
+    @keyframes pulse {
+      0%   { box-shadow: 0 0 0 0 rgba(88,166,255,0.55); }
+      70%  { box-shadow: 0 0 0 6px rgba(88,166,255,0); }
+      100% { box-shadow: 0 0 0 0 rgba(88,166,255,0); }
+    }
+
+    /* -- Mission detail (center) ---------------------------------------- */
+    .mission-detail {
+      padding: 22px 28px 40px;
+    }
+    .empty-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      color: var(--muted);
+      gap: 14px;
+      font-size: 13px;
+    }
+    .empty-state svg { width: 38px; height: 38px; opacity: 0.5; }
+
+    .mission-goal {
+      font-size: 22px;
+      font-weight: 600;
+      margin: 4px 0 8px;
+      letter-spacing: -0.2px;
+    }
+    .mission-meta {
+      color: var(--muted);
+      font-size: 13px;
+      margin-bottom: 14px;
+      display: flex;
+      gap: 14px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .mission-meta .sep { color: var(--border); }
+    .mission-outcome {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 14px 16px;
+      color: var(--text);
+      font-size: 13px;
+      line-height: 1.55;
+      margin-bottom: 22px;
+    }
+
+    .section-head {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: 24px 0 10px;
+    }
+    .section-head h3 {
+      margin: 0;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--muted);
+      font-weight: 600;
+    }
+    .section-head .count {
+      color: var(--muted);
+      font-size: 12px;
+      font-family: var(--font-mono);
+    }
+
+    /* -- Work tree ------------------------------------------------------- */
+    .tasks {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .task {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+    .task-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      cursor: pointer;
+      user-select: none;
+    }
+    .task-row:hover { background: var(--surface2); }
+    .task-caret {
+      width: 14px;
+      height: 14px;
+      color: var(--muted);
+      flex: 0 0 14px;
+      transition: transform 0.15s;
+    }
+    .task.expanded .task-caret { transform: rotate(90deg); }
+
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 500;
+      flex: 0 0 auto;
+      max-width: 160px;
+    }
+    .chip svg { width: 10px; height: 10px; flex: 0 0 10px; }
+    .chip-text {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .chip[data-kind="agent"] {
+      background: rgba(88,166,255,0.12);
+      color: var(--agent);
+      border: 1px solid rgba(88,166,255,0.35);
+    }
+    .chip[data-kind="human"] {
+      background: rgba(188,140,255,0.12);
+      color: var(--human);
+      border: 1px solid rgba(188,140,255,0.35);
+    }
+
+    .task-title {
+      flex: 1;
+      font-size: 13px;
+      line-height: 1.4;
+    }
+    .task-detail {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 4px;
+      font-family: var(--font-mono);
+    }
+    .task-detail .live-line {
+      color: var(--text);
+    }
+
+    .task-body {
+      display: none;
+      border-top: 1px solid var(--border);
+      padding: 12px 14px;
+      background: var(--bg);
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .task.expanded .task-body { display: block; }
+    .task-body .stream-window {
+      background: #0a0d12;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 10px 12px;
+      font-family: var(--font-mono);
+      font-size: 11.5px;
+      color: #c9d1d9;
+      max-height: 180px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .task-body .artifact-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--accent);
+      text-decoration: none;
+      padding: 4px 10px;
+      background: rgba(88,166,255,0.08);
+      border: 1px solid rgba(88,166,255,0.3);
+      border-radius: 4px;
+      font-size: 12px;
+      margin-top: 8px;
+    }
+    .task-body .artifact-link svg { width: 12px; height: 12px; }
+    .task-body .brief-text {
+      margin: 0 0 8px;
+      color: var(--text);
+    }
+
+    .add-task {
+      margin-top: 10px;
+      background: transparent;
+      color: var(--muted);
+      border: 1px dashed var(--border);
+      border-radius: 6px;
+      padding: 10px;
+      width: 100%;
+      cursor: pointer;
+      font: inherit;
+      font-size: 13px;
+    }
+    .add-task:hover { color: var(--text); border-color: var(--muted); }
+
+    /* -- Activity feed (right) ------------------------------------------- */
+    .activity-feed {
+      padding: 8px 16px 24px;
+    }
+    .activity-item {
+      display: grid;
+      grid-template-columns: 6px 1fr;
+      gap: 10px;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .activity-item:last-child { border-bottom: none; }
+    .activity-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--muted);
+      margin-top: 7px;
+    }
+    .activity-item[data-kind="agent"] .activity-dot { background: var(--agent); }
+    .activity-item[data-kind="human"] .activity-dot { background: var(--human); }
+    .activity-item[data-kind="approval"] .activity-dot { background: var(--status-done); }
+    .activity-text {
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .activity-time {
+      display: block;
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 2px;
+      font-family: var(--font-mono);
+    }
+
+    /* -- Knowledge base -------------------------------------------------- */
+    .kb-doc-card {
+      display: block;
+      width: 100%;
+      text-align: left;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      padding: 12px 14px;
+      margin: 10px 12px 0;
+      border-radius: 6px;
+      cursor: pointer;
+      font: inherit;
+      color: inherit;
+    }
+    .kb-doc-card:hover { background: var(--surface2); }
+    .kb-doc-card.selected {
+      background: var(--surface2);
+      box-shadow: 0 0 0 1px var(--accent);
+    }
+    .kb-doc-head {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      margin-bottom: 6px;
+    }
+    .kb-icon {
+      flex: 0 0 28px;
+      width: 28px;
+      height: 28px;
+      border-radius: 6px;
+      background: var(--surface2);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--accent);
+    }
+    .kb-icon svg { width: 14px; height: 14px; }
+    .kb-doc-card[data-category="postmortem"] .kb-icon { color: var(--status-blocked); }
+    .kb-doc-card[data-category="decision"]   .kb-icon { color: var(--status-awaiting); }
+    .kb-doc-card[data-category="digest"]     .kb-icon { color: var(--status-done); }
+    .kb-doc-card[data-category="spec"]       .kb-icon { color: var(--accent); }
+
+    .kb-title {
+      font-size: 13px;
+      font-weight: 600;
+      line-height: 1.35;
+      flex: 1;
+    }
+    .kb-sub {
+      color: var(--muted);
+      font-size: 12px;
+      margin-left: 38px;
+      font-family: var(--font-mono);
+    }
+
+    .kb-body {
+      padding: 28px 40px 60px;
+      max-width: 820px;
+      margin: 0 auto;
+      width: 100%;
+    }
+    .kb-frontmatter {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 12px 16px;
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 24px;
+      font-family: var(--font-mono);
+    }
+    .kb-frontmatter strong { color: var(--text); font-weight: 600; }
+
+    .markdown { font-size: 14px; line-height: 1.65; color: var(--text); }
+    .markdown h1 { font-size: 24px; margin: 24px 0 8px; letter-spacing: -0.3px; }
+    .markdown h2 {
+      font-size: 17px;
+      margin: 28px 0 10px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--border);
+    }
+    .markdown h3 { font-size: 14px; margin: 20px 0 6px; }
+    .markdown p { margin: 8px 0; }
+    .markdown ul, .markdown ol { margin: 8px 0; padding-left: 22px; }
+    .markdown li { margin: 4px 0; }
+    .markdown li > input[type="checkbox"] { margin-right: 6px; }
+    .markdown blockquote {
+      margin: 14px 0;
+      padding: 10px 14px;
+      border-left: 3px solid var(--accent);
+      background: var(--surface);
+      color: var(--muted);
+      border-radius: 4px;
+    }
+    .markdown blockquote p { margin: 4px 0; }
+    .markdown code {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      padding: 1px 5px;
+      border-radius: 3px;
+      font-family: var(--font-mono);
+      font-size: 12.5px;
+    }
+    .markdown pre {
+      background: #0a0d12;
+      border: 1px solid var(--border);
+      padding: 12px 14px;
+      border-radius: 6px;
+      overflow-x: auto;
+      font-family: var(--font-mono);
+      font-size: 12.5px;
+      line-height: 1.55;
+      margin: 12px 0;
+    }
+    .markdown pre code { background: transparent; border: none; padding: 0; }
+    .markdown a { color: var(--accent); text-decoration: none; }
+    .markdown a:hover { text-decoration: underline; }
+    .markdown table {
+      border-collapse: collapse;
+      margin: 14px 0;
+      width: 100%;
+      font-size: 13px;
+    }
+    .markdown th, .markdown td {
+      border: 1px solid var(--border);
+      padding: 6px 10px;
+      text-align: left;
+    }
+    .markdown th { background: var(--surface); font-weight: 600; }
+    .markdown strong { color: var(--text); font-weight: 600; }
+    .markdown hr { border: none; border-top: 1px solid var(--border); margin: 22px 0; }
+
+    /* -- Workspace metrics bar ------------------------------------------ */
+    .workspace-bar {
+      flex: 0 0 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      padding: 0 20px;
+      gap: 16px;
+      background: linear-gradient(90deg, rgba(88,166,255,0.05), rgba(188,140,255,0.05));
+      border-bottom: 1px solid var(--border);
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .workspace-bar strong {
+      color: var(--text);
+      font-weight: 600;
+    }
+    .workspace-bar .sep { color: var(--border); }
+
+    /* -- Mission list controls ------------------------------------------ */
+    .mission-toolbar {
+      padding: 10px 12px 6px;
+      border-bottom: 1px solid var(--border);
+    }
+    .new-mission-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      width: 100%;
+      background: var(--accent);
+      color: #0d1117;
+      border: none;
+      border-radius: 6px;
+      padding: 8px 12px;
+      cursor: pointer;
+      font: inherit;
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+    .new-mission-btn:hover { background: #79b8ff; }
+    .new-mission-btn svg { width: 12px; height: 12px; }
+
+    .mission-search {
+      width: 100%;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 6px 10px;
+      color: var(--text);
+      font: inherit;
+      font-size: 12px;
+      margin-bottom: 8px;
+    }
+    .mission-search:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+
+    .filter-pills {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+    }
+    .filter-pill {
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 2px 10px;
+      color: var(--muted);
+      font: inherit;
+      font-size: 11px;
+      cursor: pointer;
+    }
+    .filter-pill:hover { color: var(--text); }
+    .filter-pill.active {
+      color: var(--text);
+      background: var(--surface2);
+      border-color: var(--accent);
+    }
+
+    /* -- Mission metrics strip ------------------------------------------ */
+    .metrics-strip {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+      margin: 6px 0 22px;
+    }
+    .metric {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px 12px;
+    }
+    .metric-label {
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      margin-bottom: 4px;
+    }
+    .metric-value {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .metric-sub {
+      color: var(--muted);
+      font-size: 11px;
+      margin-top: 2px;
+    }
+    .metric .progress-bar { margin-top: 6px; }
+
+    /* -- View session log link ------------------------------------------ */
+    .session-log-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--muted);
+      text-decoration: none;
+      padding: 4px 10px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      font-size: 12px;
+      margin-top: 8px;
+      margin-left: 8px;
+      cursor: pointer;
+    }
+    .session-log-link:hover {
+      color: var(--text);
+      border-color: var(--muted);
+    }
+    .session-log-link svg { width: 12px; height: 12px; }
+
+    /* -- Activity feed toggle ------------------------------------------- */
+    .activity-toggle {
+      display: flex;
+      gap: 4px;
+      margin-top: 8px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 2px;
+    }
+    .activity-toggle-btn {
+      flex: 1;
+      background: transparent;
+      border: none;
+      border-radius: 4px;
+      padding: 4px 8px;
+      color: var(--muted);
+      font: inherit;
+      font-size: 11px;
+      cursor: pointer;
+    }
+    .activity-toggle-btn.active {
+      background: var(--surface2);
+      color: var(--text);
+    }
+    .activity-mission-link {
+      display: block;
+      color: var(--accent);
+      font-size: 11px;
+      font-family: var(--font-mono);
+      text-decoration: none;
+      margin-top: 2px;
+    }
+    .activity-mission-link:hover { text-decoration: underline; }
+
+    /* -- Templates view ------------------------------------------------- */
+    #view-templates { display: none; }
+    #view-templates.active {
+      display: block;
+      flex: 1;
+      overflow-y: auto;
+      padding: 28px 40px 60px;
+    }
+    .templates-header {
+      max-width: 1100px;
+      margin: 0 auto 24px;
+    }
+    .templates-header h1 {
+      font-size: 22px;
+      margin: 0 0 4px;
+      letter-spacing: -0.2px;
+    }
+    .templates-header p {
+      color: var(--muted);
+      margin: 0;
+      font-size: 13px;
+    }
+    .templates-grid {
+      max-width: 1100px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 16px;
+    }
+    .template-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .template-card-head {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .template-icon {
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      background: var(--surface2);
+      color: var(--accent);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .template-icon svg { width: 18px; height: 18px; }
+    .template-card[data-icon="i-tpl-incident"] .template-icon { color: var(--status-blocked); }
+    .template-card[data-icon="i-tpl-telescope"] .template-icon { color: var(--status-awaiting); }
+    .template-card[data-icon="i-tpl-rocket"] .template-icon { color: var(--accent); }
+    .template-card[data-icon="i-tpl-handshake"] .template-icon { color: var(--human); }
+    .template-card[data-icon="i-tpl-database"] .template-icon { color: var(--status-done); }
+    .template-card[data-icon="i-tpl-calendar"] .template-icon { color: var(--accent); }
+
+    .template-name {
+      font-size: 15px;
+      font-weight: 600;
+      letter-spacing: -0.1px;
+    }
+    .template-desc {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+      flex: 1;
+    }
+    .template-stats {
+      display: flex;
+      gap: 12px;
+      color: var(--muted);
+      font-size: 12px;
+      font-family: var(--font-mono);
+    }
+    .template-use-btn {
+      align-self: flex-start;
+      background: var(--surface2);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 6px 12px;
+      cursor: pointer;
+      font: inherit;
+      font-size: 12px;
+      font-weight: 500;
+    }
+    .template-use-btn:hover {
+      background: var(--accent);
+      color: #0d1117;
+      border-color: var(--accent);
+    }
+
+    /* -- Modal ---------------------------------------------------------- */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.65);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+    }
+    .modal-backdrop.open { display: flex; }
+    .modal {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      width: 720px;
+      max-width: calc(100vw - 32px);
+      max-height: calc(100vh - 64px);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+    }
+    .modal-large { width: 1080px; }
+    .modal-head {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--border);
+    }
+    .modal-head h2 {
+      margin: 0;
+      font-size: 15px;
+      font-weight: 600;
+      flex: 1;
+    }
+    .modal-close {
+      background: transparent;
+      border: none;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 18px;
+      line-height: 1;
+      padding: 4px 8px;
+    }
+    .modal-close:hover { color: var(--text); }
+    .modal-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 18px 22px;
+    }
+    .modal-foot {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 18px;
+      border-top: 1px solid var(--border);
+      background: var(--bg);
+    }
+    .btn {
+      background: var(--surface2);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 7px 14px;
+      cursor: pointer;
+      font: inherit;
+      font-size: 13px;
+    }
+    .btn:hover { border-color: var(--muted); }
+    .btn[disabled] { opacity: 0.4; cursor: not-allowed; }
+    .btn-primary {
+      background: var(--accent);
+      color: #0d1117;
+      border-color: var(--accent);
+      font-weight: 600;
+    }
+    .btn-primary:hover { background: #79b8ff; }
+
+    /* -- Wizard --------------------------------------------------------- */
+    .wizard-steps {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 18px;
+    }
+    .wizard-step-pip {
+      flex: 1;
+      height: 4px;
+      background: var(--border);
+      border-radius: 2px;
+    }
+    .wizard-step-pip.active { background: var(--accent); }
+
+    .wizard-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--muted);
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+    .wizard-textarea {
+      width: 100%;
+      min-height: 110px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font: inherit;
+      font-size: 13px;
+      padding: 10px 12px;
+      resize: vertical;
+    }
+    .wizard-textarea:focus { outline: none; border-color: var(--accent); }
+    .wizard-input {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font: inherit;
+      font-size: 13px;
+      padding: 8px 12px;
+    }
+    .wizard-input:focus { outline: none; border-color: var(--accent); }
+
+    .example-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 10px;
+    }
+    .example-chip {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 4px 10px;
+      color: var(--muted);
+      font: inherit;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .example-chip:hover {
+      color: var(--text);
+      border-color: var(--accent);
+    }
+
+    .wizard-thinking {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+      padding: 50px 20px;
+      color: var(--muted);
+    }
+    .wizard-thinking .spinner {
+      width: 32px;
+      height: 32px;
+      border: 3px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .proposed-task-row {
+      display: grid;
+      grid-template-columns: 1fr 160px 80px 32px;
+      gap: 8px;
+      padding: 8px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      margin-bottom: 6px;
+      align-items: center;
+    }
+    .proposed-task-row input,
+    .proposed-task-row select {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--text);
+      font: inherit;
+      font-size: 12px;
+      padding: 5px 8px;
+    }
+    .proposed-task-row input:focus,
+    .proposed-task-row select:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+    .proposed-task-why {
+      grid-column: 1 / -1;
+      color: var(--muted);
+      font-size: 11px;
+      font-style: italic;
+      padding-left: 4px;
+    }
+    .proposed-task-remove {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+      width: 28px;
+      height: 28px;
+    }
+    .proposed-task-remove:hover {
+      color: var(--status-blocked);
+      border-color: var(--status-blocked);
+    }
+
+    .review-card {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+    }
+    .review-card h3 {
+      margin: 0 0 4px;
+      font-size: 16px;
+    }
+    .review-card .meta {
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 10px;
+    }
+    .review-task-list {
+      margin-top: 12px;
+      padding: 12px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+    }
+    .review-task-list-row {
+      display: flex;
+      gap: 8px;
+      padding: 4px 0;
+      font-size: 12px;
+    }
+    .review-task-list-row .num {
+      color: var(--muted);
+      width: 22px;
+      flex: 0 0 22px;
+      font-family: var(--font-mono);
+    }
+
+    /* -- Session log modal ----------------------------------------------- */
+    .session-modal-body {
+      display: grid;
+      grid-template-columns: 1fr 200px;
+      gap: 0;
+      padding: 0;
+    }
+    .session-log-pane {
+      padding: 16px 20px;
+      overflow-y: auto;
+      max-height: calc(100vh - 200px);
+      background: #0a0d12;
+      font-family: var(--font-mono);
+      font-size: 12.5px;
+      line-height: 1.55;
+      color: #c9d1d9;
+    }
+    .session-log-line {
+      white-space: pre-wrap;
+      word-break: break-word;
+      padding: 1px 0;
+    }
+    .session-log-line.k-setup { color: var(--muted); }
+    .session-log-line.k-agent { color: var(--accent); }
+    .session-log-line.k-think { color: #c9d1d9; font-style: italic; }
+    .session-log-line.k-tool { color: #b6e3ff; }
+    .session-log-line.k-output { color: var(--status-done); }
+    .session-log-line.k-result { color: var(--status-awaiting); font-weight: 600; }
+    .session-log-line.k-review { color: var(--human); }
+    .session-cursor {
+      display: inline-block;
+      width: 6px;
+      background: #c9d1d9;
+      animation: blink 1s steps(1) infinite;
+      margin-left: 2px;
+    }
+    @keyframes blink { 50% { opacity: 0; } }
+
+    .session-sidebar {
+      border-left: 1px solid var(--border);
+      padding: 14px 16px;
+      background: var(--surface);
+      max-height: calc(100vh - 200px);
+      overflow-y: auto;
+    }
+    .session-sidebar h4 {
+      margin: 0 0 8px;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--muted);
+      font-weight: 600;
+    }
+    .session-section-link {
+      display: block;
+      color: var(--muted);
+      text-decoration: none;
+      font-size: 12px;
+      padding: 4px 8px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .session-section-link:hover { background: var(--surface2); color: var(--text); }
+    .session-section-link.active { color: var(--accent); }
+
+    .session-meta-strip {
+      display: flex;
+      gap: 14px;
+      padding: 10px 18px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .session-meta-strip strong { color: var(--text); }
+
+    .session-speed {
+      display: flex;
+      gap: 2px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 2px;
+    }
+    .session-speed-btn {
+      background: transparent;
+      border: none;
+      color: var(--muted);
+      font: inherit;
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 3px;
+      cursor: pointer;
+    }
+    .session-speed-btn.active {
+      background: var(--surface2);
+      color: var(--text);
+    }
+
+    .review-panel {
+      padding: 18px 22px;
+    }
+    .review-panel-head {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+    .review-comments {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 12px 14px;
+      margin-bottom: 14px;
+    }
+    .review-comment {
+      padding: 6px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 13px;
+    }
+    .review-comment:last-child { border-bottom: none; }
+    .review-comment .who {
+      font-weight: 600;
+      color: var(--human);
+      margin-right: 6px;
+    }
+    .review-actions {
+      display: flex;
+      gap: 8px;
+    }
+    .btn-approve {
+      background: var(--status-done);
+      border-color: var(--status-done);
+      color: #0d1117;
+      font-weight: 600;
+    }
+    .btn-approve:hover { background: #4ec665; }
+    .btn-changes {
+      background: var(--status-awaiting);
+      border-color: var(--status-awaiting);
+      color: #0d1117;
+    }
+    .btn-changes:hover { background: #efc251; }
+
+    /* -- Assignee popover ------------------------------------------------ */
+    .popover-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 90;
+      display: none;
+    }
+    .popover-backdrop.open { display: block; }
+    .popover {
+      position: absolute;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      width: 240px;
+      padding: 12px 14px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+      z-index: 91;
+    }
+    .popover-name {
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 2px;
+    }
+    .popover-tag {
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 10px;
+    }
+    .popover-stat {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      padding: 3px 0;
+    }
+    .popover-stat .label { color: var(--muted); }
+    .popover-link {
+      display: block;
+      color: var(--accent);
+      text-decoration: none;
+      font-size: 12px;
+      margin-top: 8px;
+      padding-top: 8px;
+      border-top: 1px solid var(--border);
+    }
+    .popover-link:hover { text-decoration: underline; }
+
+    /* -- Source-mission link in KB doc ----------------------------------- */
+    .kb-source-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--accent);
+      text-decoration: none;
+      font-size: 12px;
+      margin-top: 6px;
+      cursor: pointer;
+    }
+    .kb-source-link:hover { text-decoration: underline; }
+    .kb-source-link svg { width: 12px; height: 12px; }
+
+    /* -- Scrollbars ------------------------------------------------------ */
+    ::-webkit-scrollbar { width: 10px; height: 10px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb {
+      background: #2a2f37;
+      border-radius: 5px;
+      border: 2px solid var(--bg);
+    }
+    ::-webkit-scrollbar-thumb:hover { background: #3a3f47; }
+  </style>
+</head>
+<body>
+
+  <!-- ===================== Workspace metrics bar ===================== -->
+  <div class="workspace-bar" id="workspace-bar">
+    <span><strong id="ws-inflight">…</strong> missions in flight</span>
+    <span class="sep">·</span>
+    <span><strong id="ws-tasks">…</strong> tasks running across <strong id="ws-agents">…</strong> agents</span>
+    <span class="sep">·</span>
+    <span><strong id="ws-spent">…</strong> spent today</span>
+    <span class="sep">·</span>
+    <span><strong id="ws-await">…</strong> awaiting humans</span>
+  </div>
+
+  <!-- ===================== Top bar ===================== -->
+  <div class="topbar">
+    <div class="brand">
+      <span class="logo" aria-hidden="true"></span>
+      <span>Orbit</span>
+    </div>
+    <div class="tabs">
+      <button class="tab active" data-tab="missions" type="button">
+        <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+          <path d="M5 1.5h6V3h.5A1.5 1.5 0 0 1 13 4.5v9A1.5 1.5 0 0 1 11.5 15h-7A1.5 1.5 0 0 1 3 13.5v-9A1.5 1.5 0 0 1 4.5 3H5V1.5zM6 2v2h4V2H6zM4.5 4a.5.5 0 0 0-.5.5v9a.5.5 0 0 0 .5.5h7a.5.5 0 0 0 .5-.5v-9a.5.5 0 0 0-.5-.5h-7z"/>
+        </svg>
+        Missions
+      </button>
+      <button class="tab" data-tab="templates" type="button">
+        <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+          <path d="M2 2.5A1.5 1.5 0 0 1 3.5 1h3A1.5 1.5 0 0 1 8 2.5v3A1.5 1.5 0 0 1 6.5 7h-3A1.5 1.5 0 0 1 2 5.5v-3zM9 2.5A1.5 1.5 0 0 1 10.5 1h3A1.5 1.5 0 0 1 15 2.5v3A1.5 1.5 0 0 1 13.5 7h-3A1.5 1.5 0 0 1 9 5.5v-3zM2 10.5A1.5 1.5 0 0 1 3.5 9h3A1.5 1.5 0 0 1 8 10.5v3A1.5 1.5 0 0 1 6.5 15h-3A1.5 1.5 0 0 1 2 13.5v-3zM9 10.5A1.5 1.5 0 0 1 10.5 9h3a1.5 1.5 0 0 1 1.5 1.5v3a1.5 1.5 0 0 1-1.5 1.5h-3A1.5 1.5 0 0 1 9 13.5v-3z"/>
+        </svg>
+        Templates
+      </button>
+      <button class="tab" data-tab="kb" type="button">
+        <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+          <path d="M2.5 2A1.5 1.5 0 0 0 1 3.5v9A1.5 1.5 0 0 0 2.5 14H8v-1H2.5a.5.5 0 0 1-.5-.5v-9a.5.5 0 0 1 .5-.5H7v6l2-1.5L11 9V3h2.5a.5.5 0 0 1 .5.5V8h1V3.5A1.5 1.5 0 0 0 13.5 2h-11z"/>
+          <path d="M11 11.5h4v1h-4v-1zm0 2h4v1h-4v-1z"/>
+        </svg>
+        Knowledge Base
+      </button>
+    </div>
+    <div class="topbar-spacer"></div>
+    <div class="topbar-meta">demo · in-memory · no-AoD</div>
+  </div>
+
+  <!-- ===================== Missions view ===================== -->
+  <div id="view-missions" class="view active">
+    <div class="col" id="missions-col">
+      <div class="col-header">
+        <h2>Missions</h2>
+        <div class="sub">Outcomes the system is currently working on</div>
+      </div>
+      <div class="mission-toolbar">
+        <button class="new-mission-btn" id="new-mission-btn" type="button">
+          <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+            <path d="M7.5 2v5.5H2v1h5.5V14h1V8.5H14v-1H8.5V2h-1z"/>
+          </svg>
+          New mission
+        </button>
+        <input class="mission-search" id="mission-search" placeholder="Search missions…" type="search"/>
+        <div class="filter-pills" id="filter-pills">
+          <button class="filter-pill active" data-filter="all" type="button">All</button>
+          <button class="filter-pill" data-filter="in-flight" type="button">In flight</button>
+          <button class="filter-pill" data-filter="done" type="button">Done</button>
+          <button class="filter-pill" data-filter="blocked" type="button">Blocked</button>
+          <button class="filter-pill" data-filter="drafting" type="button">Drafting</button>
+        </div>
+      </div>
+      <div id="missions-list"></div>
+    </div>
+
+    <div class="col" id="mission-detail">
+      <div class="empty-state" id="mission-empty">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <circle cx="12" cy="12" r="9"/>
+          <path d="M12 7v5l3 2"/>
+        </svg>
+        <div>Pick a mission on the left to see its work tree.</div>
+      </div>
+      <div id="mission-body" class="mission-detail" style="display:none"></div>
+    </div>
+
+    <div class="col" id="activity-col">
+      <div class="col-header">
+        <h2>Activity</h2>
+        <div class="sub" id="activity-sub">Live events for the selected mission</div>
+        <div class="activity-toggle">
+          <button class="activity-toggle-btn active" data-scope="mission" type="button">This mission</button>
+          <button class="activity-toggle-btn" data-scope="all" type="button">All missions</button>
+        </div>
+      </div>
+      <div class="activity-feed" id="activity-feed"></div>
+    </div>
+  </div>
+
+  <!-- ===================== Templates view ===================== -->
+  <div id="view-templates" class="view">
+    <div class="templates-header">
+      <h1>Mission templates</h1>
+      <p>Pre-built work trees for the missions you'll plan most often. Pick one to load it into the wizard with edits ready.</p>
+    </div>
+    <div class="templates-grid" id="templates-grid"></div>
+  </div>
+
+  <!-- ===================== KB view ===================== -->
+  <div id="view-kb" class="view">
+    <div class="col" id="kb-col">
+      <div class="col-header">
+        <h2>Knowledge base</h2>
+        <div class="sub">Auto-written from completed missions</div>
+      </div>
+      <div id="kb-list"></div>
+    </div>
+    <div class="col" id="kb-doc-col">
+      <div class="empty-state" id="kb-empty">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M4 4h12a2 2 0 0 1 2 2v14H6a2 2 0 0 1-2-2V4z"/>
+          <path d="M4 4v14a2 2 0 0 0 2 2"/>
+          <path d="M8 8h8M8 12h8M8 16h5"/>
+        </svg>
+        <div>Pick a doc on the left to read it.</div>
+      </div>
+      <div id="kb-doc-body" class="kb-body" style="display:none"></div>
+    </div>
+  </div>
+
+  <!-- =============== Modals =============== -->
+  <div class="modal-backdrop" id="wizard-backdrop">
+    <div class="modal" id="wizard-modal" role="dialog" aria-modal="true">
+      <div class="modal-head">
+        <h2 id="wizard-title">Plan a mission</h2>
+        <button class="modal-close" type="button" data-close-wizard>×</button>
+      </div>
+      <div class="modal-body">
+        <div class="wizard-steps">
+          <div class="wizard-step-pip" data-step-pip="1"></div>
+          <div class="wizard-step-pip" data-step-pip="2"></div>
+          <div class="wizard-step-pip" data-step-pip="3"></div>
+          <div class="wizard-step-pip" data-step-pip="4"></div>
+        </div>
+        <div id="wizard-step-content"></div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn" id="wizard-back" type="button">Back</button>
+        <button class="btn btn-primary" id="wizard-next" type="button">Next</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="session-backdrop">
+    <div class="modal modal-large" id="session-modal" role="dialog" aria-modal="true">
+      <div class="modal-head">
+        <h2 id="session-title">Session log</h2>
+        <div class="session-speed" id="session-speed">
+          <button class="session-speed-btn" data-speed="1" type="button">1×</button>
+          <button class="session-speed-btn active" data-speed="2" type="button">2×</button>
+          <button class="session-speed-btn" data-speed="4" type="button">4×</button>
+          <button class="session-speed-btn" data-speed="0" type="button">Skip</button>
+        </div>
+        <button class="modal-close" type="button" data-close-session>×</button>
+      </div>
+      <div class="session-meta-strip" id="session-meta-strip"></div>
+      <div class="session-modal-body" id="session-modal-body"></div>
+    </div>
+  </div>
+
+  <div class="popover-backdrop" id="popover-backdrop">
+    <div class="popover" id="popover" style="top:0;left:0"></div>
+  </div>
+
+  <!-- =============== Inline SVG icon defs =============== -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <symbol id="i-agent" viewBox="0 0 16 16">
+        <path fill="currentColor" d="M8 5a3 3 0 1 0 0 6 3 3 0 0 0 0-6zm0 1.5A1.5 1.5 0 1 1 8 9.5 1.5 1.5 0 0 1 8 6.5z"/>
+        <path fill="currentColor" d="M7.4 1h1.2l.3 1.5a5.5 5.5 0 0 1 1.4.6l1.3-.8.85.85-.8 1.3a5.5 5.5 0 0 1 .6 1.4L13.55 5.6v1.2L12.05 7.1c-.13.5-.34.96-.6 1.4l.8 1.3-.85.85-1.3-.8c-.44.26-.9.47-1.4.6L8.6 11.95H7.4l-.3-1.5a5.5 5.5 0 0 1-1.4-.6l-1.3.8-.85-.85.8-1.3a5.5 5.5 0 0 1-.6-1.4L2.45 6.8V5.6l1.5-.3c.13-.5.34-.96.6-1.4l-.8-1.3.85-.85 1.3.8c.44-.26.9-.47 1.4-.6L7.4 1z"/>
+      </symbol>
+      <symbol id="i-human" viewBox="0 0 16 16">
+        <circle cx="8" cy="5" r="2.5" fill="currentColor"/>
+        <path fill="currentColor" d="M3.5 13c0-2.5 2-4 4.5-4s4.5 1.5 4.5 4v.5h-9V13z"/>
+      </symbol>
+      <symbol id="i-mission" viewBox="0 0 16 16">
+        <path fill="currentColor" d="M5 1.5h6V3h.5A1.5 1.5 0 0 1 13 4.5v9A1.5 1.5 0 0 1 11.5 15h-7A1.5 1.5 0 0 1 3 13.5v-9A1.5 1.5 0 0 1 4.5 3H5V1.5zM6 2v2h4V2H6z"/>
+      </symbol>
+      <symbol id="i-book" viewBox="0 0 16 16">
+        <path fill="currentColor" d="M2 3a1 1 0 0 1 1-1h4a2 2 0 0 1 1 .5A2 2 0 0 1 9 2h4a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H9a1 1 0 0 0-1 1 1 1 0 0 0-1-1H3a1 1 0 0 1-1-1V3zm6 .5V12a2 2 0 0 1 1-.5h4V3H9a1 1 0 0 0-1 .5z"/>
+      </symbol>
+      <symbol id="i-pr" viewBox="0 0 16 16">
+        <path fill="currentColor" d="M5 3.5a1.5 1.5 0 1 1 1 1.41V11.1a1.5 1.5 0 1 1-1 0V4.91A1.5 1.5 0 0 1 5 3.5zm6.5 8.6V6.5h-1V5l3 2.5-3 2.5V8.5h2v3.6a1.5 1.5 0 1 1-1 0z"/>
+      </symbol>
+      <symbol id="i-doc" viewBox="0 0 16 16">
+        <path fill="currentColor" d="M4 1.5h5L13 5v9.5A.5.5 0 0 1 12.5 15h-9A.5.5 0 0 1 3 14.5v-12a1 1 0 0 1 1-1zM9 2.5V5h2.5L9 2.5zM5 7h6v1H5V7zm0 2h6v1H5V9zm0 2h4v1H5v-1z"/>
+      </symbol>
+      <symbol id="i-postmortem" viewBox="0 0 16 16">
+        <path fill="currentColor" d="M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13zM7.3 4.5h1.4v4.6H7.3V4.5zm0 5.7h1.4v1.5H7.3v-1.5z"/>
+      </symbol>
+      <symbol id="i-decision" viewBox="0 0 16 16">
+        <path fill="currentColor" d="M8 1.5l6.5 4-6.5 4-6.5-4 6.5-4zm-6.5 6L8 11.5l6.5-4v3L8 14.5l-6.5-4v-3z"/>
+      </symbol>
+      <symbol id="i-digest" viewBox="0 0 16 16">
+        <path fill="currentColor" d="M2 3h12v2H2V3zm0 4h12v2H2V7zm0 4h8v2H2v-2z"/>
+      </symbol>
+      <symbol id="i-spec" viewBox="0 0 16 16">
+        <path fill="currentColor" d="M3 1.5h7L13 4.5v10A.5.5 0 0 1 12.5 15h-9A.5.5 0 0 1 3 14.5v-13zm6 1V5h2.5L9 2.5zM4.5 7.5h7v1h-7v-1zm0 2h7v1h-7v-1zm0 2h5v1h-5v-1z"/>
+      </symbol>
+      <symbol id="i-caret" viewBox="0 0 16 16">
+        <path fill="currentColor" d="M6 4l4 4-4 4V4z"/>
+      </symbol>
+      <symbol id="i-terminal" viewBox="0 0 16 16">
+        <path fill="currentColor" d="M2 3.5A1.5 1.5 0 0 1 3.5 2h9A1.5 1.5 0 0 1 14 3.5v9a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 12.5v-9zM4.5 5.5l2 2-2 2 .7.7 2.7-2.7-2.7-2.7-.7.7zM8 9h3v1H8V9z"/>
+      </symbol>
+      <symbol id="i-link" viewBox="0 0 16 16">
+        <path fill="currentColor" d="M9.6 2.4a3 3 0 0 1 4.2 4.2L11.4 9l-1-1 2.4-2.4a1.5 1.5 0 0 0-2.1-2.1L8.3 5.9l-1-1 2.3-2.5zM2.4 13.6a3 3 0 0 0 4.2 0L9 11.2l-1-1-2.4 2.4a1.5 1.5 0 1 1-2.1-2.1L5.9 8.1l-1-1-2.5 2.4a3 3 0 0 0 0 4.1zM5.7 11.3l5.6-5.6.7.7-5.6 5.6-.7-.7z"/>
+      </symbol>
+      <symbol id="i-tpl-incident" viewBox="0 0 16 16">
+        <path fill="currentColor" d="M8 1.5l7 12.5H1L8 1.5zm0 4.2v3.4h-1V5.7h1zm-.5 4.7a.7.7 0 1 1 0 1.4.7.7 0 0 1 0-1.4z"/>
+      </symbol>
+      <symbol id="i-tpl-telescope" viewBox="0 0 16 16">
+        <path fill="currentColor" d="M11.4 2.3l2.3 4.1-1.7 1L9.7 3.3l1.7-1zM2 8l5.9-3.4 2.3 4.1L4.3 12 2 8zm5 5.5l3-1.7 1.5 2.6h-3L7 13.5z"/>
+      </symbol>
+      <symbol id="i-tpl-rocket" viewBox="0 0 16 16">
+        <path fill="currentColor" d="M11 2c-3 0-5 2-6 4l-1 .5-2 .5 1.5 1.5L4.5 9 7 11.5l.5-1 1.5 1.5.5-2 .5-1c2-1 4-3 4-6L13 1l-2 1zM10 6.5a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zM3 12c-1 1-1 3-1 3s2 0 3-1l-2-2z"/>
+      </symbol>
+      <symbol id="i-tpl-handshake" viewBox="0 0 16 16">
+        <path fill="currentColor" d="M3 5l3-2 2 1 2-1 3 2v3l-3 3-2-1-2 1-3-3V5zm5 0L6 6v2l2 1 2-1V6L8 5z"/>
+      </symbol>
+      <symbol id="i-tpl-database" viewBox="0 0 16 16">
+        <ellipse cx="8" cy="3.5" rx="5.5" ry="1.8" fill="currentColor"/>
+        <path fill="currentColor" d="M2.5 5.5v3c0 1 2.5 1.8 5.5 1.8s5.5-.8 5.5-1.8v-3c-1 .9-3.2 1.4-5.5 1.4s-4.5-.5-5.5-1.4z"/>
+        <path fill="currentColor" d="M2.5 10.5v2c0 1 2.5 1.8 5.5 1.8s5.5-.8 5.5-1.8v-2c-1 .9-3.2 1.4-5.5 1.4s-4.5-.5-5.5-1.4z"/>
+      </symbol>
+      <symbol id="i-tpl-calendar" viewBox="0 0 16 16">
+        <path fill="currentColor" d="M3 3h2V2h1v1h4V2h1v1h2a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zm0 3v7h10V6H3zm2 1.5h2v2H5v-2zm3 0h2v2H8v-2zm3 0h2v2h-2v-2z"/>
+      </symbol>
+      <symbol id="i-bolt" viewBox="0 0 16 16">
+        <path fill="currentColor" d="M9 1L3 9h4l-1 6 6-8H8l1-6z"/>
+      </symbol>
+    </defs>
+  </svg>
+
+  <script>
+  (function () {
+    'use strict';
+
+    // --- State ---
+    var state = {
+      missions: [],
+      currentMissionId: null,
+      currentMission: null,
+      docs: [],
+      currentDocId: null,
+      stream: null,
+      filter: 'all',
+      search: '',
+      activityScope: 'mission',
+      firehose: [],
+      firehoseStream: null,
+      templates: [],
+      currentTemplateKey: null,
+      wizard: null,
+      sessionPlayback: null,
+    };
+
+    var AGENT_OPTIONS = ['Researcher', 'Spec Drafter', 'PR Bot', 'Scout', 'Migrator'];
+    var HUMAN_OPTIONS = ['@maya', '@jake', '@sam'];
+    var OWNER_OPTIONS = ['Maya', 'Jake', 'Sam'];
+
+    var FIREHOSE_KIND_DOTS = {
+      started: 'human', progressed: 'agent', blocked: 'blocked',
+      completed: 'approval', commented: 'human', approved: 'approval',
+    };
+
+    // --- DOM helpers ---
+    function $(sel) { return document.querySelector(sel); }
+    function $$(sel) { return Array.prototype.slice.call(document.querySelectorAll(sel)); }
+
+    function el(tag, attrs) {
+      var node = document.createElement(tag);
+      if (attrs) {
+        for (var k in attrs) {
+          if (!Object.prototype.hasOwnProperty.call(attrs, k)) continue;
+          var v = attrs[k];
+          if (v == null) continue;
+          if (k === 'class') node.className = v;
+          else if (k === 'html') node.innerHTML = v;
+          else if (k.indexOf('on') === 0) node.addEventListener(k.slice(2), v);
+          else node.setAttribute(k, v);
+        }
+      }
+      for (var i = 2; i < arguments.length; i++) {
+        var c = arguments[i];
+        if (c == null) continue;
+        if (typeof c === 'string') node.appendChild(document.createTextNode(c));
+        else node.appendChild(c);
+      }
+      return node;
+    }
+
+    function icon(id, opts) {
+      var ns = 'http://www.w3.org/2000/svg';
+      var svg = document.createElementNS(ns, 'svg');
+      var use = document.createElementNS(ns, 'use');
+      use.setAttribute('href', '#' + id);
+      svg.appendChild(use);
+      if (opts && opts.cls) svg.setAttribute('class', opts.cls);
+      return svg;
+    }
+
+    // --- Tabs ---
+    function activateTab(which) {
+      $$('.tab').forEach(function (b) {
+        b.classList.toggle('active', b.getAttribute('data-tab') === which);
+      });
+      $('#view-missions').classList.toggle('active', which === 'missions');
+      $('#view-templates').classList.toggle('active', which === 'templates');
+      $('#view-kb').classList.toggle('active', which === 'kb');
+      if (which === 'kb' && state.docs.length === 0) loadDocs();
+      if (which === 'templates' && state.templates.length === 0) loadTemplates();
+    }
+    $$('.tab').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        activateTab(btn.getAttribute('data-tab'));
+      });
+    });
+
+    // --- Missions: list ---
+    function statusLabel(s) { return s; }
+
+    function renderMissionList() {
+      var list = $('#missions-list');
+      list.replaceChildren();
+      var q = (state.search || '').toLowerCase().trim();
+      var filtered = state.missions.filter(function (m) {
+        if (state.filter !== 'all' && m.status !== state.filter) return false;
+        if (q && m.title.toLowerCase().indexOf(q) === -1) return false;
+        return true;
+      });
+      if (filtered.length === 0) {
+        list.appendChild(el('div', {
+          style: 'padding:20px 18px; color:var(--muted); font-size:12px;'
+        }, 'No missions match those filters.'));
+        return;
+      }
+      filtered.forEach(function (m) {
+        var card = el('button', {
+          class: 'mission-card' + (m.id === state.currentMissionId ? ' selected' : ''),
+          'data-status': m.status,
+          type: 'button',
+          onclick: function () { selectMission(m.id); },
+        },
+          el('div', { class: 'mission-card-head' },
+            el('div', { class: 'mission-card-title' }, m.title),
+            el('span', { class: 'pill', 'data-status': m.status },
+              el('span', { class: 'dot' }),
+              statusLabel(m.status)
+            )
+          ),
+          el('div', { class: 'mission-card-meta' },
+            el('span', { class: 'avatar', title: m.owner }, m.owner_initials),
+            el('div', { class: 'progress-bar' },
+              el('span', { style: 'width:' + m.progress_pct + '%' })
+            )
+          ),
+          el('div', { class: 'mission-card-meta', style: 'margin-top:6px' },
+            el('span', null, m.progress),
+            el('span', { class: 'sep' }, '·'),
+            el('span', null, m.last_activity)
+          )
+        );
+        list.appendChild(card);
+      });
+    }
+
+    // --- Mission toolbar wiring ---
+    $('#mission-search').addEventListener('input', function (e) {
+      state.search = e.target.value;
+      renderMissionList();
+    });
+    $$('#filter-pills .filter-pill').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        state.filter = btn.getAttribute('data-filter');
+        $$('#filter-pills .filter-pill').forEach(function (b) {
+          b.classList.toggle('active', b === btn);
+        });
+        renderMissionList();
+      });
+    });
+    $('#new-mission-btn').addEventListener('click', function () {
+      openWizard(null);
+    });
+
+    // --- Missions: detail ---
+    function selectMission(id) {
+      state.currentMissionId = id;
+      renderMissionList();
+      fetch('/api/missions/' + id).then(function (r) {
+        if (!r.ok) return null;
+        return r.json();
+      }).then(function (m) {
+        if (!m) return;
+        state.currentMission = m;
+        renderMissionDetail();
+        renderActivity();
+        restartMissionStream();
+      });
+    }
+
+    function renderMissionDetail() {
+      var m = state.currentMission;
+      var empty = $('#mission-empty');
+      var body = $('#mission-body');
+      if (!m) {
+        empty.style.display = '';
+        body.style.display = 'none';
+        return;
+      }
+      empty.style.display = 'none';
+      body.style.display = '';
+      body.replaceChildren();
+
+      body.appendChild(el('div', { class: 'mission-goal' }, m.title));
+      body.appendChild(el('div', { class: 'mission-meta' },
+        el('span', { class: 'pill', 'data-status': m.status },
+          el('span', { class: 'dot' }), statusLabel(m.status)),
+        el('span', null, 'Owner: ' + m.owner),
+        el('span', { class: 'sep' }, '·'),
+        el('span', null, 'Started ' + m.started),
+        el('span', { class: 'sep' }, '·'),
+        el('span', null, 'Target: ' + m.target)
+      ));
+
+      // -- Metrics strip --
+      var spent = (m.spent_usd || 0).toFixed(2);
+      var agentH = ((m.agent_minutes || 0) / 60).toFixed(1);
+      var humanH = ((m.human_minutes || 0) / 60).toFixed(1);
+      var done = m.tasks_done || 0, total = m.tasks_total || m.tasks.length;
+      var pct = total ? Math.round(100 * done / total) : 0;
+      var eta = '—';
+      if (m.status === 'in-flight') {
+        var remaining = total - done;
+        if (remaining > 0) eta = '~' + (remaining * 22) + 'm';
+        else eta = 'wrapping up';
+      } else if (m.status === 'done') {
+        eta = 'closed';
+      } else if (m.status === 'drafting') {
+        eta = 'not started';
+      }
+      var metrics = el('div', { class: 'metrics-strip' },
+        el('div', { class: 'metric' },
+          el('div', { class: 'metric-label' }, 'Spent so far'),
+          el('div', { class: 'metric-value' }, '$' + spent),
+          el('div', { class: 'metric-sub' }, 'agent compute')
+        ),
+        el('div', { class: 'metric' },
+          el('div', { class: 'metric-label' }, 'Time invested'),
+          el('div', { class: 'metric-value' }, 'human ' + humanH + 'h'),
+          el('div', { class: 'metric-sub' }, 'agent ' + agentH + 'h')
+        ),
+        el('div', { class: 'metric' },
+          el('div', { class: 'metric-label' }, 'Tasks'),
+          el('div', { class: 'metric-value' }, done + '/' + total),
+          el('div', { class: 'progress-bar' },
+            el('span', { style: 'width:' + pct + '%' })
+          )
+        ),
+        el('div', { class: 'metric' },
+          el('div', { class: 'metric-label' }, 'ETA'),
+          el('div', { class: 'metric-value' }, eta),
+          el('div', { class: 'metric-sub' }, m.status === 'in-flight' ? 'based on running tasks' : ' ')
+        )
+      );
+      body.appendChild(metrics);
+
+      body.appendChild(el('div', { class: 'mission-outcome' }, m.outcome));
+
+      body.appendChild(el('div', { class: 'section-head' },
+        el('h3', null, 'Work tree'),
+        el('span', { class: 'count' }, m.progress)
+      ));
+
+      var tasks = el('div', { class: 'tasks' });
+      m.tasks.forEach(function (t) { tasks.appendChild(renderTask(t)); });
+      body.appendChild(tasks);
+
+      var addBtn = el('button', {
+        class: 'add-task',
+        type: 'button',
+        onclick: function (e) { e.preventDefault(); },
+      }, '+  Add task');
+      body.appendChild(addBtn);
+    }
+
+    function renderTask(t) {
+      var node = el('div', { class: 'task', 'data-task-id': t.id });
+
+      var detailNode = el('span', { class: 'task-detail' });
+      var isLive = t.status === 'running' && t.id === 'm1-t5';
+      if (isLive) {
+        detailNode.appendChild(el('span', { class: 'live-line' }, t.detail || '…'));
+      } else if (t.detail) {
+        detailNode.textContent = t.detail;
+      }
+
+      var titleNode = el('div', { class: 'task-title' }, t.title);
+      if (t.detail || isLive) titleNode.appendChild(detailNode);
+
+      var chip = el('span', {
+        class: 'chip',
+        'data-kind': t.assignee_kind,
+        style: 'cursor:pointer',
+      },
+        icon(t.assignee_kind === 'agent' ? 'i-agent' : 'i-human'),
+        el('span', { class: 'chip-text' }, t.assignee)
+      );
+      chip.addEventListener('click', function (e) {
+        e.stopPropagation();
+        openProfilePopover(t.assignee, chip);
+      });
+
+      var row = el('div', { class: 'task-row' },
+        icon('i-caret', { cls: 'task-caret' }),
+        chip,
+        titleNode,
+        el('span', { class: 'pill', 'data-status': t.status },
+          el('span', { class: 'dot' }), t.status
+        )
+      );
+      row.addEventListener('click', function () { node.classList.toggle('expanded'); });
+      node.appendChild(row);
+
+      var bodyEl = el('div', { class: 'task-body' });
+      if (isLive) {
+        bodyEl.appendChild(el('p', { class: 'brief-text' },
+          'Live output from Scout running the regression suite against staging:'));
+        bodyEl.appendChild(el('div', {
+          class: 'stream-window',
+          'data-task-stream': t.id,
+        }, '(connecting…)'));
+      } else if (t.status === 'done' && t.artifact_label) {
+        bodyEl.appendChild(el('p', { class: 'brief-text' }, 'Completed. Artifact attached:'));
+        var iconId = t.artifact_kind === 'pr' ? 'i-pr' : 'i-doc';
+        var link = el('a', {
+          class: 'artifact-link',
+          href: '#',
+          onclick: function (e) { e.preventDefault(); },
+        }, icon(iconId), t.artifact_label);
+        bodyEl.appendChild(link);
+      } else if (t.status === 'blocked') {
+        bodyEl.appendChild(el('p', { class: 'brief-text' },
+          t.detail || 'Blocked — waiting on a human or upstream task.'));
+      } else if (t.status === 'awaiting') {
+        bodyEl.appendChild(el('p', { class: 'brief-text' },
+          t.detail || 'Awaiting human action.'));
+      } else if (t.status === 'queued') {
+        bodyEl.appendChild(el('p', { class: 'brief-text' },
+          'Queued — will dispatch when its dependencies are ready.'));
+      } else {
+        bodyEl.appendChild(el('p', { class: 'brief-text' }, 'No additional context.'));
+      }
+
+      // Session-log link (always offered)
+      var sessionLink = el('button', {
+        class: 'session-log-link',
+        type: 'button',
+        onclick: function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          openSessionLog(t);
+        },
+      }, icon('i-terminal'), 'View session log');
+      bodyEl.appendChild(sessionLink);
+
+      node.appendChild(bodyEl);
+      return node;
+    }
+
+    function renderActivity() {
+      var feed = $('#activity-feed');
+      var sub = $('#activity-sub');
+      feed.replaceChildren();
+      if (state.activityScope === 'all') {
+        sub.textContent = 'Firehose · ' + state.firehose.length + ' events · last 24h';
+        state.firehose.forEach(function (e) {
+          var kindClass = FIREHOSE_KIND_DOTS[e.kind] || 'info';
+          var item = el('div', { class: 'activity-item', 'data-kind': kindClass },
+            el('div', { class: 'activity-dot' }),
+            el('div', null,
+              el('div', { class: 'activity-text' }, e.text),
+              el('a', {
+                class: 'activity-mission-link',
+                href: '#',
+                onclick: function (ev) {
+                  ev.preventDefault();
+                  activateTab('missions');
+                  selectMission(e.mission_id);
+                },
+              }, '#' + e.mission_id + ' — ' + e.mission_title),
+              el('span', { class: 'activity-time' }, e.timestamp)
+            )
+          );
+          feed.appendChild(item);
+        });
+        return;
+      }
+      var m = state.currentMission;
+      if (!m) {
+        sub.textContent = 'Live events for the selected mission';
+        return;
+      }
+      sub.textContent = m.title;
+      m.activity.forEach(function (e) {
+        feed.appendChild(el('div', { class: 'activity-item', 'data-kind': e.kind },
+          el('div', { class: 'activity-dot' }),
+          el('div', null,
+            el('div', { class: 'activity-text' }, e.text),
+            el('span', { class: 'activity-time' }, e.timestamp)
+          )
+        ));
+      });
+    }
+
+    // --- Activity toggle wiring ---
+    $$('#activity-col .activity-toggle-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        state.activityScope = btn.getAttribute('data-scope');
+        $$('#activity-col .activity-toggle-btn').forEach(function (b) {
+          b.classList.toggle('active', b === btn);
+        });
+        if (state.activityScope === 'all' && state.firehose.length === 0) {
+          loadFirehose();
+        } else {
+          renderActivity();
+        }
+        if (state.activityScope === 'all') startFirehoseStream();
+        else stopFirehoseStream();
+      });
+    });
+
+    function loadFirehose() {
+      fetch('/api/firehose').then(function (r) {
+        return r.ok ? r.json() : [];
+      }).then(function (events) {
+        state.firehose = events;
+        renderActivity();
+      });
+    }
+
+    function startFirehoseStream() {
+      if (state.firehoseStream) return;
+      var es = new EventSource('/api/firehose/stream');
+      state.firehoseStream = es;
+      es.onmessage = function (msg) {
+        try {
+          var data = JSON.parse(msg.data);
+          state.firehose.unshift(data);
+          if (state.firehose.length > 60) state.firehose.length = 60;
+          if (state.activityScope === 'all') renderActivity();
+        } catch (_) {}
+      };
+      es.onerror = function () { /* let it auto-reconnect */ };
+    }
+    function stopFirehoseStream() {
+      if (state.firehoseStream) {
+        state.firehoseStream.close();
+        state.firehoseStream = null;
+      }
+    }
+
+    // --- Live stream for Mission #1's Scout regression task ---
+    function restartMissionStream() {
+      if (state.stream) { state.stream.close(); state.stream = null; }
+      var m = state.currentMission;
+      if (!m || m.id !== 1) return;
+      var es = new EventSource('/api/missions/' + m.id + '/stream');
+      state.stream = es;
+      es.onmessage = function (msg) {
+        try {
+          var data = JSON.parse(msg.data);
+          if (data.type === 'line' && data.task_id === 'm1-t5') {
+            updateLiveLine(data.text);
+          }
+        } catch (_) { /* ignore */ }
+      };
+      es.onerror = function () { /* let it auto-reconnect */ };
+    }
+
+    function updateLiveLine(text) {
+      var liveSpan = document.querySelector('[data-task-id="m1-t5"] .live-line');
+      if (liveSpan) liveSpan.textContent = text;
+      var win = document.querySelector('[data-task-stream="m1-t5"]');
+      if (win) {
+        if (win.textContent.indexOf('(connecting') === 0) win.textContent = '';
+        win.textContent += text + '\n';
+        win.scrollTop = win.scrollHeight;
+      }
+    }
+
+    // --- Knowledge base ---
+    var KB_ICONS = {
+      postmortem: 'i-postmortem',
+      decision:   'i-decision',
+      digest:     'i-digest',
+      spec:       'i-spec',
+    };
+    var KB_LABELS = {
+      postmortem: 'Postmortem',
+      decision:   'Decision Log',
+      digest:     'Weekly Digest',
+      spec:       'Spec',
+    };
+
+    function loadDocs() {
+      fetch('/api/docs').then(function (r) {
+        if (!r.ok) return null;
+        return r.json();
+      }).then(function (docs) {
+        if (!docs) return;
+        state.docs = docs;
+        renderDocList();
+      });
+    }
+
+    function renderDocList() {
+      var list = $('#kb-list');
+      list.replaceChildren();
+      state.docs.forEach(function (d) {
+        var label = KB_LABELS[d.category] || d.category;
+        var sub = label + ' · auto-written from session log · ' + d.generated_at;
+        var card = el('button', {
+          class: 'kb-doc-card' + (d.id === state.currentDocId ? ' selected' : ''),
+          'data-category': d.category,
+          type: 'button',
+          onclick: function () { selectDoc(d.id); },
+        },
+          el('div', { class: 'kb-doc-head' },
+            el('div', { class: 'kb-icon' }, icon(KB_ICONS[d.category] || 'i-doc')),
+            el('div', { class: 'kb-title' }, d.title)
+          ),
+          el('div', { class: 'kb-sub' }, sub)
+        );
+        list.appendChild(card);
+      });
+    }
+
+    function selectDoc(id) {
+      state.currentDocId = id;
+      renderDocList();
+      fetch('/api/docs/' + id).then(function (r) {
+        if (!r.ok) return null;
+        return r.json();
+      }).then(function (d) {
+        if (!d) return;
+        renderDoc(d);
+      });
+    }
+
+    function renderDoc(d) {
+      var empty = $('#kb-empty');
+      var body = $('#kb-doc-body');
+      empty.style.display = 'none';
+      body.style.display = '';
+      body.replaceChildren();
+
+      var sourceLine = d.source_mission_id
+        ? 'Generated from mission #' + d.source_mission_id + ' — ' + d.source_mission_title + '.'
+        : 'Generated from ' + d.source_mission_title + '.';
+
+      var fm = el('div', { class: 'kb-frontmatter' },
+        el('div', null, el('strong', null, 'Source: '), sourceLine),
+        el('div', { style: 'margin-top:4px' },
+          d.event_count + ' session events distilled · generated ' + d.generated_at)
+      );
+      if (d.source_mission_id) {
+        var link = el('a', {
+          class: 'kb-source-link',
+          href: '#',
+          onclick: function (e) {
+            e.preventDefault();
+            activateTab('missions');
+            selectMission(d.source_mission_id);
+          },
+        }, icon('i-link'), 'Open source mission #' + d.source_mission_id);
+        fm.appendChild(link);
+      }
+      body.appendChild(fm);
+
+      var md = el('div', { class: 'markdown' });
+      md.innerHTML = renderMarkdown(d.body);
+      body.appendChild(md);
+    }
+
+    // --- Tiny markdown renderer ---
+    // Supports: # ## ### headings, **bold**, code spans, fenced code blocks,
+    // - / 1. lists (incl. - [ ] / - [x]), > blockquotes, GFM-ish tables,
+    // links [t](u), --- hr, paragraphs.
+    var SENTINEL_OPEN = 'CODE_';
+    var SENTINEL_CLOSE = '';
+
+    function escapeHtml(s) {
+      return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    function inlineMd(s) {
+      // Pull out code spans first, replace with sentinel, restore at the end.
+      var codes = [];
+      s = s.replace(/`([^`]+)`/g, function (_, c) {
+        codes.push(c);
+        return SENTINEL_OPEN + (codes.length - 1) + SENTINEL_CLOSE;
+      });
+      s = escapeHtml(s);
+      s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+      s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, function (_, t, u) {
+        return '<a href="' + u + '">' + t + '</a>';
+      });
+      s = s.replace(/CODE_(\d+)/g, function (_, i) {
+        return '<code>' + escapeHtml(codes[+i]) + '</code>';
+      });
+      return s;
+    }
+
+    function renderMarkdown(src) {
+      var lines = src.split('\n');
+      var out = [];
+      var i = 0;
+      var para = [];
+
+      function flushPara() {
+        if (para.length) {
+          out.push('<p>' + inlineMd(para.join(' ')) + '</p>');
+          para.length = 0;
+        }
+      }
+
+      while (i < lines.length) {
+        var line = lines[i];
+
+        // Fenced code
+        if (/^```/.test(line)) {
+          flushPara();
+          var fence = [];
+          i++;
+          while (i < lines.length && !/^```/.test(lines[i])) {
+            fence.push(lines[i]);
+            i++;
+          }
+          out.push('<pre><code>' + escapeHtml(fence.join('\n')) + '</code></pre>');
+          i++;
+          continue;
+        }
+
+        // Headings
+        var h = /^(#{1,3})\s+(.*)$/.exec(line);
+        if (h) {
+          flushPara();
+          var level = h[1].length;
+          out.push('<h' + level + '>' + inlineMd(h[2]) + '</h' + level + '>');
+          i++;
+          continue;
+        }
+
+        // Horizontal rule
+        if (/^-{3,}$/.test(line.trim())) {
+          flushPara();
+          out.push('<hr/>');
+          i++;
+          continue;
+        }
+
+        // Blockquote
+        if (/^>\s?/.test(line)) {
+          flushPara();
+          var bq = [];
+          while (i < lines.length && /^>\s?/.test(lines[i])) {
+            bq.push(lines[i].replace(/^>\s?/, ''));
+            i++;
+          }
+          var bqHtml = '<blockquote>';
+          bq.join('\n').split(/\n{2,}/).forEach(function (p) {
+            bqHtml += '<p>' + inlineMd(p.replace(/\n/g, ' ')) + '</p>';
+          });
+          bqHtml += '</blockquote>';
+          out.push(bqHtml);
+          continue;
+        }
+
+        // Tables
+        if (/^\s*\|/.test(line) && i + 1 < lines.length && /^\s*\|?\s*:?-{3,}/.test(lines[i + 1])) {
+          flushPara();
+          var splitRow = function (l) {
+            return l.trim().replace(/^\||\|$/g, '').split('|').map(function (c) {
+              return c.trim();
+            });
+          };
+          var header = splitRow(line);
+          i += 2;
+          var rows = [];
+          while (i < lines.length && /^\s*\|/.test(lines[i])) {
+            rows.push(splitRow(lines[i]));
+            i++;
+          }
+          var html = '<table><thead><tr>';
+          header.forEach(function (h2) { html += '<th>' + inlineMd(h2) + '</th>'; });
+          html += '</tr></thead><tbody>';
+          rows.forEach(function (r) {
+            html += '<tr>';
+            r.forEach(function (c) { html += '<td>' + inlineMd(c) + '</td>'; });
+            html += '</tr>';
+          });
+          html += '</tbody></table>';
+          out.push(html);
+          continue;
+        }
+
+        // Lists (unordered or ordered)
+        if (/^\s*[-*]\s+/.test(line) || /^\s*\d+\.\s+/.test(line)) {
+          flushPara();
+          var ordered = /^\s*\d+\.\s+/.test(line);
+          var items = [];
+          while (i < lines.length &&
+                 (/^\s*[-*]\s+/.test(lines[i]) || /^\s*\d+\.\s+/.test(lines[i]))) {
+            var item = lines[i].replace(/^\s*(?:[-*]|\d+\.)\s+/, '');
+            var tm = /^\[( |x|X)\]\s+(.*)$/.exec(item);
+            if (tm) {
+              var checked = tm[1].toLowerCase() === 'x';
+              items.push('<input type="checkbox" disabled' +
+                (checked ? ' checked' : '') + '/> ' + inlineMd(tm[2]));
+            } else {
+              items.push(inlineMd(item));
+            }
+            i++;
+          }
+          var tag = ordered ? 'ol' : 'ul';
+          var listHtml = '<' + tag + '>';
+          items.forEach(function (x) { listHtml += '<li>' + x + '</li>'; });
+          listHtml += '</' + tag + '>';
+          out.push(listHtml);
+          continue;
+        }
+
+        // Blank line ends a paragraph
+        if (line.trim() === '') {
+          flushPara();
+          i++;
+          continue;
+        }
+
+        // Otherwise: accumulate paragraph text
+        para.push(line);
+        i++;
+      }
+      flushPara();
+      return out.join('\n');
+    }
+
+    // --- Workspace metrics bar ---
+    function loadWorkspaceMetrics() {
+      fetch('/api/workspace').then(function (r) {
+        return r.ok ? r.json() : null;
+      }).then(function (m) {
+        if (!m) return;
+        $('#ws-inflight').textContent = m.in_flight;
+        $('#ws-tasks').textContent = m.tasks_running;
+        $('#ws-agents').textContent = m.agents_active;
+        $('#ws-spent').textContent = '$' + (m.spent_today_usd || 0).toFixed(2);
+        $('#ws-await').textContent = m.awaiting_humans;
+      });
+    }
+
+    // --- Templates view ---
+    function loadTemplates() {
+      fetch('/api/templates').then(function (r) {
+        return r.ok ? r.json() : [];
+      }).then(function (templates) {
+        state.templates = templates;
+        renderTemplates();
+      });
+    }
+
+    function renderTemplates() {
+      var grid = $('#templates-grid');
+      grid.replaceChildren();
+      state.templates.forEach(function (tpl) {
+        var card = el('div', { class: 'template-card', 'data-icon': tpl.icon },
+          el('div', { class: 'template-card-head' },
+            el('div', { class: 'template-icon' }, icon(tpl.icon)),
+            el('div', { class: 'template-name' }, tpl.name)
+          ),
+          el('div', { class: 'template-desc' }, tpl.description),
+          el('div', { class: 'template-stats' },
+            el('span', null, tpl.task_count + ' tasks'),
+            el('span', null, '·'),
+            el('span', null, 'Used ' + tpl.used_count + ' times')
+          ),
+          el('button', {
+            class: 'template-use-btn',
+            type: 'button',
+            onclick: function () { openWizard(tpl.key); },
+          }, 'Use template')
+        );
+        grid.appendChild(card);
+      });
+    }
+
+    // --- Wizard ---
+    function openWizard(templateKey) {
+      state.wizard = {
+        step: 1,
+        outcome: '',
+        templateKey: templateKey || null,
+        templateData: null,
+        proposedTasks: [],
+        title: '',
+        owner: 'Maya',
+        target: '',
+      };
+      $('#wizard-backdrop').classList.add('open');
+      // If a template was passed in, pre-fill its outcome description and skip
+      // straight to Step 2 (the proposed plan).
+      if (templateKey) {
+        fetch('/api/templates/' + templateKey).then(function (r) {
+          return r.ok ? r.json() : null;
+        }).then(function (tpl) {
+          if (!tpl) return;
+          state.wizard.templateData = tpl;
+          state.wizard.outcome = tpl.description;
+          state.wizard.title = tpl.name;
+          state.wizard.proposedTasks = tpl.tasks.map(function (t) {
+            return {
+              title: t.title,
+              assignee: t.assignee,
+              assignee_kind: t.assignee_kind,
+              est_min: t.est_min,
+              why: t.why,
+            };
+          });
+          state.wizard.step = 2;
+          renderWizard();
+        });
+      } else {
+        renderWizard();
+      }
+    }
+
+    function closeWizard() {
+      $('#wizard-backdrop').classList.remove('open');
+      state.wizard = null;
+    }
+    $('[data-close-wizard]').addEventListener('click', closeWizard);
+    $('#wizard-backdrop').addEventListener('click', function (e) {
+      if (e.target.id === 'wizard-backdrop') closeWizard();
+    });
+
+    function renderWizard() {
+      var w = state.wizard;
+      if (!w) return;
+      $$('.wizard-step-pip').forEach(function (p, i) {
+        p.classList.toggle('active', i + 1 <= w.step);
+      });
+      $('#wizard-title').textContent = 'Plan a mission · step ' + w.step + ' of 4';
+
+      var content = $('#wizard-step-content');
+      content.replaceChildren();
+
+      var back = $('#wizard-back');
+      var next = $('#wizard-next');
+      back.disabled = w.step === 1;
+      next.textContent = w.step === 4 ? 'Launch mission' : (w.step === 1 ? 'Propose plan' : 'Next');
+
+      if (w.step === 1) renderWizardStep1(content);
+      else if (w.step === 2) renderWizardStep2(content);
+      else if (w.step === 3) renderWizardStep3(content);
+      else if (w.step === 4) renderWizardStep4(content);
+    }
+
+    function renderWizardStep1(content) {
+      var w = state.wizard;
+      content.appendChild(el('div', { class: 'wizard-label' }, 'Describe the outcome you want.'));
+      var ta = el('textarea', {
+        class: 'wizard-textarea',
+        placeholder: 'e.g. Investigate the Saturday p99 latency spike on /api/feed and ship a mitigation by Friday.',
+      });
+      ta.value = w.outcome;
+      ta.addEventListener('input', function () { w.outcome = ta.value; });
+      content.appendChild(ta);
+
+      content.appendChild(el('div', {
+        class: 'wizard-label',
+        style: 'margin-top:14px;'
+      }, 'Or start from a common shape:'));
+      var examples = [
+        'Investigate a production incident',
+        'Research competitor pricing',
+        'Ship a new feature',
+        'Onboard a new team member',
+      ];
+      var chips = el('div', { class: 'example-chips' });
+      examples.forEach(function (text) {
+        var chip = el('button', {
+          class: 'example-chip',
+          type: 'button',
+          onclick: function () {
+            ta.value = text;
+            w.outcome = text;
+          },
+        }, text);
+        chips.appendChild(chip);
+      });
+      content.appendChild(chips);
+    }
+
+    function renderWizardStep2(content) {
+      var w = state.wizard;
+      // If we don't yet have a template loaded, show thinking + fetch.
+      if (!w.templateData) {
+        content.appendChild(el('div', { class: 'wizard-thinking' },
+          el('div', { class: 'spinner' }),
+          el('div', null, 'Decomposing your outcome into a work tree…')
+        ));
+        $('#wizard-next').disabled = true;
+        setTimeout(function () {
+          fetch('/api/templates/match', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ outcome: w.outcome }),
+          }).then(function (r) { return r.json(); }).then(function (data) {
+            w.templateData = data.template;
+            w.templateKey = data.key;
+            if (!w.title) w.title = w.outcome.split('\n')[0].slice(0, 80) || data.template.name;
+            w.proposedTasks = data.template.tasks.map(function (t) {
+              return {
+                title: t.title,
+                assignee: t.assignee,
+                assignee_kind: t.assignee_kind,
+                est_min: t.est_min,
+                why: t.why,
+              };
+            });
+            $('#wizard-next').disabled = false;
+            renderWizard();
+          });
+        }, 1500);
+        return;
+      }
+
+      content.appendChild(el('div', { class: 'wizard-label' },
+        'Proposed plan · matched template "' + w.templateData.name + '"'));
+
+      var listWrap = el('div', null);
+      function renderTasks() {
+        listWrap.replaceChildren();
+        w.proposedTasks.forEach(function (t, idx) {
+          var titleInput = el('input', { type: 'text' });
+          titleInput.value = t.title;
+          titleInput.addEventListener('input', function () { t.title = titleInput.value; });
+
+          var assigneeSel = el('select');
+          var allOptions = AGENT_OPTIONS.concat(HUMAN_OPTIONS);
+          allOptions.forEach(function (opt) {
+            var o = el('option', { value: opt }, opt);
+            if (opt === t.assignee) o.selected = true;
+            assigneeSel.appendChild(o);
+          });
+          assigneeSel.addEventListener('change', function () {
+            t.assignee = assigneeSel.value;
+            t.assignee_kind = assigneeSel.value.charAt(0) === '@' ? 'human' : 'agent';
+          });
+
+          var estInput = el('input', { type: 'text', placeholder: '20m' });
+          estInput.value = t.est_min ? (t.est_min + 'm') : '';
+          estInput.addEventListener('input', function () {
+            t.est_min = parseInt(estInput.value, 10) || 0;
+          });
+
+          var rm = el('button', {
+            class: 'proposed-task-remove',
+            type: 'button',
+            title: 'Remove task',
+            onclick: function () {
+              w.proposedTasks.splice(idx, 1);
+              renderTasks();
+            },
+          }, '×');
+
+          var row = el('div', { class: 'proposed-task-row' },
+            titleInput, assigneeSel, estInput, rm
+          );
+          if (t.why) {
+            row.appendChild(el('div', { class: 'proposed-task-why' }, t.why));
+          }
+          listWrap.appendChild(row);
+        });
+
+        var addBtn = el('button', {
+          class: 'add-task',
+          type: 'button',
+          style: 'margin-top:6px',
+          onclick: function () {
+            w.proposedTasks.push({
+              title: '', assignee: 'Researcher', assignee_kind: 'agent', est_min: 15, why: '',
+            });
+            renderTasks();
+          },
+        }, '+  Add task');
+        listWrap.appendChild(addBtn);
+      }
+      renderTasks();
+      content.appendChild(listWrap);
+    }
+
+    function renderWizardStep3(content) {
+      var w = state.wizard;
+      content.appendChild(el('div', { class: 'wizard-label' }, 'Mission title'));
+      var titleInput = el('input', { class: 'wizard-input', type: 'text' });
+      titleInput.value = w.title || '';
+      titleInput.addEventListener('input', function () { w.title = titleInput.value; });
+      content.appendChild(titleInput);
+
+      content.appendChild(el('div', {
+        class: 'wizard-label', style: 'margin-top:14px;'
+      }, 'Owner'));
+      var ownerWrap = el('div', { style: 'display:flex; gap:8px;' });
+      OWNER_OPTIONS.forEach(function (opt) {
+        var btn = el('button', {
+          class: 'btn' + (w.owner === opt ? ' btn-primary' : ''),
+          type: 'button',
+          onclick: function () { w.owner = opt; renderWizard(); },
+        }, opt);
+        ownerWrap.appendChild(btn);
+      });
+      content.appendChild(ownerWrap);
+
+      content.appendChild(el('div', {
+        class: 'wizard-label', style: 'margin-top:14px;'
+      }, 'Target date'));
+      var tgt = el('input', { class: 'wizard-input', type: 'text', placeholder: 'e.g. Friday, Q3, 2026-05-15' });
+      tgt.value = w.target || '';
+      tgt.addEventListener('input', function () { w.target = tgt.value; });
+      content.appendChild(tgt);
+    }
+
+    function renderWizardStep4(content) {
+      var w = state.wizard;
+      var card = el('div', { class: 'review-card' },
+        el('h3', null, w.title || '(untitled mission)'),
+        el('div', { class: 'meta' }, 'Owner: ' + w.owner + ' · Target: ' + (w.target || 'TBD')),
+        el('div', null, w.outcome || '(no outcome described)')
+      );
+      var taskList = el('div', { class: 'review-task-list' });
+      w.proposedTasks.forEach(function (t, i) {
+        taskList.appendChild(el('div', { class: 'review-task-list-row' },
+          el('span', { class: 'num' }, (i + 1) + '.'),
+          el('span', { class: 'chip', 'data-kind': t.assignee_kind, style: 'flex:0 0 auto;' },
+            icon(t.assignee_kind === 'agent' ? 'i-agent' : 'i-human'),
+            el('span', { class: 'chip-text' }, t.assignee)
+          ),
+          el('span', { style: 'flex:1' }, t.title || '(empty)')
+        ));
+      });
+      card.appendChild(taskList);
+      content.appendChild(card);
+    }
+
+    $('#wizard-back').addEventListener('click', function () {
+      var w = state.wizard;
+      if (!w || w.step <= 1) return;
+      w.step -= 1;
+      // If user goes back from step 2, also wipe templateData so we redo the
+      // 'thinking' animation if they re-enter.
+      if (w.step === 1) {
+        // keep proposed tasks so they don't lose edits if they re-advance.
+      }
+      renderWizard();
+    });
+
+    $('#wizard-next').addEventListener('click', function () {
+      var w = state.wizard;
+      if (!w) return;
+      if (w.step === 1) {
+        if (!w.outcome.trim()) return;
+        // Force a fresh fetch / 'thinking' loader.
+        if (!w.templateData) {
+          w.step = 2;
+          renderWizard();
+          return;
+        }
+        w.step = 2;
+        renderWizard();
+      } else if (w.step === 2) {
+        if (w.proposedTasks.length === 0) return;
+        w.step = 3;
+        renderWizard();
+      } else if (w.step === 3) {
+        if (!w.title.trim()) return;
+        w.step = 4;
+        renderWizard();
+      } else if (w.step === 4) {
+        launchMission();
+      }
+    });
+
+    function launchMission() {
+      var w = state.wizard;
+      var payload = {
+        title: w.title,
+        outcome: w.outcome,
+        owner: w.owner,
+        target: w.target || 'TBD',
+        tasks: w.proposedTasks
+          .filter(function (t) { return (t.title || '').trim().length > 0; })
+          .map(function (t) {
+            return { title: t.title, assignee: t.assignee, assignee_kind: t.assignee_kind };
+          }),
+      };
+      fetch('/api/missions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      }).then(function (r) { return r.json(); }).then(function (newMission) {
+        closeWizard();
+        // Reload missions list and select the new one.
+        fetch('/api/missions').then(function (r) { return r.json(); }).then(function (missions) {
+          state.missions = missions;
+          renderMissionList();
+          activateTab('missions');
+          selectMission(newMission.id);
+          // Refresh missions list periodically so auto-progress is visible.
+          startAutoProgressPolling(newMission.id);
+        });
+      });
+    }
+
+    function startAutoProgressPolling(missionId) {
+      var ticks = 0;
+      var iv = setInterval(function () {
+        ticks++;
+        if (ticks > 12) { clearInterval(iv); return; }
+        fetch('/api/missions/' + missionId).then(function (r) {
+          return r.ok ? r.json() : null;
+        }).then(function (m) {
+          if (!m) return;
+          if (state.currentMissionId === missionId) {
+            state.currentMission = m;
+            renderMissionDetail();
+            if (state.activityScope === 'mission') renderActivity();
+          }
+          // Also update the mission list card.
+          fetch('/api/missions').then(function (r) { return r.json(); })
+            .then(function (missions) {
+              state.missions = missions;
+              renderMissionList();
+            });
+        });
+      }, 3000);
+    }
+
+    // --- Session log modal ---
+    function openSessionLog(task) {
+      $('#session-backdrop').classList.add('open');
+      $('#session-title').textContent = task.title;
+      var body = $('#session-modal-body');
+      body.replaceChildren();
+
+      // Reset speed to 2x default.
+      $$('#session-speed .session-speed-btn').forEach(function (b) {
+        b.classList.toggle('active', b.getAttribute('data-speed') === '2');
+      });
+
+      // Stop any prior playback.
+      if (state.sessionPlayback) {
+        clearTimeout(state.sessionPlayback.timer);
+        state.sessionPlayback = null;
+      }
+
+      fetch('/api/tasks/' + task.id + '/log').then(function (r) {
+        return r.ok ? r.json() : null;
+      }).then(function (data) {
+        if (!data) return;
+        renderSessionMeta(data);
+        if (data.assignee_kind === 'human') {
+          renderHumanReviewPanel(data);
+        } else {
+          renderAgentSessionLog(data);
+        }
+      });
+    }
+
+    function renderSessionMeta(data) {
+      var meta = $('#session-meta-strip');
+      meta.replaceChildren();
+      meta.appendChild(el('span', null, el('strong', null, data.assignee)));
+      meta.appendChild(el('span', null, '·'));
+      meta.appendChild(el('span', null, 'Duration: ' + (data.duration_min || 0) + ' min'));
+      meta.appendChild(el('span', null, '·'));
+      meta.appendChild(el('span', null, 'Cost: $' + (data.cost_usd || 0).toFixed(2)));
+      meta.appendChild(el('span', null, '·'));
+      meta.appendChild(el('span', null, 'Tokens: ~' + (data.tokens || 0).toLocaleString()));
+      meta.appendChild(el('span', null, '·'));
+      meta.appendChild(el('span', { class: 'pill', 'data-status': data.status },
+        el('span', { class: 'dot' }), data.status));
+    }
+
+    function renderHumanReviewPanel(data) {
+      var body = $('#session-modal-body');
+      body.style.gridTemplateColumns = '1fr';
+      var panel = el('div', { class: 'review-panel' },
+        el('div', { class: 'review-panel-head' },
+          el('div', { class: 'avatar', style: 'background:linear-gradient(135deg,#7e57c2,#bc8cff);' },
+            data.assignee.replace('@', '').slice(0, 2).toUpperCase()),
+          el('div', null,
+            el('div', { style: 'font-weight:600;font-size:14px;' }, data.assignee + ' · review'),
+            el('div', { style: 'color:var(--muted);font-size:12px;' },
+              'Human-assigned task — no agent transcript')
+          )
+        ),
+        el('div', { class: 'review-comments' },
+          el('div', { class: 'review-comment' },
+            el('span', { class: 'who' }, data.assignee), 'Reading the diff now — should have notes within the hour.'),
+          el('div', { class: 'review-comment' },
+            el('span', { class: 'who' }, data.assignee), 'Tests look thorough. One nit on retry.py:42 — jitter floor too.')
+        ),
+        el('div', { class: 'review-actions' },
+          el('button', { class: 'btn btn-approve', type: 'button',
+            onclick: function () { alert('Approved (visual demo).'); } }, 'Approve'),
+          el('button', { class: 'btn btn-changes', type: 'button',
+            onclick: function () { alert('Changes requested (visual demo).'); } }, 'Request changes')
+        )
+      );
+      body.appendChild(panel);
+    }
+
+    function renderAgentSessionLog(data) {
+      var body = $('#session-modal-body');
+      body.style.gridTemplateColumns = '1fr 200px';
+      var pane = el('div', { class: 'session-log-pane', id: 'session-log-pane' });
+      var sidebar = el('div', { class: 'session-sidebar' },
+        el('h4', null, 'Sections'),
+        el('div', { id: 'session-section-nav' })
+      );
+      body.appendChild(pane);
+      body.appendChild(sidebar);
+
+      var lines = data.lines || [];
+      var speedBtn = document.querySelector('#session-speed .session-speed-btn.active');
+      var speed = parseInt(speedBtn ? speedBtn.getAttribute('data-speed') : '2', 10);
+      var delay = speed === 0 ? 0 : Math.round(200 / speed);
+
+      var sections = [
+        { key: 'setup',  label: 'Setup',  prefix: '[setup]' },
+        { key: 'tools',  label: 'Tools',  prefix: '[tool]' },
+        { key: 'output', label: 'Output', prefix: '[output]' },
+        { key: 'result', label: 'Result', prefix: '[result]' },
+      ];
+      var nav = $('#session-section-nav');
+      sections.forEach(function (s) {
+        nav.appendChild(el('a', {
+          class: 'session-section-link',
+          'data-section': s.key,
+          onclick: function () {
+            var first = pane.querySelector('[data-section="' + s.key + '"]');
+            if (first) first.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          },
+        }, s.label));
+      });
+
+      function classify(line) {
+        if (line.indexOf('[setup]') === 0) return { c: 'k-setup', sec: 'setup' };
+        if (line.indexOf('[agent]') === 0) return { c: 'k-agent', sec: 'setup' };
+        if (line.indexOf('[think]') === 0) return { c: 'k-think', sec: 'tools' };
+        if (line.indexOf('[tool]') === 0) return { c: 'k-tool', sec: 'tools' };
+        if (line.indexOf('[output]') === 0) return { c: 'k-output', sec: 'output' };
+        if (line.indexOf('[result]') === 0) return { c: 'k-result', sec: 'result' };
+        if (line.indexOf('[review]') === 0) return { c: 'k-review', sec: 'output' };
+        return { c: '', sec: 'output' };
+      }
+
+      var seenSection = {};
+      function append(idx) {
+        if (idx >= lines.length) return;
+        var line = lines[idx];
+        var info = classify(line);
+        var attrs = { class: 'session-log-line ' + info.c };
+        if (!seenSection[info.sec]) {
+          attrs['data-section'] = info.sec;
+          seenSection[info.sec] = true;
+        }
+        var node = el('div', attrs, line);
+        pane.appendChild(node);
+        pane.scrollTop = pane.scrollHeight;
+        var t = setTimeout(function () { append(idx + 1); }, delay);
+        state.sessionPlayback = { timer: t };
+      }
+
+      if (delay === 0) {
+        // Skip — render all lines at once.
+        lines.forEach(function (line, idx) {
+          var info = classify(line);
+          var attrs = { class: 'session-log-line ' + info.c };
+          if (!seenSection[info.sec]) {
+            attrs['data-section'] = info.sec;
+            seenSection[info.sec] = true;
+          }
+          pane.appendChild(el('div', attrs, line));
+        });
+      } else {
+        append(0);
+      }
+    }
+
+    function closeSessionLog() {
+      $('#session-backdrop').classList.remove('open');
+      if (state.sessionPlayback) {
+        clearTimeout(state.sessionPlayback.timer);
+        state.sessionPlayback = null;
+      }
+    }
+    $('[data-close-session]').addEventListener('click', closeSessionLog);
+    $('#session-backdrop').addEventListener('click', function (e) {
+      if (e.target.id === 'session-backdrop') closeSessionLog();
+    });
+    $$('#session-speed .session-speed-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        $$('#session-speed .session-speed-btn').forEach(function (b) {
+          b.classList.toggle('active', b === btn);
+        });
+        // Note: simplest UX — speed change applies to next opened log.
+      });
+    });
+
+    // --- Profile popover ---
+    function openProfilePopover(name, anchor) {
+      fetch('/api/profiles/' + encodeURIComponent(name)).then(function (r) {
+        return r.ok ? r.json() : null;
+      }).then(function (p) {
+        if (!p) return;
+        var pop = $('#popover');
+        pop.replaceChildren();
+        pop.appendChild(el('div', { class: 'popover-name' }, p.name));
+        pop.appendChild(el('div', { class: 'popover-tag' }, p.tagline || ''));
+        if (p.kind === 'agent') {
+          pop.appendChild(el('div', { class: 'popover-stat' },
+            el('span', { class: 'label' }, 'Model'),
+            el('span', null, p.model || '—')));
+          pop.appendChild(el('div', { class: 'popover-stat' },
+            el('span', { class: 'label' }, 'Recent runs'),
+            el('span', null, String(p.recent_runs || 0))));
+          pop.appendChild(el('div', { class: 'popover-stat' },
+            el('span', { class: 'label' }, 'Success rate'),
+            el('span', null, p.success_rate || '—')));
+          pop.appendChild(el('a', {
+            class: 'popover-link',
+            href: p.forge_url || '#',
+            target: '_blank',
+            rel: 'noopener',
+          }, 'Open in Forge →'));
+        } else {
+          pop.appendChild(el('div', { class: 'popover-stat' },
+            el('span', { class: 'label' }, 'Role'),
+            el('span', null, p.role || '—')));
+          pop.appendChild(el('div', { class: 'popover-stat' },
+            el('span', { class: 'label' }, 'Current load'),
+            el('span', null, p.load || '—')));
+        }
+        var rect = anchor.getBoundingClientRect();
+        var top = rect.bottom + 6;
+        var left = rect.left;
+        if (left + 240 > window.innerWidth) left = window.innerWidth - 250;
+        pop.style.top = top + 'px';
+        pop.style.left = left + 'px';
+        $('#popover-backdrop').classList.add('open');
+      });
+    }
+    $('#popover-backdrop').addEventListener('click', function () {
+      $('#popover-backdrop').classList.remove('open');
+    });
+
+    // --- Boot ---
+    function boot() {
+      loadWorkspaceMetrics();
+      fetch('/api/missions').then(function (r) {
+        if (!r.ok) return null;
+        return r.json();
+      }).then(function (missions) {
+        if (!missions) return;
+        state.missions = missions;
+        renderMissionList();
+        if (state.missions.length) selectMission(state.missions[0].id);
+      });
+    }
+    boot();
+  })();
+  </script>
+</body>
+</html>

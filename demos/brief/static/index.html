@@ -1,0 +1,791 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Brief — Research Fleet</title>
+  <style>
+    /* ------------------------------------------------------------------ */
+    /* Reset & base                                                         */
+    /* ------------------------------------------------------------------ */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0d0f14;
+      --surface:   #151820;
+      --surface2:  #1c2030;
+      --border:    #252a3a;
+      --accent:    #6366f1;
+      --accent2:   #818cf8;
+      --green:     #22c55e;
+      --text:      #e2e8f0;
+      --muted:     #64748b;
+      --dim-color: #94a3b8;
+      --mono:      "JetBrains Mono", "Fira Code", "Cascadia Code", monospace;
+      --sans:      -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --radius:    10px;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      min-height: 100vh;
+      padding: 0 0 80px;
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Header / nav bar                                                     */
+    /* ------------------------------------------------------------------ */
+    .nav {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 16px 32px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(13, 15, 20, 0.85);
+      backdrop-filter: blur(12px);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .nav-logo {
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .nav-logo .badge {
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--accent2);
+      background: rgba(99, 102, 241, 0.12);
+      border: 1px solid rgba(99, 102, 241, 0.25);
+      padding: 2px 7px;
+      border-radius: 99px;
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Main layout                                                          */
+    /* ------------------------------------------------------------------ */
+    .container {
+      max-width: 1160px;
+      margin: 0 auto;
+      padding: 40px 24px 0;
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Hero / input area                                                    */
+    /* ------------------------------------------------------------------ */
+    .hero {
+      text-align: center;
+      margin-bottom: 40px;
+    }
+
+    .hero h1 {
+      font-size: clamp(28px, 4vw, 42px);
+      font-weight: 800;
+      letter-spacing: -0.04em;
+      line-height: 1.1;
+      background: linear-gradient(135deg, #e2e8f0 30%, var(--accent2));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 10px;
+    }
+
+    .hero p {
+      color: var(--muted);
+      font-size: 15px;
+      max-width: 480px;
+      margin: 0 auto 28px;
+      line-height: 1.6;
+    }
+
+    .search-row {
+      display: flex;
+      gap: 10px;
+      max-width: 560px;
+      margin: 0 auto 16px;
+    }
+
+    .search-input {
+      flex: 1;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text);
+      font-size: 15px;
+      font-family: var(--sans);
+      padding: 11px 16px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    .search-input:focus {
+      border-color: var(--accent);
+    }
+
+    .search-input::placeholder { color: var(--muted); }
+
+    .btn-research {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: var(--radius);
+      font-size: 14px;
+      font-weight: 600;
+      padding: 11px 22px;
+      cursor: pointer;
+      transition: background 0.15s, transform 0.1s;
+      white-space: nowrap;
+    }
+
+    .btn-research:hover { background: var(--accent2); }
+    .btn-research:active { transform: scale(0.97); }
+    .btn-research:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+    .quick-targets {
+      display: flex;
+      justify-content: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .quick-targets span {
+      font-size: 12px;
+      color: var(--muted);
+      align-self: center;
+      margin-right: 2px;
+    }
+
+    .btn-quick {
+      background: var(--surface);
+      color: var(--dim-color);
+      border: 1px solid var(--border);
+      border-radius: 99px;
+      font-size: 13px;
+      font-weight: 500;
+      padding: 5px 14px;
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s, border-color 0.15s;
+    }
+
+    .btn-quick:hover {
+      background: var(--surface2);
+      color: var(--text);
+      border-color: var(--accent);
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Research grid (2x2)                                                  */
+    /* ------------------------------------------------------------------ */
+    .section-label {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 14px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    @media (max-width: 680px) {
+      .grid { grid-template-columns: 1fr; }
+    }
+
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      min-height: 220px;
+      transition: border-color 0.2s;
+    }
+
+    .panel.running { border-color: rgba(99, 102, 241, 0.4); }
+    .panel.done    { border-color: rgba(34, 197, 94, 0.35); }
+
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface2);
+    }
+
+    .panel-title {
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--dim-color);
+    }
+
+    .panel-status {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .spinner {
+      width: 14px;
+      height: 14px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      display: none;
+    }
+
+    .panel.running .spinner { display: block; }
+
+    .check-icon {
+      display: none;
+      color: var(--green);
+      font-size: 14px;
+    }
+
+    .panel.done .check-icon { display: block; }
+    .panel.done .panel-status { color: var(--green); }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .panel-stage {
+      font-size: 10px;
+      color: var(--muted);
+      font-family: var(--mono);
+    }
+
+    .panel-body {
+      flex: 1;
+      padding: 14px 16px;
+      overflow-y: auto;
+      max-height: 280px;
+    }
+
+    .output-line {
+      font-family: var(--mono);
+      font-size: 12px;
+      line-height: 1.7;
+      color: var(--dim-color);
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .output-line.highlight {
+      color: var(--text);
+    }
+
+    .output-line.stage {
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    /* subtle fade-in for each new line */
+    @keyframes fadeSlide {
+      from { opacity: 0; transform: translateY(4px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .output-line { animation: fadeSlide 0.2s ease-out; }
+
+    /* ------------------------------------------------------------------ */
+    /* Brief section                                                        */
+    /* ------------------------------------------------------------------ */
+    .brief-wrapper {
+      display: none;
+      margin-top: 40px;
+    }
+
+    .brief-wrapper.visible { display: block; }
+
+    .brief-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+
+    .brief-header {
+      padding: 20px 28px 16px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface2);
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+    }
+
+    .brief-header h2 {
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+    }
+
+    .brief-target-badge {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--accent2);
+      background: rgba(99, 102, 241, 0.12);
+      border: 1px solid rgba(99, 102, 241, 0.25);
+      padding: 2px 10px;
+      border-radius: 99px;
+    }
+
+    .brief-body {
+      padding: 28px;
+      display: flex;
+      flex-direction: column;
+      gap: 28px;
+    }
+
+    .brief-section h3 {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--accent2);
+      margin-bottom: 10px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .brief-section p {
+      font-size: 14px;
+      line-height: 1.75;
+      color: var(--dim-color);
+    }
+
+    .brief-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+    }
+
+    .brief-list li {
+      font-size: 14px;
+      line-height: 1.6;
+      color: var(--dim-color);
+      padding-left: 18px;
+      position: relative;
+    }
+
+    .brief-list li::before {
+      content: "→";
+      position: absolute;
+      left: 0;
+      color: var(--accent);
+      font-size: 12px;
+    }
+
+    .brief-list li.animating {
+      animation: fadeSlide 0.25s ease-out;
+    }
+
+    .synthesis-loading {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--muted);
+      font-size: 13px;
+      padding: 28px;
+    }
+
+    .synthesis-loading .spinner {
+      display: block;
+      border-top-color: var(--accent2);
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Idle / empty state for panels                                        */
+    /* ------------------------------------------------------------------ */
+    .panel-idle {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      color: var(--muted);
+      font-size: 12px;
+      font-style: italic;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Nav -->
+  <nav class="nav">
+    <div class="nav-logo">
+      Brief
+      <span class="badge">Fleet POC</span>
+    </div>
+  </nav>
+
+  <div class="container">
+
+    <!-- Hero / search -->
+    <div class="hero">
+      <h1>Research Fleet</h1>
+      <p>Enter a company or topic. Four agent sessions fan out concurrently across different dimensions, then synthesize a structured brief.</p>
+
+      <div class="search-row">
+        <input
+          type="text"
+          id="targetInput"
+          class="search-input"
+          placeholder="Enter a company, product, or market..."
+          autocomplete="off"
+        />
+        <button id="researchBtn" class="btn-research">Research</button>
+      </div>
+
+      <div class="quick-targets">
+        <span>Try:</span>
+        <button class="btn-quick" data-target="Linear">Linear</button>
+        <button class="btn-quick" data-target="Resend">Resend</button>
+        <button class="btn-quick" data-target="Fly.io">Fly.io</button>
+      </div>
+    </div>
+
+    <!-- Research grid -->
+    <div id="researchSection" style="display:none">
+      <div class="section-label">Research Sessions — Running concurrently</div>
+      <div class="grid" id="panelGrid">
+        <!-- Panels inserted by JS -->
+      </div>
+    </div>
+
+    <!-- Brief -->
+    <div class="brief-wrapper" id="briefWrapper">
+      <div class="section-label">Assembled Brief</div>
+      <div class="brief-card">
+        <div class="brief-header">
+          <h2>Research Brief</h2>
+          <span class="brief-target-badge" id="briefTargetBadge"></span>
+        </div>
+        <div id="briefBody">
+          <!-- Synthesis loading state -->
+          <div class="synthesis-loading" id="synthesisLoading">
+            <div class="spinner" style="display:block; border-top-color: var(--accent2)"></div>
+            Synthesis agent assembling brief…
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /container -->
+
+  <script>
+    /* ------------------------------------------------------------------ */
+    /* Config                                                               */
+    /* ------------------------------------------------------------------ */
+    const DIMENSIONS = {
+      product_positioning:   "Product & Positioning",
+      team_history:          "Team & History",
+      customers_market:      "Customers & Market",
+      competitors_landscape: "Competitors & Landscape",
+    };
+
+    /* ------------------------------------------------------------------ */
+    /* State                                                                */
+    /* ------------------------------------------------------------------ */
+    let currentTarget = "";
+    let activeSource  = null;
+    let completedDims = 0;
+
+    const briefSections = {
+      summary:        { label: "Executive Summary",  items: [], type: "paragraph" },
+      key_themes:     { label: "Key Themes",          items: [], type: "list" },
+      risks:          { label: "Risks",               items: [], type: "list" },
+      opportunities:  { label: "Opportunities",       items: [], type: "list" },
+      open_questions: { label: "Open Questions",      items: [], type: "list" },
+    };
+    let currentSection = null;
+
+    /* ------------------------------------------------------------------ */
+    /* DOM helpers                                                          */
+    /* ------------------------------------------------------------------ */
+    const $ = (id) => document.getElementById(id);
+
+    function buildPanels() {
+      const grid = $("panelGrid");
+      grid.innerHTML = "";
+      completedDims = 0;
+
+      Object.entries(DIMENSIONS).forEach(([key, label]) => {
+        const panel = document.createElement("div");
+        panel.className = "panel";
+        panel.id = `panel-${key}`;
+        panel.innerHTML = `
+          <div class="panel-header">
+            <span class="panel-title">${label}</span>
+            <div class="panel-status">
+              <div class="spinner"></div>
+              <span class="check-icon">✓ Complete</span>
+              <span class="panel-stage" id="stage-${key}">Waiting…</span>
+            </div>
+          </div>
+          <div class="panel-body" id="body-${key}">
+            <div class="panel-idle">Session starting…</div>
+          </div>
+        `;
+        grid.appendChild(panel);
+      });
+    }
+
+    function appendLine(dimension, text, extraClass = "") {
+      const body = $(`body-${dimension}`);
+      if (!body) return;
+
+      // Remove idle placeholder on first real content
+      const idle = body.querySelector(".panel-idle");
+      if (idle) idle.remove();
+
+      const el = document.createElement("div");
+      el.className = `output-line ${extraClass}`;
+      el.textContent = text;
+      body.appendChild(el);
+      body.scrollTop = body.scrollHeight;
+    }
+
+    function markPanelRunning(dimension) {
+      const panel = $(`panel-${dimension}`);
+      if (panel) panel.classList.add("running");
+    }
+
+    function markPanelDone(dimension) {
+      const panel = $(`panel-${dimension}`);
+      if (panel) {
+        panel.classList.remove("running");
+        panel.classList.add("done");
+      }
+      const stageEl = $(`stage-${dimension}`);
+      if (stageEl) stageEl.textContent = "";
+    }
+
+    function setStage(dimension, stage) {
+      const el = $(`stage-${dimension}`);
+      if (el) el.textContent = stage;
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Brief assembly                                                        */
+    /* ------------------------------------------------------------------ */
+    function showBriefWrapper() {
+      $("briefWrapper").classList.add("visible");
+      $("briefTargetBadge").textContent = currentTarget;
+    }
+
+    function hideSynthesisLoading() {
+      const el = $("synthesisLoading");
+      if (el) el.remove();
+    }
+
+    function startSection(sectionKey) {
+      currentSection = sectionKey;
+      const info = briefSections[sectionKey];
+      if (!info) return;
+
+      const briefBody = $("briefBody");
+
+      const sec = document.createElement("div");
+      sec.className = "brief-section";
+      sec.id = `brief-sec-${sectionKey}`;
+      sec.innerHTML = `<h3>${info.label}</h3>`;
+
+      if (info.type === "paragraph") {
+        const p = document.createElement("p");
+        p.id = `brief-content-${sectionKey}`;
+        sec.appendChild(p);
+      } else {
+        const ul = document.createElement("ul");
+        ul.className = "brief-list";
+        ul.id = `brief-content-${sectionKey}`;
+        sec.appendChild(ul);
+      }
+
+      briefBody.appendChild(sec);
+    }
+
+    function appendBriefLine(text) {
+      if (!currentSection) return;
+      const info = briefSections[currentSection];
+      if (!info) return;
+
+      const container = $(`brief-content-${currentSection}`);
+      if (!container) return;
+
+      if (info.type === "paragraph") {
+        container.textContent = text;
+      } else {
+        const li = document.createElement("li");
+        li.textContent = text;
+        li.classList.add("animating");
+        container.appendChild(li);
+        setTimeout(() => li.classList.remove("animating"), 300);
+      }
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* SSE event routing                                                     */
+    /* ------------------------------------------------------------------ */
+    function handleEvent(raw) {
+      let evt;
+      try { evt = JSON.parse(raw); }
+      catch { return; }
+
+      // Research dimension events
+      if (evt.session) {
+        const dim = evt.session;
+
+        if (evt.type === "stage") {
+          const stageLabels = {
+            create_sprite:  "Creating session…",
+            runtime_start:  "Runtime starting…",
+          };
+          setStage(dim, stageLabels[evt.data] || evt.data);
+          markPanelRunning(dim);
+          // Clear idle text on first stage
+          const body = $(`body-${dim}`);
+          const idle = body && body.querySelector(".panel-idle");
+          if (idle) idle.remove();
+        }
+
+        if (evt.type === "output") {
+          const text = evt.data;
+          const isHighlight = text.startsWith("Found:") ||
+                              text.startsWith("Core") ||
+                              text.startsWith("Key ") ||
+                              text.startsWith("Recent") ||
+                              text.startsWith("Founded") ||
+                              text.startsWith("Primary") ||
+                              text.startsWith("Notable");
+          appendLine(dim, text, isHighlight ? "highlight" : "");
+          setStage(dim, "Researching…");
+        }
+
+        if (evt.type === "exit") {
+          markPanelDone(dim);
+          completedDims++;
+        }
+        return;
+      }
+
+      // Synthesis events
+      if (evt.type === "research_complete") {
+        showBriefWrapper();
+        return;
+      }
+
+      if (evt.type === "synthesis_start") {
+        hideSynthesisLoading();
+        return;
+      }
+
+      if (evt.type === "synthesis_section") {
+        startSection(evt.data);
+        return;
+      }
+
+      if (evt.type === "synthesis_line") {
+        appendBriefLine(evt.data);
+        return;
+      }
+
+      if (evt.type === "synthesis_done") {
+        $("researchBtn").disabled = false;
+        $("researchBtn").textContent = "Research";
+        return;
+      }
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Start research                                                        */
+    /* ------------------------------------------------------------------ */
+    function startResearch(target) {
+      if (!target.trim()) return;
+
+      // Cancel any existing stream
+      if (activeSource) {
+        activeSource.close();
+        activeSource = null;
+      }
+
+      currentTarget = target.trim();
+
+      // Reset UI
+      $("researchSection").style.display = "block";
+      $("briefWrapper").classList.remove("visible");
+      $("briefBody").innerHTML = `
+        <div class="synthesis-loading" id="synthesisLoading">
+          <div class="spinner" style="display:block; border-top-color: var(--accent2)"></div>
+          Synthesis agent standing by…
+        </div>
+      `;
+      currentSection = null;
+
+      // Reset brief sections
+      Object.values(briefSections).forEach(s => s.items = []);
+
+      buildPanels();
+
+      $("researchBtn").disabled = true;
+      $("researchBtn").textContent = "Researching…";
+
+      // Open SSE connection
+      const url = `/research/stream?target=${encodeURIComponent(currentTarget)}`;
+      const source = new EventSource(url);
+      activeSource = source;
+
+      source.onmessage = (e) => handleEvent(e.data);
+
+      source.onerror = (e) => {
+        console.warn("SSE error", e);
+        source.close();
+        activeSource = null;
+        $("researchBtn").disabled = false;
+        $("researchBtn").textContent = "Research";
+      };
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Event listeners                                                      */
+    /* ------------------------------------------------------------------ */
+    $("researchBtn").addEventListener("click", () => {
+      startResearch($("targetInput").value);
+    });
+
+    $("targetInput").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") startResearch($("targetInput").value);
+    });
+
+    document.querySelectorAll(".btn-quick").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const t = btn.dataset.target;
+        $("targetInput").value = t;
+        startResearch(t);
+      });
+    });
+  </script>
+</body>
+</html>
