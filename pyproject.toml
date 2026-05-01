@@ -2,6 +2,9 @@
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.hatch.metadata]
+allow-direct-references = true
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/config", "src/agent_on_demand"]
 
@@ -15,7 +18,7 @@ license-files = ["LICENSE"]
 dependencies = [
     "django>=5.1",
     "django-cors-headers>=4.0",
-    "sprites-py>=0.0.1rc37",
+    "sprites-py @ git+https://github.com/jhgaylor/sprites-py.git@main",
     "pydantic>=2.0.0",
     "cryptography>=43.0",
     "dj-database-url>=2.1",

@@ -92,7 +92,7 @@ requires-dist = [
     { name = "pyyaml", marker = "extra == 'dev'", specifier = ">=6.0" },
     { name = "requests", marker = "extra == 'dev'", specifier = ">=2.31.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.8.0" },
-    { name = "sprites-py", specifier = ">=0.0.1rc37" },
+    { name = "sprites-py", git = "https://github.com/jhgaylor/sprites-py.git?rev=main" },
     { name = "types-requests", marker = "extra == 'dev'", specifier = ">=2.31" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30" },
     { name = "whitenoise", specifier = ">=6.7" },
@@ -2358,15 +2358,11 @@ wheels = [
 
 [[package]]
 name = "sprites-py"
-version = "0.0.1rc37"
-source = { registry = "https://pypi.org/simple" }
+version = "0.1.0"
+source = { git = "https://github.com/jhgaylor/sprites-py.git?rev=main#c4015aaa5c1e528a497c8638d9180440fde54dc2" }
 dependencies = [
     { name = "httpx" },
     { name = "websockets" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/88/cd/24bbca8438fdc8a89e3365b927b20f511e1c4529a8574ea252e967f8071c/sprites_py-0.0.1rc37.tar.gz", hash = "sha256:2fc58aa80a9a99c1a12cb17725d13675d5e25dc2a33f245f21486473aede05b9", size = 35226, upload-time = "2026-02-19T21:38:51.643Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/b6/8b/87c87887ae3bde72425134efea163fdbdef610765a8db7244c7b4adeab46/sprites_py-0.0.1rc37-py3-none-any.whl", hash = "sha256:d032b0059e2881b16a35349c0f01adafa99143671103a43a79d7e39a0c1ef6c9", size = 39424, upload-time = "2026-02-19T21:38:49.9Z" },
 ]
 
 [[package]]
