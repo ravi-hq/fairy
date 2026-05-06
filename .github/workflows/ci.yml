@@ -101,7 +101,7 @@ jobs:
       - if: always() && (steps.mutmut.conclusion == 'success' || steps.mutmut.conclusion == 'failure')
         run: uv run python -m scripts.mutmut_report --format=html
       - if: always() && (steps.mutmut.conclusion == 'success' || steps.mutmut.conclusion == 'failure')
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: mutation-report
           path: mutants/report.html
